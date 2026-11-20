@@ -148,7 +148,7 @@ file. Screenshot sizes are part of the contract:
 | Files | Size |
 | --- | --- |
 | `board-{light,zh,ru,dark,dark-zh,dark-ru}.png` | 1680 × 1050 |
-| `panel-{light,zh,ru}.png` | 1080 × 1440 (panel only, portrait) |
+| `panel-{light,zh,ru}.png` | 1080 × 600 (panel only) |
 | `task-dialog{,-zh,-ru}.png` | 1280 × 860 |
 | `agent-dialog{,-zh,-ru}.png` | 1280 × 900 |
 
