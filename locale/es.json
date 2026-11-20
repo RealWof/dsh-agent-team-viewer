@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Visor del tablero de Agent Team",
+    "description": "Visor de solo lectura del tablero de Agent Team en el panel derecho, que se abre con el botón de tablero a la izquierda de Subagents en la cabecera de la sesión o en su propia pestaña: las columnas siguen el estado de las tareas, una tarjeta abre un inspector por bloques con dependencias y ámbitos de escritura, y el árbol de subagentes se agrupa por estado con tiempo de ejecución, tiempo en segundo plano, tokens y horas-agente. La fila de totales sigue el mismo orden, y los procesos en segundo plano de cada agente se cuentan en su fila y se listan en un bloque plegable y desplazable de su diálogo.",
+    "detail": "docs/DETAIL.md"
+  }
+}

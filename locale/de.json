@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Agent-Team-Ansicht",
+    "description": "Schreibgeschützte Ansicht des Agent-Team-Boards in der rechten Seitenleiste, geöffnet über die Board-Schaltfläche links neben Subagents im Sitzungskopf oder über einen eigenen Tab: Die Spalten folgen dem Aufgabenstatus, eine Karte öffnet einen Inspektor mit Abhängigkeiten und Schreibbereichen, und die Unteragenten sind nach Status gruppiert, mit Laufzeit, Hintergrundzeit, Tokens und Agentenstunden. Die Summenzeile folgt derselben Reihenfolge, und die Hintergrundprozesse jedes Agenten werden in seiner Zeile gezählt und in seinem Dialog als einklappbare, scrollbare Liste gezeigt.",
+    "detail": "docs/DETAIL.md"
+  }
+}

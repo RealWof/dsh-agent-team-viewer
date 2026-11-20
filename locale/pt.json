@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Visualizador do quadro do Agent Team",
+    "description": "Visualizador somente leitura do quadro do Agent Team no painel direito, aberto pelo botão de quadro à esquerda de Subagents no cabeçalho da sessão ou pela própria aba: as colunas seguem o status das tarefas, um cartão abre um inspetor por blocos com dependências e escopos de escrita, e a árvore de subagentes é agrupada por status com tempo de execução, tempo em segundo plano, tokens e horas-agente. A linha de totais segue a mesma ordem, e os processos em segundo plano de cada agente são contados na sua linha e listados em um bloco recolhível e rolável no seu diálogo.",
+    "detail": "docs/DETAIL.md"
+  }
+}

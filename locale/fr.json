@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Visionneuse du tableau Agent Team",
+    "description": "Visionneuse en lecture seule du tableau Agent Team dans le panneau de droite, ouverte par le bouton de tableau à gauche de Subagents dans l'en-tête de session ou par son propre onglet : les colonnes suivent l'état des tâches, une carte ouvre un inspecteur par blocs avec les dépendances et les périmètres d'écriture, et l'arbre des sous-agents est regroupé par état avec le temps d'exécution, le temps en arrière-plan, les tokens et les heures-agent. La ligne de totaux suit le même ordre, et les processus en arrière-plan de chaque agent sont comptés dans sa ligne et listés dans un bloc repliable et défilant de sa boîte de dialogue.",
+    "detail": "docs/DETAIL.md"
+  }
+}

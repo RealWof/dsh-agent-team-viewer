@@ -1,0 +1,5 @@
+# Agent Team viewer bundle: one Host row so the bundle activates, plus the
+# Client half that draws the read-only board tab and its header button.
+- insert:
+    - id: agent-team-viewer
+      name: 'dsh-agent-team-viewer'

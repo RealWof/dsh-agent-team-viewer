@@ -1,0 +1,106 @@
+name: Bug report
+description: Something is broken, renders incorrectly, or does not install · Что-то сломалось
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. **По-китайски и по-русски тоже можно** — ответим на любом из трёх языков.
+        / 也可以用中文或俄语提交。
+
+        Security problems must not be posted publicly: use
+        [private vulnerability reporting](https://github.com/RealWof/dsh-agent-team-viewer/security/advisories/new).
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you see, and what did you expect instead?
+      placeholder: The board shows no background chip even though the agent has a running job.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Minimal steps from a clean session or install.
+      placeholder: |
+        1. Open a session ...
+        2. Click the board button ...
+        3. The panel shows ...
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      description: Release tag or commit (`git log -1`); use `unknown` for a link install.
+      placeholder: 0.1.0
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation
+      options:
+        - npm package (dsh-agent-team-viewer)
+        - GitHub (github:RealWof/dsh-agent-team-viewer)
+        - Local directory / link
+        - Other (describe in the notes)
+    validations:
+      required: true
+  - type: dropdown
+    id: profile
+    attributes:
+      label: DSH profile
+      options:
+        - web
+        - desktop
+        - not sure
+    validations:
+      required: true
+  - type: input
+    id: environment
+    attributes:
+      label: Environment
+      description: DSH version, Node version, OS, and the browser if the problem is visual.
+      placeholder: DSH 0.2.2-rc.5, Node 22, Windows 11, Chrome 131
+    validations:
+      required: true
+  - type: dropdown
+    id: team-mode
+    attributes:
+      label: Team mode in the session
+      options:
+        - On
+        - Off — retained tasks still visible
+        - Off — empty board
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: other-plugins
+    attributes:
+      label: Other plugins and themes
+      description: List installed DSH plugins with versions (especially themes and dsh-cost-meter, https://github.com/Han-1413141/dsh-cost-meter), or write "none".
+      placeholder: |
+        dsh-cost-meter 1.x
+        Theme: ...
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs and screenshots
+      description: Console output, `dsh` logs, screenshots. Redact API keys, tokens, session ids and account data.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and the changelog.
+          required: true
+        - label: I removed secrets, tokens and private workspace data from the report.
+          required: true

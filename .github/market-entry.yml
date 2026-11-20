@@ -1,0 +1,16 @@
+# Catalog entry for the DSH community plugin market.
+#
+# Paste this file into https://github.com/awesome-dsh-plugin/awesome-dsh-plugin
+# as `data/plugins/RealWof__dsh-agent-team-viewer.yml` (one file per PR, <= 3).
+# Do NOT add an `npm:` key by hand: the catalog crawls it from the published
+# package.json `repository` field.
+#
+# Allowed categories: agi ui usage theme model identity session memory tools wsl
+# browser vision voice docs skill workflow git notify dev security remote market fun
+url: https://github.com/RealWof/dsh-agent-team-viewer
+name: RealWof/dsh-agent-team-viewer
+category: ui
+description:
+  en: Read-only kanban view of the Agent Team board, with the subagent tree grouped by status, per-agent run time, background time, tokens and agent-hours, and each agent's background processes counted in its row and listed in its dialog.
+  zh: 只读的 Agent Team 看板视图，按状态分组显示子代理树，提供每个代理的运行时长、后台耗时、Token 与代理工时，并在代理行内计数、在对话框中列出其后台进程。
+icon: https://raw.githubusercontent.com/RealWof/dsh-agent-team-viewer/main/assets/icon-180.png

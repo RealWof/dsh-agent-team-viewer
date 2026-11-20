@@ -1,0 +1,7 @@
+{
+  "meta": {
+    "title": "Agent Team viewer",
+    "description": "A read-only viewer of the Agent Team board in the right panel, opened from the board button left of Subagents in a session header or from its own tab: kanban columns follow task status, a card opens a block inspector with dependencies and write scopes, and the subagent tree is grouped by status with run time, background time, tokens and agent-hours. The totals row keeps the same order, and each agent's background processes are counted in its row and listed in a foldable, scrollable block in its dialog.",
+    "detail": "docs/DETAIL.md"
+  }
+}

@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['20', '22']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Rebuild the browser bundle from its fragments
+        run: node scripts/build-client.js
+
+      - name: The committed bundle must match its sources
+        run: git diff --exit-code -- client.js
+
+      - name: Check every generated and source file for syntax errors
+        run: |
+          node --check client.js
+          node --check index.js
+          node --check src/client/00-header.js
+
+      - name: Localization and identity check
+        run: node scripts/check-i18n.mjs
+
+      - name: Run the headless smoke test
+        run: node scripts/smoke.mjs
+
+      - name: Check the published file list
+        run: node scripts/check-pack.mjs
+
+      - name: No private paths in the shipped docs
+        shell: bash
+        run: |
+          if grep -rInE 'C:\\\\Users|/Users/|~/\.dsh' README.md README.zh.md README.ru.md docs/ locale/; then
+            echo '::error::a private absolute path leaked into the docs'
+            exit 1
+          fi

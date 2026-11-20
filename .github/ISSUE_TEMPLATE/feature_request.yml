@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest an improvement · Предложить улучшение
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the idea. **По-китайски и по-русски тоже можно** — ответим на любом из трёх языков.
+        / 也可以用中文或俄语提交.
+
+        This plugin is deliberately read-only: it never claims, completes, reassigns or deletes a task,
+        and it does not add a kill switch or terminal output. Keep that boundary in mind.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What is hard or impossible today? How do you work around it?
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: How should it work, where should it live, and which data should it read?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and context
+      description: Other options, mockups or links; say if the change would need task mutation.
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched the existing issues and the changelog.
+          required: true
+        - label: The request can be implemented without changing tasks or exposing job output.
+          required: true
