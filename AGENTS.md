@@ -46,5 +46,6 @@ private path.
 ## Release
 
 Publish only on an explicit request. Add the `CHANGELOG.md` section first, then use
-`npm run release` (dry run) and `npm run release:publish` (publish, commit and tag; it never pushes).
-Update the README version badges through the script, not by hand.
+`npm run release` (dry run) and `npm run release:publish` (publish, commit and tag; it never pushes),
+or push a `v*` tag and let `.github/workflows/release.yml` publish through trusted publishing. Update
+the README version badges through the script, not by hand.

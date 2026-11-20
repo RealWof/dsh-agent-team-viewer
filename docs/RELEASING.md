@@ -102,6 +102,30 @@ In the app: **Settings → Plugins** shows a `dsh-agent-team-viewer` row with it
 (Team mode on or off — retained tasks are visible either way), click the board button in the header,
 and check the panel renders.
 
+## Trusted publishing (GitHub Actions)
+
+The package is set up for trusted publishing; `.github/workflows/release.yml` runs on `v*` tags and
+publishes with OIDC, without a token or OTP. One-time npm configuration: package **Settings → Trusted
+Publisher → GitHub Actions** with owner `RealWof`, repository `dsh-agent-team-viewer`, workflow
+filename `release.yml`, and **`npm publish` allowed** (not only staged publishing).
+
+Requirements: npm CLI 11.5.1+, Node 22.14+, GitHub-hosted runner. The workflow uses Node 24. If the
+workflow gets a 403/OIDC error, check the workflow filename and the allowed action in the npm setting.
+
+Future release flow:
+
+1. Add the `## [x.y.z]` CHANGELOG section, bump `package.json` (for example `npm version patch
+   --no-git-tag-version`), and update the version badge in the three READMEs.
+2. Commit, tag `vX.Y.Z`, and push the tag:
+   ```sh
+   git tag -a vX.Y.Z -m vX.Y.Z
+   git push origin main --follow-tags
+   ```
+3. The Release workflow verifies that the tag matches `package.json`, rebuilds and publishes.
+
+The manual `npm run release:publish` path remains for a local release or an emergency. Do not publish
+the same version through both paths.
+
 ## 5. Push the tag and create the GitHub release
 
 `release:publish` creates the annotated `vX.Y.Z` tag locally; it does not push. Push both the release
@@ -187,6 +211,7 @@ and open `https://awesome-dsh-plugin.com/p/RealWof/dsh-agent-team-viewer/`.
 
 | Symptom | Cause and fix |
 |---|---|
+| Release workflow gets 403/OIDC errors | The trusted publisher must name this repository, the workflow filename `release.yml`, and allow **`npm publish`**. The pushed tag must equal `v` + `package.json` version. |
 | Install rejected: *"Cannot validate installed package … is not valid JSON"* | a UTF-8 **BOM** at the start of `package.json`; rewrite it without BOM |
 | Market says the plugin is not in the curated registry | the entry is not merged yet, or `url` differs from the real repository URL |
 | `dsh plugin add` installs but nothing appears | the bundle has no `dsh.bundle.patch` row, or the client artifact id ≠ package name |

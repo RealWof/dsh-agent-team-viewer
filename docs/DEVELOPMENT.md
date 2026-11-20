@@ -87,7 +87,8 @@ eight-locale parity intact.
 
 ## Release
 
-See [releasing](RELEASING.md). The short version:
+See [releasing](RELEASING.md). For CI, push a `v*` tag: `.github/workflows/release.yml` verifies the
+tag against `package.json` and publishes through trusted publishing. For a local release:
 
 ```sh
 npm run release            # dry run: checks and pack preview
