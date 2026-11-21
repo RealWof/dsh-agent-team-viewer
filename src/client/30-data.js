@@ -505,24 +505,45 @@
 
     /* ------------------------------------------------------------------ *
      * Agent grouping: there is no role API in the Host, so a role is derived
-     * from the preset the session reported, else from the agent name. Custom
-     * groups come from the Settings editor and match substrings of the role,
-     * name, preset or id. The Lead is pinned before every group.
+     * from the agent's name, else from the preset the session reported. A name
+     * is what a person actually sees ("builder", "integrator"); the preset is
+     * the harness default ("standard"), so preferring it would fold every
+     * default agent into one meaningless group. Custom groups come from the
+     * Settings editor and match substrings of the role, name, preset or id.
+     * The Lead is pinned before every group.
      * ------------------------------------------------------------------ */
 
+    /** Names that carry no role information; the preset answers for them. */
+    const GENERIC_ROLE_NAME = /^(agent|subagent|assistant|worker|session)\d*$/
+
     /**
-     * The role key of an agent: the preset when the session has one, else the
-     * name, lower-cased and without a trailing ordinal (`builder-2` -> builder,
-     * `builder2` -> builder).
+     * Reduce a name or preset to its role key.
+     * @param value - the raw name or preset.
+     * @returns the lower-case role, without a trailing ordinal (`builder-2` -> builder).
+     */
+    function normalizeRoleKey(value) {
+      return typeof value === 'string'
+        ? value.trim().toLowerCase().replace(/[-_\s]?\d+$/, '').trim()
+        : ''
+    }
+
+    /**
+     * The role key of an agent: its name first (lower-cased and without a
+     * trailing ordinal, `builder-2` -> builder), falling back to the preset
+     * when the name is empty or generic (`agent-2`, `session-…`). A raw name
+     * stays the last resort even when generic, so an unnamed agent is never
+     * filed under the harness's `standard` preset.
      * @param agent - one agent entry.
      * @returns the lower-case role key, or `other` when nothing is left.
      */
     function roleKeyOf(agent) {
-      const preset = typeof agent?.preset === 'string' ? agent.preset.trim() : ''
       const name = typeof agent?.name === 'string' ? agent.name.trim() : ''
-      const source = preset !== '' ? preset : name
-      const stripped = source.toLowerCase().replace(/[-_\s]?\d+$/, '').trim()
-      return stripped !== '' ? stripped : 'other'
+      const preset = typeof agent?.preset === 'string' ? agent.preset.trim() : ''
+      const fromName = normalizeRoleKey(name)
+      if (fromName !== '' && !GENERIC_ROLE_NAME.test(fromName)) return fromName
+      const fromPreset = normalizeRoleKey(preset)
+      if (fromPreset !== '') return fromPreset
+      return fromName !== '' ? fromName : 'other'
     }
 
     /**

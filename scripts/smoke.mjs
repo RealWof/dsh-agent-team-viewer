@@ -613,13 +613,16 @@ const sharedRoleState = (() => {
   const next = JSON.parse(JSON.stringify(listState))
   next.byId['session-b'].running = true
   next.projectionsBySession['session-b'].values.agentPreset = 'standard'
+  // The role now comes from the name first; `builder-2` shares `builder`.
+  next.projectionsBySession.root.values.subagentCatalog
+    .find(entry => entry.id === 'session-b').name = 'builder-2'
   return next
 })()
 for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
 resetHooks()
 const sharedRole = surface(tabBody({ ...props, useSessions: selector => selector(sharedRoleState) }))
 const sharedActive = sharedRole.nodes.find(node => node.props?.['data-agent-column'] === 'active')
-const roleHead = within(sharedActive, node => node.props?.['data-target'] === 'agents:active:role:standard')[0]
+const roleHead = within(sharedActive, node => node.props?.['data-target'] === 'agents:active:role:builder')[0]
 check(roleHead !== undefined, 'two agents sharing a role did not get a nested group head')
 check(roleHead?.props?.['data-subgroup'] === 'true', 'the nested group head is not marked as a subgroup')
 check(within(roleHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '2',
@@ -633,12 +636,33 @@ roleHead?.props?.onClick?.()
 resetHooks()
 const roleFolded = surface(tabBody({ ...props, useSessions: selector => selector(sharedRoleState) }))
 const foldedRoleHead = within(roleFolded.nodes.find(node => node.props?.['data-agent-column'] === 'active'),
-  node => node.props?.['data-target'] === 'agents:active:role:standard')[0]
+  node => node.props?.['data-target'] === 'agents:active:role:builder')[0]
 check(foldedRoleHead?.props?.['aria-expanded'] === 'false', 'the nested group head did not report the folded state')
 check(within(roleFolded.nodes.find(node => node.props?.['data-agent-column'] === 'active'),
   node => node.props?.className === 'tk-agent-row').length === 1,
 'the folded nested group left its rows rendered')
 foldedRoleHead?.props?.onClick?.()
+
+// The harness default preset is still named `standard`; the role key must not
+// turn it into one group when the agents have real names.
+check(!sharedRole.nodes.some(node => String(node.props?.['data-target'] ?? '').includes('role:standard')),
+  'the harness default preset still names an agent group')
+// A generic name falls back to the preset, so two unnamed agents still group.
+const genericNameState = (() => {
+  const next = JSON.parse(JSON.stringify(listState))
+  next.byId['session-b'].running = true
+  next.projectionsBySession['session-b'].values.agentPreset = 'standard'
+  next.projectionsBySession.root.values.subagentCatalog
+    .find(entry => entry.id === 'session-a').name = 'agent-2'
+  next.projectionsBySession.root.values.subagentCatalog
+    .find(entry => entry.id === 'session-b').name = 'agent-3'
+  return next
+})()
+resetHooks()
+const genericNameBoard = surface(tabBody({ ...props, useSessions: selector => selector(genericNameState) }))
+const genericActive = genericNameBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+check(within(genericActive, node => node.props?.['data-target'] === 'agents:active:role:standard').length === 1,
+  'a generic agent name did not fall back to the preset role')
 
 /* Navigation: name -> main view, panel icon -> beside, owner -> main view. */
 within(rowOf('session-a'), node => node.props?.className === 'tk-agent-name')[0]?.props?.onClick?.()
