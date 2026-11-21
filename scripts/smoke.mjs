@@ -710,6 +710,34 @@ check(withTask.texts.includes('agentOpen') && withTask.texts.includes('agentOpen
   'the task dialog lost one of its agent actions')
 check(withTask.nodes.some(node => node.props?.className === 'tk-stats'), 'the task dialog shows no compact agent metrics')
 
+/* The task dialog is two columns: facts on the left, Markdown on the right. */
+const taskDialog = withTask.nodes.find(node => node.props?.['data-task-id'] === 'task-1'
+  && node.props?.role === 'dialog')
+check(taskDialog?.props?.['data-layout'] === 'task', 'the task dialog does not opt into the wide two-column layout')
+const splitBody = within(taskDialog, node => node.props?.className === 'tk-insp-body tk-insp-split')[0]
+check(splitBody !== undefined, 'the task dialog body is not the two-column grid')
+const metaColumn = within(splitBody, node => node.props?.['data-inspector-column'] === 'meta')[0]
+const textColumn = within(splitBody, node => node.props?.['data-inspector-column'] === 'text')[0]
+check(metaColumn !== undefined && textColumn !== undefined, 'the task dialog is missing a column')
+const metaTexts = surface(metaColumn).texts
+check(metaTexts.includes('taskTimeline') && metaTexts.includes('agentHeading')
+  && metaTexts.includes('dependencies') && metaTexts.includes('writeScopes'),
+'the metadata column lost a task block')
+check(!metaTexts.includes('Draw the columns.'), 'the description still lives in the metadata column')
+const descriptionProse = within(textColumn, node => node.props?.className === 'tk-insp-prose')[0]
+check(descriptionProse?.props?.tabIndex === 0 && descriptionProse?.props?.role === 'tabpanel',
+  'the Markdown scroll box is not a focusable tab panel')
+check(descriptionProse?.props?.['data-tabpanel'] === 'description',
+  'the Description tab does not draw its own scroll panel')
+check(surface(descriptionProse).texts.includes('Draw the columns.'), 'the Markdown column lost the description text')
+check(within(textColumn, node => node.props?.className === 'tk-tabs').length === 1,
+  'the Description/Report tabs are not in the text column')
+check(within(metaColumn, node => node.props?.className === 'tk-tabs').length === 0,
+  'the tabs are still in the metadata column')
+check(artifact.includes('.tk-insp[data-layout="task"]{width:min(920px'), 'the task dialog is not widened in the stylesheet')
+check(artifact.includes('.tk-insp-prose{'), 'the Markdown scroll box has no stylesheet rule')
+check(artifact.includes('@media (max-width:640px)'), 'the two-column layout has no narrow-screen fallback')
+
 /* Every write scope is a real link; a folder asks for the Files page instead. */
 const scopeLinks = withTask.nodes.filter(node => node.props?.className === 'tk-file-link')
 check(scopeLinks.length === 2, 'the write scopes are not rendered as links, got ' + scopeLinks.length)
@@ -815,6 +843,7 @@ check(atText('statsHeading') < atText('stateLabel') && atText('stateLabel') < at
 /* Both lists scroll inside the dialog and fold from their headers. */
 const dialogNode = withAgent.nodes.find(node => node.props?.['data-agent-dialog'] === 'session-a')
 check(dialogNode?.props?.style?.zoom === 1, 'the agent dialog does not use the default dialog scale')
+check(dialogNode?.props?.['data-layout'] === undefined, 'the agent dialog picked up the task two-column layout')
 const metricTiles = within(dialogNode, node => node.props?.className === 'tk-metric')
 const backgroundTile = metricTiles.find(tile => surface(tile).texts.includes('metricBackground'))
 check(backgroundTile !== undefined, 'the agent dialog has no background-time tile')

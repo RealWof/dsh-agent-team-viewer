@@ -1907,6 +1907,22 @@ window.__ModuleLoader__.load({
 .tk-insp-title{margin:0;font-size:14px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
 .tk-insp-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
 .tk-insp-body{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;padding:12px 14px 16px}
+.tk-insp[data-layout="task"]{width:min(920px,100%);max-width:min(920px,96vw)}
+.tk-insp-split{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.08fr);gap:14px;align-items:stretch;
+  flex:1 1 auto;min-height:0;overflow:hidden}
+.tk-insp-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;overflow:auto;
+  overscroll-behavior:contain;padding-right:2px}
+.tk-insp-main{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;overflow:hidden}
+.tk-insp-main .tk-tabs{padding:0}
+.tk-insp-prose{flex:1 1 auto;min-width:0;min-height:0;max-height:min(54vh,460px);overflow:auto;
+  overscroll-behavior:contain;padding-right:2px}
+.tk-insp-aside:focus-visible,.tk-insp-prose:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));
+  outline-offset:2px;border-radius:var(--dsw-radius-sm)}
+@media (max-width:640px){
+  .tk-insp-split{display:flex;flex-direction:column;overflow:auto}
+  .tk-insp-aside,.tk-insp-main{overflow:visible;max-height:none}
+  .tk-insp-prose{max-height:none;overflow:visible}
+}
 .tk-tabs{display:flex;align-items:center;gap:2px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
 .tk-tab{position:relative;padding:6px 8px;border:0;border-bottom:2px solid transparent;background:transparent;
   color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
@@ -5655,10 +5671,9 @@ window.__ModuleLoader__.load({
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
 
-      const descriptionBlock = h(Section, { title: t('description'), icon: 'pen' },
-        description === ''
-          ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
-          : h(Markdown, { text: description, onOpenFile, t }))
+      const descriptionPane = description === ''
+        ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
+        : h(Markdown, { text: description, onOpenFile, t })
 
       const timelineBlock = h(Section, {
         title: t('taskTimeline'),
@@ -5783,15 +5798,37 @@ window.__ModuleLoader__.load({
         tabButton('description', t('description')),
         tabButton('report', t('taskReport')))
 
-      const body = activeTab === 'report'
-        ? h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'report' },
-          h(Section, { title: t('taskReport'), icon: 'eye' }, reportBlock))
-        : h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'description' },
-          descriptionBlock,
-          timelineBlock,
-          agentBlock,
-          depsBlock,
-          scopesBlock)
+      // The dialog body is two columns: the task's own facts on the left and
+      // the Description/Report text on the right. Each column scrolls on its
+      // own, so a long text never pushes the metadata out of the dialog.
+      const metadata = h('div', {
+        className: 'tk-insp-aside',
+        'data-inspector-column': 'meta',
+        tabIndex: 0,
+        role: 'group',
+        'aria-label': t('inspectorTitle'),
+      }, timelineBlock, agentBlock, depsBlock, scopesBlock)
+
+      const pane = activeTab === 'report'
+        ? h('div', {
+          className: 'tk-insp-prose',
+          role: 'tabpanel',
+          'data-tabpanel': 'report',
+          tabIndex: 0,
+          'aria-label': t('taskReport'),
+        }, reportBlock)
+        : h('div', {
+          className: 'tk-insp-prose',
+          role: 'tabpanel',
+          'data-tabpanel': 'description',
+          tabIndex: 0,
+          'aria-label': t('description'),
+        }, descriptionPane)
+
+      const textColumn = h('div', { className: 'tk-insp-main', 'data-inspector-column': 'text' },
+        tabs,
+        pane)
+      const body = h('div', { className: 'tk-insp-body tk-insp-split' }, metadata, textColumn)
 
       const dialog = h('div', {
         className: 'tk-insp',
@@ -5799,10 +5836,10 @@ window.__ModuleLoader__.load({
         'aria-modal': 'true',
         'aria-label': t('inspectorTitle'),
         'data-task-id': task.id,
+        'data-layout': 'task',
         style: { zoom: viewSettings.dialogScale },
       },
       head,
-      tabs,
       body)
 
       return h(Portal, null,

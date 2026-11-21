@@ -51,6 +51,11 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Changed
 
+- The task dialog is two columns on wide screens: the timeline, agent block, dependencies and write
+  scopes keep the left column, while the Description/Report tabs and their Markdown sit in a right
+  column with its own scroll box (`.tk-insp-prose`). Both columns scroll independently, so a long
+  description never pushes the task's statistics below the fold; below 640px the columns stack and the
+  dialog body scrolls as before.
 - The agents header no longer shows the old static open-chat hint; the action moved into each row and
   its name control.
 - The agents strip now derives a role from the agent's name before its preset, so the harness default

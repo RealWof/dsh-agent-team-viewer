@@ -105,10 +105,9 @@
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
 
-      const descriptionBlock = h(Section, { title: t('description'), icon: 'pen' },
-        description === ''
-          ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
-          : h(Markdown, { text: description, onOpenFile, t }))
+      const descriptionPane = description === ''
+        ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
+        : h(Markdown, { text: description, onOpenFile, t })
 
       const timelineBlock = h(Section, {
         title: t('taskTimeline'),
@@ -233,15 +232,37 @@
         tabButton('description', t('description')),
         tabButton('report', t('taskReport')))
 
-      const body = activeTab === 'report'
-        ? h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'report' },
-          h(Section, { title: t('taskReport'), icon: 'eye' }, reportBlock))
-        : h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'description' },
-          descriptionBlock,
-          timelineBlock,
-          agentBlock,
-          depsBlock,
-          scopesBlock)
+      // The dialog body is two columns: the task's own facts on the left and
+      // the Description/Report text on the right. Each column scrolls on its
+      // own, so a long text never pushes the metadata out of the dialog.
+      const metadata = h('div', {
+        className: 'tk-insp-aside',
+        'data-inspector-column': 'meta',
+        tabIndex: 0,
+        role: 'group',
+        'aria-label': t('inspectorTitle'),
+      }, timelineBlock, agentBlock, depsBlock, scopesBlock)
+
+      const pane = activeTab === 'report'
+        ? h('div', {
+          className: 'tk-insp-prose',
+          role: 'tabpanel',
+          'data-tabpanel': 'report',
+          tabIndex: 0,
+          'aria-label': t('taskReport'),
+        }, reportBlock)
+        : h('div', {
+          className: 'tk-insp-prose',
+          role: 'tabpanel',
+          'data-tabpanel': 'description',
+          tabIndex: 0,
+          'aria-label': t('description'),
+        }, descriptionPane)
+
+      const textColumn = h('div', { className: 'tk-insp-main', 'data-inspector-column': 'text' },
+        tabs,
+        pane)
+      const body = h('div', { className: 'tk-insp-body tk-insp-split' }, metadata, textColumn)
 
       const dialog = h('div', {
         className: 'tk-insp',
@@ -249,10 +270,10 @@
         'aria-modal': 'true',
         'aria-label': t('inspectorTitle'),
         'data-task-id': task.id,
+        'data-layout': 'task',
         style: { zoom: viewSettings.dialogScale },
       },
       head,
-      tabs,
       body)
 
       return h(Portal, null,
