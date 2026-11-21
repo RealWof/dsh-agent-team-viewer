@@ -4800,13 +4800,15 @@ window.__ModuleLoader__.load({
     /**
      * One status group's header. The whole row is the disclosure button, so a
      * click anywhere on it folds the pile; the count sits in the row and
-     * therefore stays visible while the group is folded. A nested head (a
-     * role or custom group inside an agent status column) is marked with
-     * `data-subgroup` and painted slightly smaller.
-     * @param props - `groupId`, `state`, `title`, `count`, `expanded`, `label`,
+     * therefore stays visible while the group is folded. The header carries no
+     * state dot: the task card and the agent row own that colour, so a header
+     * reads as chevron + title + count. A nested head (a role or custom group
+     * inside an agent status column) is marked with `data-subgroup` and
+     * painted slightly smaller.
+     * @param props - `groupId`, `title`, `count`, `expanded`, `label`,
      *   `onToggle`, and `subgroup` for a nested head.
      */
-    function GroupHead({ groupId, state, title, count, expanded, label, onToggle, subgroup = false }) {
+    function GroupHead({ groupId, title, count, expanded, label, onToggle, subgroup = false }) {
       return h('button', {
         type: 'button',
         className: 'tk-col-head tk-col-fold',
@@ -4819,7 +4821,6 @@ window.__ModuleLoader__.load({
         onClick: () => { onToggle(groupId, count) },
       },
       h(Icon, { name: 'chevron-down', size: 11, className: 'tk-chevron' }),
-      h(StateDot, { state, size: 9 }),
       h('span', { className: 'tk-col-title' }, title),
       h('span', { className: 'tk-col-count' }, String(count)))
     }
@@ -4908,7 +4909,6 @@ window.__ModuleLoader__.load({
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
             groupId: subgroupId,
-            state: column.state,
             title,
             count: unit.tasks.length,
             expanded: !folded,
@@ -4933,7 +4933,6 @@ window.__ModuleLoader__.load({
       return h('section', { className: 'tk-col', 'data-column': column.key },
         h(GroupHead, {
           groupId,
-          state: column.state,
           title,
           count,
           expanded: !collapsed,
@@ -5345,7 +5344,6 @@ window.__ModuleLoader__.load({
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
             groupId: subgroupId,
-            state: column.state,
             title,
             count: unit.agents.length,
             expanded: !folded,
@@ -5405,8 +5403,7 @@ window.__ModuleLoader__.load({
                 },
                 h(GroupHead, {
                   groupId,
-                  state: column.state,
-                  title,
+                        title,
                   count,
                   expanded: !folded,
                   label: (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,

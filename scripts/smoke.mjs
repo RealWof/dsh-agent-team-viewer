@@ -446,6 +446,16 @@ const within = (node, predicate) => {
   return hits
 }
 
+/* Group headers are chevron + title + count only: no state dot. Cards and
+   agent rows keep theirs. */
+const groupHeadNodes = board.nodes.filter(node => node.props?.['data-fold'] === 'group')
+check(groupHeadNodes.length > 0, 'the board has no group header')
+check(groupHeadNodes.every(head => within(head, node => node.props?.className === 'tk-state').length === 0),
+  'a group header still carries a state dot')
+check(board.nodes.some(node => node.props?.className === 'tk-state'), 'the task cards lost their state dot')
+check(within(rowOf('session-a'), node => node.props?.className === 'tk-state').length > 0,
+  'the agent row lost its state dot')
+
 const agentMetricsRow = within(rowOf('session-a'), node => node.props?.className === 'tk-agent-meta')
 check(agentMetricsRow.length === 1, 'the agent row has no metric line')
 const agentStats = within(rowOf('session-a'), node => node.props?.className === 'tk-stat')
@@ -630,6 +640,8 @@ check(roleHead !== undefined, 'two agents sharing a role did not get a nested gr
 check(roleHead?.props?.['data-subgroup'] === 'true', 'the nested group head is not marked as a subgroup')
 check(within(roleHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '2',
   'the nested group head does not count its members')
+check(within(roleHead, node => node.props?.className === 'tk-state').length === 0,
+  'a nested group head still carries a state dot')
 check(within(sharedActive, node => node.props?.className === 'tk-agent-row').length === 3,
   'the nested role group did not render its two members under the lead')
 const sharedRows = within(sharedActive, node => node.props?.className === 'tk-agent-row')
