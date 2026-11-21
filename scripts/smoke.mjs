@@ -788,6 +788,10 @@ const manyExpanded = surface(tabBody(propsWith(bulkState('pending', 8))))
 const expandedQueued = manyExpanded.nodes.find(node => node.props?.['data-column'] === 'queued')
 check(within(expandedQueued, node => node.props?.['data-task-id'] !== undefined).length === 8,
   'the show-all control did not render the whole pile')
+const scrollBox = manyExpanded.nodes.find(node => node.props?.className === 'tk-col-items')
+check(scrollBox?.props?.['data-scroll'] === 'true', 'the expanded pile does not scroll inside its column')
+check(within(scrollBox, node => node.props?.['data-task-id'] !== undefined).length === 8,
+  'the show-all scroll box does not hold the whole pile')
 const lessControl = manyExpanded.nodes.find(node => node.props?.className === 'tk-more tk-more-less')
 check(lessControl !== undefined, 'the expanded group has no show-less control')
 check(foldState()?.groups?.['tasks:queued'] !== true, 'the session expansion leaked into the stored fold state')

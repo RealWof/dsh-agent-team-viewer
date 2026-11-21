@@ -196,7 +196,9 @@
     /**
      * The items of one expanded status group: capped at VISIBLE_LIMIT until
      * the reader asks for the rest of the pile. The cap is view state only,
-     * while the header count always comes from the data.
+     * while the header count always comes from the data. A pile expanded past
+     * the cap scrolls inside its own column, so the panel does not grow with
+     * it; the show-less control stays below the scroll box.
      * @param props - `groupId`, `count`, `t`, `renderEmpty`, `renderItem`,
      *   `onExpand`, `onCollapse`.
      */
@@ -206,8 +208,11 @@
       const shown = capped ? VISIBLE_LIMIT : count
       const items = []
       for (let index = 0; index < shown; index += 1) items.push(renderItem(index))
+      const scroll = expanded && count > VISIBLE_LIMIT
       return h('div', { className: 'tk-col-body', 'data-group-body': groupId },
-        count === 0 ? renderEmpty() : items,
+        count === 0
+          ? renderEmpty()
+          : (scroll ? h('div', { className: 'tk-col-items', 'data-scroll': 'true' }, items) : items),
         count <= VISIBLE_LIMIT
           ? null
           : h(OverflowToggle, {

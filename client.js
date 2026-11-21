@@ -1592,6 +1592,8 @@ window.__ModuleLoader__.load({
   font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;line-height:14px;font-variant-numeric:tabular-nums;
   color:var(--dsw-alias-label-secondary)}
 .tk-col-body{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:24px}
+.tk-col-items{display:flex;flex-direction:column;gap:5px;min-width:0;max-height:min(340px,52vh);
+  overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
 .tk-col-empty{font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
   padding:5px 6px;border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm)}
 .tk-chevron{flex:none;transition:transform .12s ease}
@@ -3618,7 +3620,9 @@ window.__ModuleLoader__.load({
     /**
      * The items of one expanded status group: capped at VISIBLE_LIMIT until
      * the reader asks for the rest of the pile. The cap is view state only,
-     * while the header count always comes from the data.
+     * while the header count always comes from the data. A pile expanded past
+     * the cap scrolls inside its own column, so the panel does not grow with
+     * it; the show-less control stays below the scroll box.
      * @param props - `groupId`, `count`, `t`, `renderEmpty`, `renderItem`,
      *   `onExpand`, `onCollapse`.
      */
@@ -3628,8 +3632,11 @@ window.__ModuleLoader__.load({
       const shown = capped ? VISIBLE_LIMIT : count
       const items = []
       for (let index = 0; index < shown; index += 1) items.push(renderItem(index))
+      const scroll = expanded && count > VISIBLE_LIMIT
       return h('div', { className: 'tk-col-body', 'data-group-body': groupId },
-        count === 0 ? renderEmpty() : items,
+        count === 0
+          ? renderEmpty()
+          : (scroll ? h('div', { className: 'tk-col-items', 'data-scroll': 'true' }, items) : items),
         count <= VISIBLE_LIMIT
           ? null
           : h(OverflowToggle, {

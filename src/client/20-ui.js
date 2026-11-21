@@ -31,6 +31,8 @@
   font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;line-height:14px;font-variant-numeric:tabular-nums;
   color:var(--dsw-alias-label-secondary)}
 .tk-col-body{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:24px}
+.tk-col-items{display:flex;flex-direction:column;gap:5px;min-width:0;max-height:min(340px,52vh);
+  overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
 .tk-col-empty{font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
   padding:5px 6px;border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm)}
 .tk-chevron{flex:none;transition:transform .12s ease}
