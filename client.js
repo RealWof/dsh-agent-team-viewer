@@ -2133,8 +2133,12 @@ window.__ModuleLoader__.load({
       }
       const ids = Object.keys(next)
       if (ids.length > LEDGER_LIMIT) {
+        // `f` is the last key: a task that never started has no `s`/`c`, and
+        // without the fallback its fresh first-seen record would sort as 0 and
+        // be the first one dropped on every pass.
         ids
-          .sort((left, right) => num(next[right].c ?? next[right].s, 0) - num(next[left].c ?? next[left].s, 0))
+          .sort((left, right) => num(next[right].c ?? next[right].s ?? next[right].f, 0)
+            - num(next[left].c ?? next[left].s ?? next[left].f, 0))
           .slice(LEDGER_LIMIT)
           .forEach(id => { delete next[id] })
         changed = true
