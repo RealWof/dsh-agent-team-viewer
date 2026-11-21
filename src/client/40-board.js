@@ -23,6 +23,7 @@
       subscribeJobs: () => () => {},
       openAgent: () => {},
       openFileLink: () => {},
+      checkLocalPath: async () => undefined,
       agentLabel: (key, fallback) => fallback,
     }
 
@@ -1196,6 +1197,7 @@
         selectedTask === undefined
           ? null
           : h(TaskInspector, {
+            key: selectedTask.id,
             task: selectedTask,
             timeline: model.timelines[selectedTask.id],
             agent: selectedTask.ownerId === undefined ? undefined : model.whoById[selectedTask.ownerId],
@@ -1206,6 +1208,8 @@
             t,
             tAgent,
             costState: model.costState,
+            sessionId: model.rootId,
+            checkLocalPath: services.checkLocalPath,
             onOpenAgent: openAgent,
             onOpenFile: path => { services.openFileLink(model.rootId, path) },
             onInspect: inspectAgent,

@@ -30,12 +30,35 @@ const toElement = (type, props, ...children) => ({
 })
 
 const stateSlots = {}
+const refSlots = {}
 let hookIndex = 0
-const resetHooks = () => { hookIndex = 0 }
+let refIndex = 0
+const resetHooks = () => {
+  hookIndex = 0
+  refIndex = 0
+}
+/**
+ * When set, `useRef` keeps its box in a hook slot like React does across the
+ * re-renders of one mount. Off by default: most checks re-render the whole
+ * tree without a real mount, and the shipped hooks stay boxed per call there.
+ */
+let persistRefs = false
+/**
+ * When set, an effect's cleanup waits for `flushCleanups()` instead of running
+ * the moment the effect is created, which is what a real unmount does. Tests
+ * that keep one component mounted across re-renders turn this on.
+ */
+let deferCleanups = false
+const deferredCleanups = []
+const flushCleanups = () => {
+  const pending = deferredCleanups.splice(0)
+  for (const cleanup of pending) cleanup()
+}
 
 /** Wipe the hook slots so the next render is a fresh mount. */
 const resetSlots = () => {
   for (const key of Object.keys(stateSlots)) delete stateSlots[key]
+  for (const key of Object.keys(refSlots)) delete refSlots[key]
   resetHooks()
 }
 
@@ -52,11 +75,24 @@ const React = {
   },
   useEffect: (effect) => {
     const cleanup = effect()
-    if (typeof cleanup === 'function') cleanup()
+    if (typeof cleanup !== 'function') return
+    if (deferCleanups) {
+      deferredCleanups.push(cleanup)
+      return
+    }
+    cleanup()
   },
   useMemo: compute => compute(),
   useCallback: callback => callback,
-  useRef: initial => ({ current: initial }),
+  useRef: (initial) => {
+    if (!persistRefs) return { current: initial }
+    // A separate key space keeps `useState` indices identical to the default
+    // render, so a stale async setter from an earlier mount cannot land on a
+    // state slot this one uses.
+    const index = refIndex++
+    if (!(index in refSlots)) refSlots[index] = { current: initial }
+    return refSlots[index]
+  },
 }
 
 /* --- Browser stand-ins ------------------------------------------------ */
@@ -169,8 +205,10 @@ const listState = {
   },
 }
 
+/** The service lookup the plugin's `ctx.get` answers; tests may swap it. */
+let ctxGet = () => undefined
 const ctx = {
-  get: () => undefined,
+  get: (...args) => ctxGet(...args),
   effect: (factory, label) => {
     effects.push(label)
     const cleanup = factory()
@@ -272,6 +310,50 @@ const boardServices = boardRegistration?.inject?.('session-a')?.services
 check(boardServices !== undefined, 'the board registration injects no services')
 check(typeof boardServices?.loadAgentReport === 'function', 'the board has no agent-report reader')
 check(typeof boardServices?.openFileLink === 'function', 'the board has no write-scope opener')
+
+/* The local-path checker: folders use `list`, files use `stat`. */
+const pathCalls = []
+const fakeWorkspaceFiles = {
+  stat: async (sessionId, path) => {
+    pathCalls.push(['stat', sessionId, path])
+    if (path === 'gone.js') return { ok: false, error: { code: 'workspace-file/not-found' } }
+    if (path === 'dir') {
+      return { ok: false, error: { code: 'workspace-file/not-regular-file', details: { kind: 'directory' } } }
+    }
+    if (path === 'weird') return { ok: false, error: { code: 'gateway/bad-request' } }
+    return { ok: true, value: { absolutePath: path } }
+  },
+  list: async (sessionId, path) => {
+    pathCalls.push(['list', sessionId, path])
+    if (path === 'nodir') return { ok: false, error: { code: 'workspace-file/not-found' } }
+    return { ok: true, value: { entries: [], truncated: false } }
+  },
+}
+ctxGet = name => {
+  if (name === 'remote.workspaceFiles') return fakeWorkspaceFiles
+  if (name === 'remote') return { workspaceFiles: fakeWorkspaceFiles }
+  return undefined
+}
+check(typeof boardServices?.checkLocalPath === 'function', 'the board has no local-path checker')
+check(await boardServices.checkLocalPath('root', 'src\\client\\', undefined) === true,
+  'an existing folder is not reported as present')
+check(pathCalls[0]?.[0] === 'list' && pathCalls[0]?.[1] === 'root' && pathCalls[0]?.[2] === 'src/client',
+  'a folder path did not delegate to the workspace list, got: ' + JSON.stringify(pathCalls[0]))
+check(await boardServices.checkLocalPath('root', 'src\\client\\10-settings.js', undefined) === true,
+  'an existing file is not reported as present')
+check(pathCalls[1]?.[0] === 'stat' && pathCalls[1]?.[2] === 'src/client/10-settings.js',
+  'a file path did not delegate to stat with a normalized path: ' + JSON.stringify(pathCalls[1]))
+check(await boardServices.checkLocalPath('root', 'gone.js', undefined) === false,
+  'a not-found answer is not reported as missing')
+check(await boardServices.checkLocalPath('root', 'dir', undefined) === true,
+  'a directory a file stat rejects is not reported as present')
+check(await boardServices.checkLocalPath('root', 'nodir/', undefined) === false,
+  'a missing folder is not reported as missing')
+check(await boardServices.checkLocalPath('root', 'weird', undefined) === undefined,
+  'an unclassifiable Remote error is reported as a verdict')
+ctxGet = () => undefined
+check(await boardServices.checkLocalPath('root', 'src/client', undefined) === undefined,
+  'the checker reports a verdict without the workspace-files Remote')
 
 /* --- Walk helpers ----------------------------------------------------- */
 
@@ -2394,6 +2476,99 @@ reportFile?.props?.onClick?.()
 check(openedFiles.length === reportFilesBefore + 1
   && openedFiles[openedFiles.length - 1][1] === 'src/client/40-board.js',
 'the report file link did not call onOpenFile')
+
+/* --- Local file links are validated once per open task dialog ---------- */
+
+const localPathState = JSON.parse(JSON.stringify(listState))
+const localPathTask = localPathState.projectionsBySession.root.values.agentTeam.tasks
+  .find(task => task.id === 'task-1')
+localPathTask.description = 'See src/client/10-settings.js and missing/gone.js.'
+localPathTask.writeScopes = ['src/client', 'missing/folder/']
+const localChecks = []
+const localPathProps = {
+  ...props,
+  useSessions: selector => selector(localPathState),
+  services: {
+    ...props.services,
+    checkLocalPath: async (sessionId, path) => {
+      localChecks.push([sessionId, path])
+      if (path === 'src/client' || path === 'src/client/10-settings.js') return true
+      return false
+    },
+  },
+}
+/** Open task-1 in the local-path state and return the surface after `flush`. */
+const openLocalPathTask = async (flush) => {
+  const start = surface(tabBody(localPathProps))
+  start.nodes.find(node => typeof node.type === 'function' && node.type.name === 'TaskCard'
+    && node.props?.task?.id === 'task-1')?.props?.onOpen?.('task-1')
+  resetHooks()
+  const opened = surface(tabBody(localPathProps))
+  for (let index = 0; index < flush; index += 1) await new Promise(resolve => setTimeout(resolve, 0))
+  resetHooks()
+  return { opened, checked: surface(tabBody(localPathProps)) }
+}
+resetSlots()
+persistRefs = true
+deferCleanups = true
+resetHooks()
+const localPending = await openLocalPathTask(0)
+const pendingPlain = view => view.nodes.every(node => node.type !== 'button'
+  || (node.props?.['data-scope'] !== 'src/client/10-settings.js'
+    && node.props?.['data-scope'] !== 'missing/folder/'
+    && node.props?.['data-scope'] !== 'src/client'))
+check(pendingPlain(localPending.opened) && pendingPlain(localPending.checked),
+  'pending local paths rendered as clickable links before the check answered')
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const localView = surface(tabBody(localPathProps))
+const localExisting = localView.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/client/10-settings.js')
+check(localExisting !== undefined, 'an existing local file is not a clickable link')
+const localMissing = localView.nodes.find(node => typeof node.props?.className === 'string'
+  && node.props.className.includes('tk-md-missing'))
+check(localMissing !== undefined && surface(localMissing).joined.includes('missing/gone.js'),
+  'a missing local file did not render as plain text')
+check(localView.nodes.every(node => node.type !== 'button'
+  || node.props?.['data-scope'] !== 'missing/gone.js'), 'a missing local file is still a clickable link')
+check(localMissing?.props?.title === 'fileMissingHint', 'a missing local file has no missing-file tooltip')
+check(localMissing?.props?.tabIndex === undefined && localMissing?.props?.role === undefined,
+  'a missing local file stayed focusable')
+const localAttachments = localView.nodes.find(node => node.props?.['data-attachments'] === 'true')
+check(localAttachments !== undefined, 'the existing file lost its attachment row')
+const localAttachmentText = surface(localAttachments).joined
+check(localAttachmentText.includes('src/client/10-settings.js'), 'the attachment row lost the existing file')
+check(!localAttachmentText.includes('missing/gone.js'), 'a missing file reached the attachment row')
+check(localView.nodes.some(node => node.type === 'button' && node.props?.['data-scope'] === 'src/client'),
+  'an existing write scope is not a button')
+const localScopeMissing = localView.nodes.find(node => typeof node.props?.className === 'string'
+  && node.props.className.includes('tk-file-missing'))
+check(localScopeMissing !== undefined && surface(localScopeMissing).joined.includes('missing/folder/'),
+  'a missing write scope is not plain text')
+check(localView.nodes.every(node => node.type !== 'button'
+  || node.props?.['data-scope'] !== 'missing/folder/'), 'a missing write scope is still a button')
+const localPaths = new Set(localChecks.map(call => call[1]))
+check(localPaths.size === 4 && localChecks.length === localPaths.size,
+  'the dialog did not check every unique path exactly once: ' + JSON.stringify(localChecks))
+check(localChecks.every(call => call[0] === 'root'), 'the path checker got the wrong session id')
+const cachedPathCalls = localChecks.length
+// A later render of the same open dialog reads the cache and asks nothing new.
+resetHooks()
+surface(tabBody(localPathProps))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+check(localChecks.length === cachedPathCalls, 'a re-render re-checked paths already known: '
+  + JSON.stringify(localChecks))
+// Reopening the task remounts the dialog and throws the cache away.
+resetSlots()
+flushCleanups()
+resetHooks()
+await openLocalPathTask(4)
+check(localChecks.length === cachedPathCalls + 4,
+  'reopening the task dialog did not check the paths again: ' + JSON.stringify(localChecks))
+flushCleanups()
+deferCleanups = false
+persistRefs = false
+resetSlots()
 
 /* --- loadAgentReport waits for the chat snapshot ----------------------- */
 

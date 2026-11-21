@@ -799,6 +799,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
       openFileHint: 'Open this file in the workspace',
       openFolderHint: 'Open the workspace files page',
+      fileMissingHint: 'File not found',
       metricCostApiSpend: 'API spend',
       taskReport: 'Report',
       reportLoading: 'Loading the report…',
@@ -954,6 +955,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
       openFileHint: 'Открыть файл в рабочей области',
       openFolderHint: 'Открыть страницу файлов рабочей области',
+      fileMissingHint: 'Файл не найден',
       metricCostApiSpend: 'Расходы по API',
       taskReport: 'Отчёт',
       reportLoading: 'Загрузка отчёта…',
@@ -1109,6 +1111,7 @@ window.__ModuleLoader__.load({
       setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
       openFileHint: '在工作区中打开此文件',
       openFolderHint: '打开工作区文件页面',
+      fileMissingHint: '文件不存在',
       metricCostApiSpend: 'API 花费',
       taskReport: '报告',
       reportLoading: '正在加载报告…',
@@ -1264,6 +1267,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
       openFileHint: 'ワークスペースでこのファイルを開く',
       openFolderHint: 'ワークスペースのファイルページを開く',
+      fileMissingHint: 'ファイルが見つかりません',
       metricCostApiSpend: 'API 支出',
       taskReport: 'レポート',
       reportLoading: 'レポートを読み込み中…',
@@ -1419,6 +1423,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
       openFileHint: 'Abrir este archivo en el espacio de trabajo',
       openFolderHint: 'Abrir la página de archivos del espacio de trabajo',
+      fileMissingHint: 'Archivo no encontrado',
       metricCostApiSpend: 'Gasto de API',
       taskReport: 'Informe',
       reportLoading: 'Cargando el informe…',
@@ -1574,6 +1579,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
       openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
       openFolderHint: 'Ouvrir la page des fichiers de l’espace de travail',
+      fileMissingHint: 'Fichier introuvable',
       metricCostApiSpend: 'Dépense API',
       taskReport: 'Rapport',
       reportLoading: 'Chargement du rapport…',
@@ -1729,6 +1735,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
       openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
+      fileMissingHint: 'Datei nicht gefunden',
       metricCostApiSpend: 'API-Ausgaben',
       taskReport: 'Bericht',
       reportLoading: 'Bericht wird geladen…',
@@ -1884,6 +1891,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
       openFileHint: 'Abrir este arquivo no espaço de trabalho',
       openFolderHint: 'Abrir a página de arquivos do espaço de trabalho',
+      fileMissingHint: 'Arquivo não encontrado',
       metricCostApiSpend: 'Gasto de API',
       taskReport: 'Relatório',
       reportLoading: 'Carregando o relatório…',
@@ -2240,6 +2248,7 @@ window.__ModuleLoader__.load({
 .tk-md a,.tk-md-a{color:var(--dsw-alias-brand-primary);text-decoration:underline;overflow-wrap:anywhere}
 .tk-md-img{max-width:100%;max-height:320px;border-radius:var(--dsw-radius-sm);object-fit:contain;background:var(--dsw-alias-bg-layer-1)}
 .tk-md-plain{overflow-wrap:anywhere}
+.tk-md-missing,.tk-file-missing{color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));text-decoration:none}
 .tk-md-file{max-width:100%}
 .tk-attach{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;margin-top:2px}
 .tk-attach-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
@@ -2398,15 +2407,45 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The existence of one workspace path, asked through the task dialog's
+     * per-open cache. A renderer without a checker (the Settings page, an
+     * older host) keeps every link, which is also the fallback for an answer
+     * the dialog cannot classify.
+     * @param context - the render context.
+     * @param path - the workspace path.
+     * @returns `yes`, `no`, `pending` or `unknown`.
+     */
+    function markdownPathStatus(context, path) {
+      if (typeof context.statusOf !== 'function') return 'unknown'
+      try {
+        const status = context.statusOf(path)
+        return status === 'yes' || status === 'no' || status === 'pending' ? status : 'unknown'
+      } catch {
+        return 'unknown'
+      }
+    }
+
+    /**
      * One workspace file reference as a button, so a click opens it in the
-     * shipped resource viewer instead of navigating the page.
+     * shipped resource viewer instead of navigating the page. A path the
+     * dialog knows to be missing stays plain text, and one still being
+     * checked is plain until the answer arrives — a dead link never flashes
+     * in as clickable.
      * @param path - the workspace path.
      * @param label - the visible label.
      * @param context - the render context.
      * @param key - the React key.
-     * @returns the button node.
+     * @returns the button node, or the plain-text node.
      */
     function markdownFileNode(path, label, context, key) {
+      const status = markdownPathStatus(context, path)
+      if (status === 'no' || status === 'pending') {
+        return h('span', {
+          key,
+          className: status === 'no' ? 'tk-mono tk-md-missing' : 'tk-mono',
+          title: status === 'no' ? context.t('fileMissingHint') : undefined,
+        }, label)
+      }
       const folder = isFolderScope(path)
       const hint = folder ? context.t('openFolderHint') : context.t('openFileHint')
       return h('button', {
@@ -2436,6 +2475,14 @@ window.__ModuleLoader__.load({
       }
       if (target.kind === 'file' && target.resource === true) {
         markdownRemember(context, target.path)
+        const status = markdownPathStatus(context, target.path)
+        if (status === 'no' || status === 'pending') {
+          return h('span', {
+            key,
+            className: status === 'no' ? 'tk-md-plain tk-md-missing' : 'tk-md-plain',
+            title: status === 'no' ? context.t('fileMissingHint') : undefined,
+          }, alt !== '' ? alt : target.path)
+        }
         return h('img', { key, className: 'tk-md-img', src: target.href, alt, loading: 'lazy' })
       }
       if (target.kind === 'file') {
@@ -2725,18 +2772,25 @@ window.__ModuleLoader__.load({
     /**
      * Render one description or report as safe Markdown plus attachment chips.
      * The task record carries no attachment field, so file references in the
-     * text itself are what the chips collect.
-     * @param props - `text`, optional `onOpenFile` and `t`.
+     * text itself are what the chips collect. A reference the dialog knows to
+     * be missing never reaches the chips; one still being checked does not
+     * either, so the row cannot reshuffle a moment later.
+     * @param props - `text`, optional `onOpenFile`, `t` and the per-open
+     *   `statusOf` the task dialog hands in.
      */
-    function Markdown({ text, onOpenFile = undefined, t = undefined }) {
+    function Markdown({ text, onOpenFile = undefined, t = undefined, statusOf = undefined }) {
       const translate = typeof t === 'function' ? t : key => key
-      const context = { onOpenFile, t: translate, attachments: [], seen: new Set() }
+      const context = { onOpenFile, t: translate, statusOf, attachments: [], seen: new Set() }
       const source = typeof text === 'string' ? text.replace(/\r\n?/g, '\n') : ''
       const blocks = markdownBlocks(source, context)
-      if (context.attachments.length > 0) {
+      const chips = context.attachments.filter(path => {
+        const status = markdownPathStatus(context, path)
+        return status === 'yes' || status === 'unknown'
+      })
+      if (chips.length > 0) {
         blocks.push(h('div', { key: 'attachments', className: 'tk-attach', 'data-attachments': 'true' },
           h('span', { className: 'tk-attach-label' }, translate('attachments')),
-          context.attachments.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex))))
+          chips.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex))))
       }
       return h('div', { className: 'tk-md', 'data-markdown': 'true' }, blocks)
     }
@@ -4702,6 +4756,7 @@ window.__ModuleLoader__.load({
       subscribeJobs: () => () => {},
       openAgent: () => {},
       openFileLink: () => {},
+      checkLocalPath: async () => undefined,
       agentLabel: (key, fallback) => fallback,
     }
 
@@ -5875,6 +5930,7 @@ window.__ModuleLoader__.load({
         selectedTask === undefined
           ? null
           : h(TaskInspector, {
+            key: selectedTask.id,
             task: selectedTask,
             timeline: model.timelines[selectedTask.id],
             agent: selectedTask.ownerId === undefined ? undefined : model.whoById[selectedTask.ownerId],
@@ -5885,6 +5941,8 @@ window.__ModuleLoader__.load({
             t,
             tAgent,
             costState: model.costState,
+            sessionId: model.rootId,
+            checkLocalPath: services.checkLocalPath,
             onOpenAgent: openAgent,
             onOpenFile: path => { services.openFileLink(model.rootId, path) },
             onInspect: inspectAgent,
@@ -6034,9 +6092,10 @@ window.__ModuleLoader__.load({
     /**
      * The task dialog.
      * @param props - `task`, `timeline`, `agent`, `stats`, `t`, `tAgent`,
-     *   `costState`, `onOpenAgent`, `onOpenFile`, `onInspect`, `onClose`.
+     *   `costState`, `report`, `sessionId`, `checkLocalPath`, `onOpenAgent`,
+     *   `onOpenFile`, `onInspect`, `onClose`.
      */
-    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, report = undefined, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
+    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, report = undefined, sessionId = undefined, checkLocalPath = undefined, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
       useEffect(() => {
         const onKey = event => {
           if (event.key === 'Escape') onClose()
@@ -6052,6 +6111,62 @@ window.__ModuleLoader__.load({
       // backdrop keeps its size and the dialog stays centred.
       const [viewSettings] = useViewSettings()
       const [activeTab, setActiveTab] = useState('description')
+
+      // Local-path existence is checked once per unique path for the lifetime
+      // of this dialog: the card mounts one TaskInspector per selected task id,
+      // so opening another task (or reopening this one) starts a new cache.
+      // `pending` renders as plain text until the answer arrives, so a dead
+      // link never flashes in; `unknown` keeps the link, because an install
+      // without the workspace-files Remote must not lose every link.
+      const [, setPathVersion] = useState(0)
+      const pathCache = useRef(new Map())
+      const pathRequests = useRef(new Map())
+      const pathAbort = useRef(null)
+      useEffect(() => () => {
+        const controller = pathAbort.current
+        if (controller !== null && typeof controller.abort === 'function') controller.abort()
+      }, [])
+
+      /**
+       * The existence state of one local path: `yes`, `no`, `pending` or
+       * `unknown`. The first ask starts exactly one check per normalized path;
+       * later asks, including those of a re-render, read the cache.
+       * @param rawPath - a workspace path, either separator, folder trailing.
+       * @returns the state word.
+       */
+      const statusOf = useCallback((rawPath) => {
+        const key = typeof rawPath === 'string' ? rawPath.trim().replace(/\\/g, '/') : ''
+        if (key === '') return 'unknown'
+        const cached = pathCache.current.get(key)
+        if (cached !== undefined) return cached
+        if (typeof checkLocalPath !== 'function') {
+          pathCache.current.set(key, 'unknown')
+          return 'unknown'
+        }
+        pathCache.current.set(key, 'pending')
+        if (!pathRequests.current.has(key)) {
+          pathRequests.current.set(key, Promise.resolve()
+            .then(() => {
+              let controller = pathAbort.current
+              if (controller === null || controller.signal?.aborted === true) {
+                controller = typeof AbortController === 'function' ? new AbortController() : null
+                pathAbort.current = controller
+              }
+              return checkLocalPath(sessionId, key, controller === null ? undefined : controller.signal)
+            })
+            .then(value => {
+              // A dialog that already closed must not schedule a render.
+              if (pathAbort.current?.signal?.aborted === true) return
+              pathCache.current.set(key, value === true ? 'yes' : value === false ? 'no' : 'unknown')
+              setPathVersion(version => version + 1)
+            }, () => {
+              if (pathAbort.current?.signal?.aborted === true) return
+              pathCache.current.set(key, 'unknown')
+              setPathVersion(version => version + 1)
+            }))
+        }
+        return 'pending'
+      }, [checkLocalPath, sessionId])
 
       const state = stateOfTask(task)
       const timelineValue = timeline ?? {}
@@ -6094,7 +6209,7 @@ window.__ModuleLoader__.load({
 
       const descriptionPane = description === ''
         ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
-        : h(Markdown, { text: description, onOpenFile, t })
+        : h(Markdown, { text: description, onOpenFile, t, statusOf })
 
       const timelineBlock = h(Section, {
         title: t('taskTimeline'),
@@ -6167,6 +6282,16 @@ window.__ModuleLoader__.load({
       scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => {
         const folder = isFolderScope(scope)
         const hint = folder ? t('openFolderHint') : t('openFileHint')
+        const status = statusOf(scope)
+        // A scope that does not exist (or is still being checked) stays in the
+        // list as plain text: no button, no focus, no click target.
+        if (status === 'no' || status === 'pending') {
+          return h('li', { key: scope },
+            h('span', {
+              className: status === 'no' ? 'tk-mono tk-file-missing' : 'tk-mono',
+              title: status === 'no' ? t('fileMissingHint') : undefined,
+            }, scope))
+        }
         return h('li', { key: scope },
           h('button', {
             type: 'button',
@@ -6193,7 +6318,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'tk-note' }, t('reportLoading')))
         : reportState === 'ready'
           ? h('div', { className: 'tk-report', 'data-report': 'ready' },
-            h(Markdown, { text: reportText, onOpenFile, t }))
+            h(Markdown, { text: reportText, onOpenFile, t, statusOf }))
           : h('div', { className: 'tk-report', 'data-report': 'empty' },
             h('span', { className: 'tk-note' }, t('reportEmptyNote')),
             onOpenAgent === undefined || ownerId === undefined
@@ -6832,6 +6957,69 @@ window.__ModuleLoader__.load({
             .join('/')
 
         /**
+         * Whether one workspace path exists, for the links the board draws.
+         * A trailing separator names a folder, which is listed (folder
+         * existence is workspace-scoped); every other path is `stat`ed as a
+         * file. The Remote answers with `{ ok }` instead of throwing, so a
+         * missing path is `false`. An absent namespace, an aborted call or an
+         * error that does not prove absence is `undefined`: the caller then
+         * keeps its link, because a viewer without the file API must not lose
+         * every link.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @param signal - optional abort signal from the caller.
+         * @returns `true` when the file or folder exists, `false` when the
+         *   Remote says it is missing, and `undefined` otherwise.
+         */
+        const checkLocalPath = async (sessionId, path, signal) => {
+          try {
+            if (typeof sessionId !== 'string' || sessionId === '') return undefined
+            if (typeof path !== 'string') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const normalized = path.trim().replace(/\\/g, '/')
+            if (normalized === '') return undefined
+            let service
+            try {
+              service = ctx.get('remote.workspaceFiles')
+            } catch {
+              service = undefined
+            }
+            if (service === null || service === undefined) {
+              try {
+                const remote = ctx.get('remote')
+                service = remote?.workspaceFiles
+              } catch {
+                service = undefined
+              }
+            }
+            if (service === null || service === undefined) return undefined
+            const folder = normalized.endsWith('/')
+            const target = folder ? normalized.replace(/\/+$/, '') : normalized
+            if (target === '') return undefined
+            const method = folder ? 'list' : 'stat'
+            if (typeof service[method] !== 'function') return undefined
+            const answer = await service[method](sessionId, target, signal)
+            if (answer === null || typeof answer !== 'object') return undefined
+            if (answer.ok === true) return true
+            const code = answer.error?.code
+            if (code === 'workspace-file/not-found') return false
+            // The path exists as the other kind, so its link still resolves.
+            if (code === 'workspace-file/not-regular-file') {
+              return answer.error?.details?.kind === 'directory' ? true : undefined
+            }
+            if (code === 'workspace-file/not-directory') {
+              return answer.error?.details?.kind === 'file' ? true : undefined
+            }
+            // `outside-workspace`, `too-large`, `gateway/*` and a carrier
+            // failure prove nothing about the path, so the link stays.
+            return undefined
+          } catch {
+            // An aborted or failed call proves nothing about the path.
+            return undefined
+          }
+        }
+
+        /**
          * Open one write scope of a task in the workspace. A file opens the
          * shipped file resource; a folder opens the Files page, because that
          * page accepts no path. Navigation is best-effort: a missing sidebar
@@ -7099,8 +7287,7 @@ window.__ModuleLoader__.load({
           }
         }
 
-        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */
-        const services = {
+        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */        const services = {
           faceOf,
           refreshProjections,
           loadCosts,
@@ -7112,6 +7299,7 @@ window.__ModuleLoader__.load({
           subscribeJobs,
           openAgent,
           openFileLink,
+          checkLocalPath,
           loadAgentReport,
           agentLabel,
         }

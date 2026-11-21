@@ -249,6 +249,69 @@
             .join('/')
 
         /**
+         * Whether one workspace path exists, for the links the board draws.
+         * A trailing separator names a folder, which is listed (folder
+         * existence is workspace-scoped); every other path is `stat`ed as a
+         * file. The Remote answers with `{ ok }` instead of throwing, so a
+         * missing path is `false`. An absent namespace, an aborted call or an
+         * error that does not prove absence is `undefined`: the caller then
+         * keeps its link, because a viewer without the file API must not lose
+         * every link.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @param signal - optional abort signal from the caller.
+         * @returns `true` when the file or folder exists, `false` when the
+         *   Remote says it is missing, and `undefined` otherwise.
+         */
+        const checkLocalPath = async (sessionId, path, signal) => {
+          try {
+            if (typeof sessionId !== 'string' || sessionId === '') return undefined
+            if (typeof path !== 'string') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const normalized = path.trim().replace(/\\/g, '/')
+            if (normalized === '') return undefined
+            let service
+            try {
+              service = ctx.get('remote.workspaceFiles')
+            } catch {
+              service = undefined
+            }
+            if (service === null || service === undefined) {
+              try {
+                const remote = ctx.get('remote')
+                service = remote?.workspaceFiles
+              } catch {
+                service = undefined
+              }
+            }
+            if (service === null || service === undefined) return undefined
+            const folder = normalized.endsWith('/')
+            const target = folder ? normalized.replace(/\/+$/, '') : normalized
+            if (target === '') return undefined
+            const method = folder ? 'list' : 'stat'
+            if (typeof service[method] !== 'function') return undefined
+            const answer = await service[method](sessionId, target, signal)
+            if (answer === null || typeof answer !== 'object') return undefined
+            if (answer.ok === true) return true
+            const code = answer.error?.code
+            if (code === 'workspace-file/not-found') return false
+            // The path exists as the other kind, so its link still resolves.
+            if (code === 'workspace-file/not-regular-file') {
+              return answer.error?.details?.kind === 'directory' ? true : undefined
+            }
+            if (code === 'workspace-file/not-directory') {
+              return answer.error?.details?.kind === 'file' ? true : undefined
+            }
+            // `outside-workspace`, `too-large`, `gateway/*` and a carrier
+            // failure prove nothing about the path, so the link stays.
+            return undefined
+          } catch {
+            // An aborted or failed call proves nothing about the path.
+            return undefined
+          }
+        }
+
+        /**
          * Open one write scope of a task in the workspace. A file opens the
          * shipped file resource; a folder opens the Files page, because that
          * page accepts no path. Navigation is best-effort: a missing sidebar
@@ -516,8 +579,7 @@
           }
         }
 
-        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */
-        const services = {
+        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */        const services = {
           faceOf,
           refreshProjections,
           loadCosts,
@@ -529,6 +591,7 @@
           subscribeJobs,
           openAgent,
           openFileLink,
+          checkLocalPath,
           loadAgentReport,
           agentLabel,
         }

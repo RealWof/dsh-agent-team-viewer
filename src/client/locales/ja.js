@@ -131,6 +131,7 @@
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
       openFileHint: 'ワークスペースでこのファイルを開く',
       openFolderHint: 'ワークスペースのファイルページを開く',
+      fileMissingHint: 'ファイルが見つかりません',
       metricCostApiSpend: 'API 支出',
       taskReport: 'レポート',
       reportLoading: 'レポートを読み込み中…',

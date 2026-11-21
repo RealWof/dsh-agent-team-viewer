@@ -47,9 +47,10 @@
     /**
      * The task dialog.
      * @param props - `task`, `timeline`, `agent`, `stats`, `t`, `tAgent`,
-     *   `costState`, `onOpenAgent`, `onOpenFile`, `onInspect`, `onClose`.
+     *   `costState`, `report`, `sessionId`, `checkLocalPath`, `onOpenAgent`,
+     *   `onOpenFile`, `onInspect`, `onClose`.
      */
-    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, report = undefined, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
+    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, report = undefined, sessionId = undefined, checkLocalPath = undefined, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
       useEffect(() => {
         const onKey = event => {
           if (event.key === 'Escape') onClose()
@@ -65,6 +66,62 @@
       // backdrop keeps its size and the dialog stays centred.
       const [viewSettings] = useViewSettings()
       const [activeTab, setActiveTab] = useState('description')
+
+      // Local-path existence is checked once per unique path for the lifetime
+      // of this dialog: the card mounts one TaskInspector per selected task id,
+      // so opening another task (or reopening this one) starts a new cache.
+      // `pending` renders as plain text until the answer arrives, so a dead
+      // link never flashes in; `unknown` keeps the link, because an install
+      // without the workspace-files Remote must not lose every link.
+      const [, setPathVersion] = useState(0)
+      const pathCache = useRef(new Map())
+      const pathRequests = useRef(new Map())
+      const pathAbort = useRef(null)
+      useEffect(() => () => {
+        const controller = pathAbort.current
+        if (controller !== null && typeof controller.abort === 'function') controller.abort()
+      }, [])
+
+      /**
+       * The existence state of one local path: `yes`, `no`, `pending` or
+       * `unknown`. The first ask starts exactly one check per normalized path;
+       * later asks, including those of a re-render, read the cache.
+       * @param rawPath - a workspace path, either separator, folder trailing.
+       * @returns the state word.
+       */
+      const statusOf = useCallback((rawPath) => {
+        const key = typeof rawPath === 'string' ? rawPath.trim().replace(/\\/g, '/') : ''
+        if (key === '') return 'unknown'
+        const cached = pathCache.current.get(key)
+        if (cached !== undefined) return cached
+        if (typeof checkLocalPath !== 'function') {
+          pathCache.current.set(key, 'unknown')
+          return 'unknown'
+        }
+        pathCache.current.set(key, 'pending')
+        if (!pathRequests.current.has(key)) {
+          pathRequests.current.set(key, Promise.resolve()
+            .then(() => {
+              let controller = pathAbort.current
+              if (controller === null || controller.signal?.aborted === true) {
+                controller = typeof AbortController === 'function' ? new AbortController() : null
+                pathAbort.current = controller
+              }
+              return checkLocalPath(sessionId, key, controller === null ? undefined : controller.signal)
+            })
+            .then(value => {
+              // A dialog that already closed must not schedule a render.
+              if (pathAbort.current?.signal?.aborted === true) return
+              pathCache.current.set(key, value === true ? 'yes' : value === false ? 'no' : 'unknown')
+              setPathVersion(version => version + 1)
+            }, () => {
+              if (pathAbort.current?.signal?.aborted === true) return
+              pathCache.current.set(key, 'unknown')
+              setPathVersion(version => version + 1)
+            }))
+        }
+        return 'pending'
+      }, [checkLocalPath, sessionId])
 
       const state = stateOfTask(task)
       const timelineValue = timeline ?? {}
@@ -107,7 +164,7 @@
 
       const descriptionPane = description === ''
         ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
-        : h(Markdown, { text: description, onOpenFile, t })
+        : h(Markdown, { text: description, onOpenFile, t, statusOf })
 
       const timelineBlock = h(Section, {
         title: t('taskTimeline'),
@@ -180,6 +237,16 @@
       scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => {
         const folder = isFolderScope(scope)
         const hint = folder ? t('openFolderHint') : t('openFileHint')
+        const status = statusOf(scope)
+        // A scope that does not exist (or is still being checked) stays in the
+        // list as plain text: no button, no focus, no click target.
+        if (status === 'no' || status === 'pending') {
+          return h('li', { key: scope },
+            h('span', {
+              className: status === 'no' ? 'tk-mono tk-file-missing' : 'tk-mono',
+              title: status === 'no' ? t('fileMissingHint') : undefined,
+            }, scope))
+        }
         return h('li', { key: scope },
           h('button', {
             type: 'button',
@@ -206,7 +273,7 @@
           h('span', { className: 'tk-note' }, t('reportLoading')))
         : reportState === 'ready'
           ? h('div', { className: 'tk-report', 'data-report': 'ready' },
-            h(Markdown, { text: reportText, onOpenFile, t }))
+            h(Markdown, { text: reportText, onOpenFile, t, statusOf }))
           : h('div', { className: 'tk-report', 'data-report': 'empty' },
             h('span', { className: 'tk-note' }, t('reportEmptyNote')),
             onOpenAgent === undefined || ownerId === undefined

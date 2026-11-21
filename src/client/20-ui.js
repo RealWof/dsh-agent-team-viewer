@@ -332,6 +332,7 @@
 .tk-md a,.tk-md-a{color:var(--dsw-alias-brand-primary);text-decoration:underline;overflow-wrap:anywhere}
 .tk-md-img{max-width:100%;max-height:320px;border-radius:var(--dsw-radius-sm);object-fit:contain;background:var(--dsw-alias-bg-layer-1)}
 .tk-md-plain{overflow-wrap:anywhere}
+.tk-md-missing,.tk-file-missing{color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));text-decoration:none}
 .tk-md-file{max-width:100%}
 .tk-attach{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;margin-top:2px}
 .tk-attach-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
@@ -490,15 +491,45 @@
     }
 
     /**
+     * The existence of one workspace path, asked through the task dialog's
+     * per-open cache. A renderer without a checker (the Settings page, an
+     * older host) keeps every link, which is also the fallback for an answer
+     * the dialog cannot classify.
+     * @param context - the render context.
+     * @param path - the workspace path.
+     * @returns `yes`, `no`, `pending` or `unknown`.
+     */
+    function markdownPathStatus(context, path) {
+      if (typeof context.statusOf !== 'function') return 'unknown'
+      try {
+        const status = context.statusOf(path)
+        return status === 'yes' || status === 'no' || status === 'pending' ? status : 'unknown'
+      } catch {
+        return 'unknown'
+      }
+    }
+
+    /**
      * One workspace file reference as a button, so a click opens it in the
-     * shipped resource viewer instead of navigating the page.
+     * shipped resource viewer instead of navigating the page. A path the
+     * dialog knows to be missing stays plain text, and one still being
+     * checked is plain until the answer arrives — a dead link never flashes
+     * in as clickable.
      * @param path - the workspace path.
      * @param label - the visible label.
      * @param context - the render context.
      * @param key - the React key.
-     * @returns the button node.
+     * @returns the button node, or the plain-text node.
      */
     function markdownFileNode(path, label, context, key) {
+      const status = markdownPathStatus(context, path)
+      if (status === 'no' || status === 'pending') {
+        return h('span', {
+          key,
+          className: status === 'no' ? 'tk-mono tk-md-missing' : 'tk-mono',
+          title: status === 'no' ? context.t('fileMissingHint') : undefined,
+        }, label)
+      }
       const folder = isFolderScope(path)
       const hint = folder ? context.t('openFolderHint') : context.t('openFileHint')
       return h('button', {
@@ -528,6 +559,14 @@
       }
       if (target.kind === 'file' && target.resource === true) {
         markdownRemember(context, target.path)
+        const status = markdownPathStatus(context, target.path)
+        if (status === 'no' || status === 'pending') {
+          return h('span', {
+            key,
+            className: status === 'no' ? 'tk-md-plain tk-md-missing' : 'tk-md-plain',
+            title: status === 'no' ? context.t('fileMissingHint') : undefined,
+          }, alt !== '' ? alt : target.path)
+        }
         return h('img', { key, className: 'tk-md-img', src: target.href, alt, loading: 'lazy' })
       }
       if (target.kind === 'file') {
@@ -817,18 +856,25 @@
     /**
      * Render one description or report as safe Markdown plus attachment chips.
      * The task record carries no attachment field, so file references in the
-     * text itself are what the chips collect.
-     * @param props - `text`, optional `onOpenFile` and `t`.
+     * text itself are what the chips collect. A reference the dialog knows to
+     * be missing never reaches the chips; one still being checked does not
+     * either, so the row cannot reshuffle a moment later.
+     * @param props - `text`, optional `onOpenFile`, `t` and the per-open
+     *   `statusOf` the task dialog hands in.
      */
-    function Markdown({ text, onOpenFile = undefined, t = undefined }) {
+    function Markdown({ text, onOpenFile = undefined, t = undefined, statusOf = undefined }) {
       const translate = typeof t === 'function' ? t : key => key
-      const context = { onOpenFile, t: translate, attachments: [], seen: new Set() }
+      const context = { onOpenFile, t: translate, statusOf, attachments: [], seen: new Set() }
       const source = typeof text === 'string' ? text.replace(/\r\n?/g, '\n') : ''
       const blocks = markdownBlocks(source, context)
-      if (context.attachments.length > 0) {
+      const chips = context.attachments.filter(path => {
+        const status = markdownPathStatus(context, path)
+        return status === 'yes' || status === 'unknown'
+      })
+      if (chips.length > 0) {
         blocks.push(h('div', { key: 'attachments', className: 'tk-attach', 'data-attachments': 'true' },
           h('span', { className: 'tk-attach-label' }, translate('attachments')),
-          context.attachments.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex))))
+          chips.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex))))
       }
       return h('div', { className: 'tk-md', 'data-markdown': 'true' }, blocks)
     }

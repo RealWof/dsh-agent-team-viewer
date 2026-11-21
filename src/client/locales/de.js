@@ -131,6 +131,7 @@
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
       openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
+      fileMissingHint: 'Datei nicht gefunden',
       metricCostApiSpend: 'API-Ausgaben',
       taskReport: 'Bericht',
       reportLoading: 'Bericht wird geladen…',

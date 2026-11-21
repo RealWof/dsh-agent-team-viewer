@@ -130,6 +130,7 @@
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
       openFileHint: 'Open this file in the workspace',
       openFolderHint: 'Open the workspace files page',
+      fileMissingHint: 'File not found',
       metricCostApiSpend: 'API spend',
       taskReport: 'Report',
       reportLoading: 'Loading the report…',

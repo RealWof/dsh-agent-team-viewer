@@ -105,6 +105,12 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Fixed
 
+- Local file links — Markdown links, bare paths, attachment chips and write scopes — are checked
+  against the workspace before they render as clickable buttons. A path the file API reports missing
+  stays plain text with a **File not found** tooltip and never enters the attachment row, a path still
+  being checked is plain until the answer arrives, and an install without the file Remote keeps every
+  link. The answers are cached for the lifetime of one open task dialog, so each path is asked at most
+  once, and reopening the dialog checks again.
 - Group headers show the status dot on the outer status columns again — a task column and an agent
   status group repeat their column colour — while a nested role, custom or Ungrouped header stays
   chevron, title and count; task cards and agent rows keep their own dot.

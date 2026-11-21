@@ -131,6 +131,7 @@
       setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
       openFileHint: 'Abrir este archivo en el espacio de trabajo',
       openFolderHint: 'Abrir la página de archivos del espacio de trabajo',
+      fileMissingHint: 'Archivo no encontrado',
       metricCostApiSpend: 'Gasto de API',
       taskReport: 'Informe',
       reportLoading: 'Cargando el informe…',

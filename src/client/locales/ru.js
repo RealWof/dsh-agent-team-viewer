@@ -131,6 +131,7 @@
       setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
       openFileHint: 'Открыть файл в рабочей области',
       openFolderHint: 'Открыть страницу файлов рабочей области',
+      fileMissingHint: 'Файл не найден',
       metricCostApiSpend: 'Расходы по API',
       taskReport: 'Отчёт',
       reportLoading: 'Загрузка отчёта…',

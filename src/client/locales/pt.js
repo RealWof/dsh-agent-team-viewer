@@ -131,6 +131,7 @@
       setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
       openFileHint: 'Abrir este arquivo no espaço de trabalho',
       openFolderHint: 'Abrir a página de arquivos do espaço de trabalho',
+      fileMissingHint: 'Arquivo não encontrado',
       metricCostApiSpend: 'Gasto de API',
       taskReport: 'Relatório',
       reportLoading: 'Carregando o relatório…',
