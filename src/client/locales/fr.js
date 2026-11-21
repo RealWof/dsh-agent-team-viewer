@@ -138,4 +138,6 @@
       reportEmptyNote: 'Cet agent n’a pas encore produit de réponse finale.',
       setDialogScale: 'Échelle des dialogues',
       setDialogScaleHint: 'Zoome seulement les dialogues ouverts ; le tableau et la barre gardent leur taille.',
+      setShowAgentModel: 'Afficher le modèle de l\u2019agent',
+      setShowAgentModelHint: 'Ajoute une ligne compacte fournisseur · modèle · effort sous le nom de l\u2019agent.',
     }

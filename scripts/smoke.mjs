@@ -1714,6 +1714,7 @@ storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
   animationMs: 99999,
   uiScale: 0.01,
   dialogScale: 9,
+  showAgentModel: 'yes',
 }))
 const clampedBoard = boardFromFreshBundle()
 const clampedRoot = clampedBoard.nodes.find(node => node.props?.className === 'tk-root')
@@ -1722,10 +1723,12 @@ check(clampedRoot?.props?.style?.zoom === 0.8,
 resetSlots()
 const clampedSettings = surface(settingsSection({ t: key => key }))
 const settingBoxes = clampedSettings.nodes.filter(node => node.props?.type === 'checkbox')
-check(settingBoxes.length === 4, 'the Settings page lost a grouping or animation checkbox')
+check(settingBoxes.length === 5, 'the Settings page lost a checkbox')
 check(settingBoxes[0]?.props?.checked === true && settingBoxes[1]?.props?.checked === true
   && settingBoxes[2]?.props?.checked === false && settingBoxes[3]?.props?.checked === false,
 'the Settings page does not render the sanitized booleans')
+check(settingBoxes[4]?.props?.checked === false && settingBoxes[4]?.props?.['aria-label'] === 'setShowAgentModel',
+  'the agent-model switch is missing or does not default to off')
 const settingTextareas = clampedSettings.nodes.filter(node => node.props?.className === 'tk-set-text')
 const settingTextarea = settingTextareas[0]
 check(settingTextareas.length === 2, 'the Settings page lost a custom-groups editor')
@@ -1757,7 +1760,8 @@ check(clampedWrite.animationMs === 1000 && clampedWrite.uiScale === 1.4 && clamp
   'the settings writer did not clamp an out-of-range value: ' + JSON.stringify(clampedWrite))
 check(clampedWrite.sort === 'newest' && clampedWrite.autoRoleGroups === true
   && clampedWrite.customGroups === true && clampedWrite.customGroupsText === ''
-  && clampedWrite.taskCustomGroups === false && clampedWrite.taskCustomGroupsText === '',
+  && clampedWrite.taskCustomGroups === false && clampedWrite.taskCustomGroupsText === ''
+  && clampedWrite.showAgentModel === false,
 'the settings writer did not sanitize the invalid fields: ' + JSON.stringify(clampedWrite))
 settingTextarea?.props?.onChange?.({ target: { value: 'crew: builder, reviewer\nqa: test' } })
 check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).customGroupsText === 'crew: builder, reviewer\nqa: test',
@@ -1767,6 +1771,42 @@ settingTextareas[1]?.props?.onChange?.({ target: { value: 'ui: inspector, dialog
 const taskGroupWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
 check(taskGroupWrite.taskCustomGroups === true && taskGroupWrite.taskCustomGroupsText === 'ui: inspector, dialog',
   'the task custom-groups editor was not stored: ' + JSON.stringify(taskGroupWrite))
+
+/* --- Agent row model line: off by default, opt-in from Settings -------- */
+
+const settingsBeforeModel = storage.get(SETTINGS_STORAGE_KEY)
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ sort: 'newest' }))
+const quietBoard = boardFromFreshBundle()
+const quietRow = quietBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')
+check(within(quietRow, node => node.props?.className === 'tk-agent-model').length === 0,
+  'the agent row shows the model while the setting is off')
+
+resetSlots()
+const modelSettings = surface(settingsSection({ t: key => key }))
+const modelSwitch = modelSettings.nodes.find(node => node.props?.type === 'checkbox'
+  && node.props?.['aria-label'] === 'setShowAgentModel')
+check(modelSwitch?.props?.checked === false, 'the agent-model switch does not default to off')
+check(modelSettings.texts.includes('setShowAgentModelHint'), 'the agent-model switch has no hint')
+modelSwitch?.props?.onChange?.({ target: { checked: true } })
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).showAgentModel === true,
+  'the agent-model switch did not persist')
+const modelBoard = boardFromFreshBundle()
+const modelRow = modelBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')
+const modelLine = within(modelRow, node => node.props?.className === 'tk-agent-model')[0]
+check(modelLine !== undefined, 'the agent row has no model line with the setting on')
+check(String(modelLine?.props?.children) === 'deepseek · deepseek-chat · high',
+  'the model line has the wrong text: ' + String(modelLine?.props?.children))
+check(modelLine?.props?.title === 'deepseek · deepseek-chat · high',
+  'the model line lost its full-text title')
+const modelUnknownRow = modelBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-b'
+  && node.props?.className === 'tk-agent-row')
+check(within(modelUnknownRow, node => node.props?.className === 'tk-agent-model').length === 0,
+  'an agent without a known model got a model line')
+check(artifact.includes('.tk-agent-model{'), 'the model line has no ellipsizing stylesheet rule')
+if (settingsBeforeModel === undefined) storage.delete(SETTINGS_STORAGE_KEY)
+else storage.set(SETTINGS_STORAGE_KEY, settingsBeforeModel)
 
 /* --- Task dialog Report: loading, ready and empty ---------------------- */
 

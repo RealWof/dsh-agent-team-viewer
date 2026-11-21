@@ -138,4 +138,6 @@
       reportEmptyNote: 'Dieser Agent hat noch keine endgültige Antwort geliefert.',
       setDialogScale: 'Dialog-Skalierung',
       setDialogScaleHint: 'Skaliert nur die geöffneten Dialoge; Board und Kopfzeile bleiben unverändert.',
+      setShowAgentModel: 'Agentenmodell anzeigen',
+      setShowAgentModelHint: 'Zeigt eine kompakte Zeile Anbieter · Modell · Aufwand unter dem Agentennamen.',
     }

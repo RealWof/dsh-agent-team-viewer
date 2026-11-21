@@ -138,4 +138,6 @@
       reportEmptyNote: 'Este agente aún no ha producido una respuesta final.',
       setDialogScale: 'Escala de los diálogos',
       setDialogScaleHint: 'Solo escala los diálogos abiertos; el tablero y la cabecera no cambian.',
+      setShowAgentModel: 'Mostrar el modelo del agente',
+      setShowAgentModelHint: 'Añade una línea compacta de proveedor · modelo · esfuerzo bajo el nombre del agente.',
     }

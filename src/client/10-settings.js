@@ -20,7 +20,9 @@
     /**
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
+     * `showAgentModel` stays off so the agent rows stay as compact as the
+     * Subagents menu's, and the model line is opt-in.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -33,6 +35,7 @@
       animationMs: 220,
       uiScale: 1,
       dialogScale: 1,
+      showAgentModel: false,
     }
 
     /**
@@ -83,6 +86,7 @@
           VIEW_SETTINGS_DEFAULTS.uiScale),
         dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.dialogScale),
+        showAgentModel: boolean(read('showAgentModel'), VIEW_SETTINGS_DEFAULTS.showAgentModel),
       }
     }
 
@@ -325,5 +329,16 @@
               onChange: event => { update({ dialogScale: Number(event.target.value) }) },
             }),
             h('span', { className: 'tk-set-value' }, formatScale(settings.dialogScale))),
-          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))))
+          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))),
+
+        h(Section, { title: t('agentsHeading'), icon: 'users' },
+          h('label', { className: 'tk-set-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.showAgentModel,
+              'aria-label': t('setShowAgentModel'),
+              onChange: event => { update({ showAgentModel: event.target.checked }) },
+            }),
+            h('span', null, t('setShowAgentModel'))),
+          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))))
     }

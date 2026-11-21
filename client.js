@@ -275,7 +275,9 @@ window.__ModuleLoader__.load({
     /**
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
+     * `showAgentModel` stays off so the agent rows stay as compact as the
+     * Subagents menu's, and the model line is opt-in.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -288,6 +290,7 @@ window.__ModuleLoader__.load({
       animationMs: 220,
       uiScale: 1,
       dialogScale: 1,
+      showAgentModel: false,
     }
 
     /**
@@ -338,6 +341,7 @@ window.__ModuleLoader__.load({
           VIEW_SETTINGS_DEFAULTS.uiScale),
         dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.dialogScale),
+        showAgentModel: boolean(read('showAgentModel'), VIEW_SETTINGS_DEFAULTS.showAgentModel),
       }
     }
 
@@ -580,7 +584,18 @@ window.__ModuleLoader__.load({
               onChange: event => { update({ dialogScale: Number(event.target.value) }) },
             }),
             h('span', { className: 'tk-set-value' }, formatScale(settings.dialogScale))),
-          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))))
+          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))),
+
+        h(Section, { title: t('agentsHeading'), icon: 'users' },
+          h('label', { className: 'tk-set-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.showAgentModel,
+              'aria-label': t('setShowAgentModel'),
+              onChange: event => { update({ showAgentModel: event.target.checked }) },
+            }),
+            h('span', null, t('setShowAgentModel'))),
+          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))))
     }
 
 /**
@@ -722,6 +737,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: 'This agent has not produced a final answer yet.',
       setDialogScale: 'Dialog scale',
       setDialogScaleHint: 'Zooms the opened dialogs only; the board and header keep their size.',
+      setShowAgentModel: 'Show the agent model',
+      setShowAgentModelHint: 'Adds a compact provider · model · effort line under each agent name.',
     }
 
 /**
@@ -864,6 +881,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: 'У этого агента пока нет итогового ответа.',
       setDialogScale: 'Масштаб диалогов',
       setDialogScaleHint: 'Масштабируются только открытые диалоги; доска и шапка не меняются.',
+      setShowAgentModel: 'Показывать модель агента',
+      setShowAgentModelHint: 'Добавляет компактную строку «провайдер · модель · усилие» под именем агента.',
     }
 
 /**
@@ -1006,6 +1025,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: '该代理尚未给出最终答复。',
       setDialogScale: '对话框缩放',
       setDialogScaleHint: '仅缩放打开的对话框，看板和顶栏保持原尺寸。',
+      setShowAgentModel: '显示代理模型',
+      setShowAgentModelHint: '在代理名称下方显示提供商 · 模型 · 推理强度的紧凑一行。',
     }
 
 /**
@@ -1148,6 +1169,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: 'このエージェントはまだ最終回答を出していません。',
       setDialogScale: 'ダイアログの拡大率',
       setDialogScaleHint: '開いたダイアログのみを拡大します。ボードとヘッダーは変わりません。',
+      setShowAgentModel: 'エージェントのモデルを表示',
+      setShowAgentModelHint: 'エージェント名の下にプロバイダー · モデル · 推論強度を 1 行で表示します。',
     }
 
 /**
@@ -1290,6 +1313,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: 'Este agente aún no ha producido una respuesta final.',
       setDialogScale: 'Escala de los diálogos',
       setDialogScaleHint: 'Solo escala los diálogos abiertos; el tablero y la cabecera no cambian.',
+      setShowAgentModel: 'Mostrar el modelo del agente',
+      setShowAgentModelHint: 'Añade una línea compacta de proveedor · modelo · esfuerzo bajo el nombre del agente.',
     }
 
 /**
@@ -1432,6 +1457,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: 'Cet agent n’a pas encore produit de réponse finale.',
       setDialogScale: 'Échelle des dialogues',
       setDialogScaleHint: 'Zoome seulement les dialogues ouverts ; le tableau et la barre gardent leur taille.',
+      setShowAgentModel: 'Afficher le modèle de l\u2019agent',
+      setShowAgentModelHint: 'Ajoute une ligne compacte fournisseur · modèle · effort sous le nom de l\u2019agent.',
     }
 
 /**
@@ -1574,6 +1601,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: 'Dieser Agent hat noch keine endgültige Antwort geliefert.',
       setDialogScale: 'Dialog-Skalierung',
       setDialogScaleHint: 'Skaliert nur die geöffneten Dialoge; Board und Kopfzeile bleiben unverändert.',
+      setShowAgentModel: 'Agentenmodell anzeigen',
+      setShowAgentModelHint: 'Zeigt eine kompakte Zeile Anbieter · Modell · Aufwand unter dem Agentennamen.',
     }
 
 /**
@@ -1716,6 +1745,8 @@ window.__ModuleLoader__.load({
       reportEmptyNote: 'Este agente ainda não produziu uma resposta final.',
       setDialogScale: 'Escala dos diálogos',
       setDialogScaleHint: 'Amplia apenas as caixas de diálogo abertas; o quadro e o cabeçalho não mudam.',
+      setShowAgentModel: 'Mostrar o modelo do agente',
+      setShowAgentModelHint: 'Adiciona uma linha compacta de provedor · modelo · esforço sob o nome do agente.',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1868,6 +1899,8 @@ window.__ModuleLoader__.load({
 .tk-agent-name:hover{text-decoration:underline}
 .tk-agent-name:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px;border-radius:3px}
 .tk-agent-mode{flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.tk-agent-model{min-width:0;padding-left:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:9px;line-height:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
 .tk-agent-jump{width:18px;height:18px}
 .tk-task-link{display:flex;align-items:center;gap:5px;width:100%;min-width:0;padding:3px 4px;border:0;border-radius:4px;
   background:transparent;color:inherit;font:inherit;font-size:11px;line-height:15px;text-align:left;cursor:pointer}
@@ -4787,13 +4820,22 @@ window.__ModuleLoader__.load({
      * read-only background-jobs chip plus the session metrics. The whole row is
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
-     * actions and stop the click from reaching the row.
+     * actions and stop the click from reaching the row. `showAgentModel` adds
+     * an opt-in ellipsized provider · model · effort line.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
-     *   `onOpenAgent`, `onInspect`, and `hovered` when a card owner is hovered.
+     *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
+     *   and `showAgentModel` from the view settings.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
+      const selection = agent.model
+      const modelParts = selection === undefined
+        ? []
+        : [selection.provider, selection.model, selection.effort]
+          .filter(part => typeof part === 'string' && part !== '')
+      const modelLine = modelParts.join(' · ')
+      const modelVisible = showAgentModel === true && modelLine !== ''
       const items = agentMetricLine(stats, t)
       const rosterRead = Array.isArray(jobs)
       const agentJobs = rosterRead ? jobs : []
@@ -4861,6 +4903,7 @@ window.__ModuleLoader__.load({
             onOpenAgent(agent.id, 'aside')
           },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
+      modelVisible ? h('span', { className: 'tk-agent-model', title: modelLine }, modelLine) : null,
       showJobs !== true && items.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
@@ -5060,11 +5103,12 @@ window.__ModuleLoader__.load({
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`.
+     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
+      showAgentModel = false,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -5083,6 +5127,7 @@ window.__ModuleLoader__.load({
         onOpenAgent,
         onInspect,
         hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
+        showAgentModel,
       })
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
@@ -5455,6 +5500,7 @@ window.__ModuleLoader__.load({
               onToggleGroup: foldGroup,
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
+              showAgentModel: settings.showAgentModel === true,
             })
             : null,
 

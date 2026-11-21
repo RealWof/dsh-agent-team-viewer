@@ -137,4 +137,6 @@
       reportEmptyNote: 'This agent has not produced a final answer yet.',
       setDialogScale: 'Dialog scale',
       setDialogScaleHint: 'Zooms the opened dialogs only; the board and header keep their size.',
+      setShowAgentModel: 'Show the agent model',
+      setShowAgentModelHint: 'Adds a compact provider · model · effort line under each agent name.',
     }

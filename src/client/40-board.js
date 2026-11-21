@@ -369,13 +369,22 @@
      * read-only background-jobs chip plus the session metrics. The whole row is
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
-     * actions and stop the click from reaching the row.
+     * actions and stop the click from reaching the row. `showAgentModel` adds
+     * an opt-in ellipsized provider · model · effort line.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
-     *   `onOpenAgent`, `onInspect`, and `hovered` when a card owner is hovered.
+     *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
+     *   and `showAgentModel` from the view settings.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
+      const selection = agent.model
+      const modelParts = selection === undefined
+        ? []
+        : [selection.provider, selection.model, selection.effort]
+          .filter(part => typeof part === 'string' && part !== '')
+      const modelLine = modelParts.join(' · ')
+      const modelVisible = showAgentModel === true && modelLine !== ''
       const items = agentMetricLine(stats, t)
       const rosterRead = Array.isArray(jobs)
       const agentJobs = rosterRead ? jobs : []
@@ -443,6 +452,7 @@
             onOpenAgent(agent.id, 'aside')
           },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
+      modelVisible ? h('span', { className: 'tk-agent-model', title: modelLine }, modelLine) : null,
       showJobs !== true && items.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
@@ -642,11 +652,12 @@
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`.
+     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
+      showAgentModel = false,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -665,6 +676,7 @@
         onOpenAgent,
         onInspect,
         hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
+        showAgentModel,
       })
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
@@ -1037,6 +1049,7 @@
               onToggleGroup: foldGroup,
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
+              showAgentModel: settings.showAgentModel === true,
             })
             : null,
 
