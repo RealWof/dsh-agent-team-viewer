@@ -637,8 +637,14 @@ check(String(leadChip?.props?.title ?? '').includes('jobsHeading'), 'a settled-o
 check(jobsChipOf(rowOf('session-b')) === undefined, 'an agent without background jobs got a chip')
 const jobsMeta = within(rowOf('session-a'), node => node.props?.className === 'tk-agent-meta')[0]
 const jobsMetaChildren = Array.isArray(jobsMeta?.props?.children) ? jobsMeta.props.children : []
-check(jobsMetaChildren.length > 0 && jobsMetaChildren[jobsMetaChildren.length - 1] === ownerChip,
-  'the jobs chip does not close the metric line after the metrics')
+check(jobsMetaChildren.every(child => child?.props?.className !== 'tk-chip tk-agent-jobs'),
+  'the jobs chip is still on the metric line')
+const jobsMain = within(rowOf('session-a'), node => node.props?.className === 'tk-agent-main')[0]
+const jobsMainChildren = Array.isArray(jobsMain?.props?.children) ? jobsMain.props.children : []
+const chipMainIndex = jobsMainChildren.indexOf(ownerChip)
+const jumpMainIndex = jobsMainChildren.findIndex(child => child?.props?.className === 'tk-icon-btn tk-agent-jump')
+check(chipMainIndex > 0 && chipMainIndex === jumpMainIndex - 1,
+  'the jobs chip does not sit right before the jump button on the title row')
 
 /* A job that finished keeps the chip as a muted zero: the agent was seen working. */
 const BACKGROUND_STORAGE_KEY = 'dsh.agent-team-viewer.background.v1'

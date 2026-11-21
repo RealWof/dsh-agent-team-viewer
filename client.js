@@ -2124,7 +2124,7 @@ window.__ModuleLoader__.load({
   box-shadow:0 0 0 1px color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
 .tk-agent-main{display:flex;align-items:center;gap:4px;min-width:0}
 .tk-agent-meta{display:flex;align-items:center;flex-wrap:wrap;row-gap:2px;column-gap:5px;min-width:0;padding-left:13px}
-.tk-agent-jobs{flex:none;margin-left:auto;min-width:24px;justify-content:center;cursor:default;font-variant-numeric:tabular-nums}
+.tk-agent-jobs{flex:none;min-width:24px;justify-content:center;cursor:default;font-variant-numeric:tabular-nums}
 .tk-agent-jobs[data-live="true"]{color:var(--dsw-alias-brand-primary);
   border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent)}
 .tk-agent-name{min-width:0;max-width:100%;padding:0;border:0;background:transparent;color:var(--dsw-alias-label-primary);
@@ -5202,8 +5202,8 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One agent of the strip: identity on the first line, and on the second its
-     * read-only background-jobs chip plus the session metrics. The whole row is
+     * One agent of the strip: identity and the read-only background-jobs chip
+     * on the first line, and the session metrics on the second. The whole row is
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row. `showAgentModel` adds
@@ -5258,20 +5258,22 @@ window.__ModuleLoader__.load({
           : t('jobsRunningCount') + ': ' + String(live.length)
             + (longest === undefined ? '' : ' · ' + t('jobsLongest') + ' ' + formatSpan(longest, t)))
           + ' · ' + t('metricBackground') + ' ' + formatSpan(backgroundMs, t)
-      // The metric row wraps, so the model line rides at the end of it: beside
-      // the statistics when they fit, on its own right-aligned line when the
-      // card narrows. Appending it only when visible keeps the jobs chip as the
-      // row's last child otherwise, and keeps the row off an empty card.
-      const metaParts = [...items]
-      if (showJobs === true) {
-        metaParts.push(h('span', {
+      // The chip sits on the title row right before the panel button, so it
+      // stays visible while the metric row below carries statistics and the
+      // model. The metric row wraps: the model line rides at the end of it,
+      // beside the statistics when they fit and on its own right-aligned line
+      // when the card narrows; appending it only when visible keeps the row
+      // off an empty card.
+      const jobsChip = showJobs === false
+        ? null
+        : h('span', {
           key: 'jobs',
           className: 'tk-chip tk-agent-jobs',
           'data-live': live.length > 0 ? 'true' : 'false',
           title: jobsLabel,
           'aria-label': jobsLabel,
-        }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length)))
-      }
+        }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length))
+      const metaParts = [...items]
       if (modelVisible === true) {
         metaParts.push(h('span', { key: 'model', className: 'tk-agent-model', title: modelTitle }, modelLine))
       }
@@ -5313,6 +5315,7 @@ window.__ModuleLoader__.load({
           title: t('agentMode') + ': ' + mode + ' — ' + t('agentModeHint'),
         }, mode),
         h('span', { className: 'tk-head-spacer' }),
+        jobsChip,
         h('button', {
           type: 'button',
           className: 'tk-icon-btn tk-agent-jump',
@@ -5326,9 +5329,9 @@ window.__ModuleLoader__.load({
       metaParts.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
-          // The metrics keep their order and their place; the chip follows
-          // them and the model line closes the row, so appearing or vanishing
-          // never shifts a metric icon.
+          // The metrics keep their order and their place, and the model line
+          // closes the row, so appearing or vanishing never shifts a metric
+          // icon. The jobs chip lives on the title row instead.
           metaParts))
     }
 
