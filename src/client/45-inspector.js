@@ -152,7 +152,19 @@
       const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
 
       // The owning agent's actions sit in the header's right corner, left of
-      // the close control, so the agent block itself stays facts only.
+      // the close control, so the agent block itself stays facts only. The
+      // assignee chip is the details affordance: with a resolved owner and an
+      // inspector it becomes a button, otherwise it stays a plain chip.
+      const ownerChip = typeof onInspect === 'function' && ownerId !== undefined
+        ? h('button', {
+          type: 'button',
+          className: 'tk-chip tk-owner-chip',
+          title: t('agentDetails'),
+          'aria-label': t('agentDetails'),
+          onClick: () => { onInspect(ownerId) },
+        }, h(Icon, { name: 'users', size: 10 }), h('span', null, agentName))
+        : h(Chip, { icon: 'users' }, agentName)
+
       const headActions = agent === undefined
         ? null
         : h('span', { className: 'tk-insp-actions' },
@@ -169,14 +181,7 @@
             title: t('agentOpenAsideHint'),
             'aria-label': t('agentOpenAsideHint'),
             onClick: () => { onOpenAgent(task.ownerId, 'aside') },
-          }, h(Icon, { name: 'panel-right', size: 13 })),
-          typeof onInspect !== 'function' ? null : h('button', {
-            type: 'button',
-            className: 'tk-icon-btn',
-            title: t('agentDetails'),
-            'aria-label': t('agentDetails'),
-            onClick: () => { onInspect(task.ownerId) },
-          }, h(Icon, { name: 'gauge', size: 13 })))
+          }, h(Icon, { name: 'panel-right', size: 13 })))
 
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
@@ -185,9 +190,7 @@
             h(StateDot, { state, size: 10 }),
             h(Chip, { tone: statusTone }, statusLabel),
             h('span', { className: 'tk-card-id' }, '#' + String(task.id).replace(/^task-/, '')),
-            agent === undefined
-              ? h(Chip, { icon: 'users' }, owner)
-              : h(Chip, { icon: 'users' }, agentName),
+            ownerChip,
             agentLine.length === 0
               ? null
               : h('span', {

@@ -88,9 +88,12 @@ All notable changes to this plugin are documented here. The format follows
   agent-hours and cost — in the header meta line right after the assignee chip instead of a second
   line in the Agent section. The meta line wraps when the dialog narrows, the figures keep their
   tooltips and stay labelled as the agent session, and each number appears exactly once.
-- The task dialog's agent actions (**Open**, **Aside**, **Details**) moved from the agent block's
-  footer into the dialog header's right corner as compact icon buttons immediately left of the close
-  control, so the agent block keeps only the agent's facts and metrics.
+- The task dialog's assignee chip is now the **Details** affordance: clicking the owner chip opens the
+  owning agent's dialog, with the details tooltip and a focus ring, and the separate gauge button left
+  the header. **Open** and **Aside** remain, and a task without a resolved owner keeps the plain chip.
+- The task dialog's agent actions (**Open** and **Aside**) moved from the agent block's footer into
+  the dialog header's right corner as compact icon buttons immediately left of the close control, so
+  the agent block keeps only the agent's facts and metrics.
 - The Settings page reads like a General settings tab: a calm vertical list inside a 760px column,
   small muted section headings, and one row per preference with its title and a short description on
   the left and the control on the right, separated by hairline rules. Booleans are now switch-style

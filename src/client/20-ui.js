@@ -185,6 +185,10 @@
 .tk-owner-link>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-owner-link:hover{color:var(--dsw-alias-brand-primary);text-decoration:underline}
 .tk-owner-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px;border-radius:3px}
+.tk-owner-chip{font-family:inherit;min-width:0;max-width:100%;padding:0 5px;overflow:hidden;cursor:pointer}
+.tk-owner-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-owner-chip:hover{color:var(--dsw-alias-brand-primary);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
+.tk-owner-chip:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 12px;text-align:center;
   border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}
 .tk-error{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border:1px solid var(--dsw-alias-state-error-primary);

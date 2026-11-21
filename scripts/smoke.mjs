@@ -856,9 +856,9 @@ const headActionBar = within(taskHead, node => node.props?.className === 'tk-ins
 check(headActionBar !== undefined, 'the task dialog header has no agent actions')
 const headActionLabels = within(headActionBar, node => node.type === 'button')
   .map(node => node.props?.['aria-label'])
-check(headActionLabels.join(',') === 'agentOpenHint,agentOpenAsideHint,agentDetails',
-  'the task dialog header actions are not the open/aside/details controls: ' + headActionLabels.join(','))
-check(within(headActionBar, node => node.type === 'button' && node.props?.className === 'tk-icon-btn').length === 3,
+check(headActionLabels.join(',') === 'agentOpenHint,agentOpenAsideHint',
+  'the task dialog header actions are not the open/aside controls: ' + headActionLabels.join(','))
+check(within(headActionBar, node => node.type === 'button' && node.props?.className === 'tk-icon-btn').length === 2,
   'the task dialog header actions are not compact icon buttons')
 const headChildren = Array.isArray(taskHead?.props?.children) ? taskHead.props.children : []
 check(headChildren.findIndex(child => child?.props?.className === 'tk-insp-actions')
@@ -881,12 +881,25 @@ check(within(taskDialogNode, node => node.props?.className === 'tk-stat').length
   === within(taskStats, node => node.props?.className === 'tk-stat').length,
 'the agent statistics are duplicated outside the task dialog header')
 const metaKids = Array.isArray(taskMeta?.props?.children) ? taskMeta.props.children : []
-const assigneeAt = metaKids.findIndex(child => child?.props?.children === 'builder')
+const assigneeAt = metaKids.findIndex(child => child?.props?.className === 'tk-chip tk-owner-chip')
 const statsAt = metaKids.findIndex(child => child?.props?.className === 'tk-insp-stats')
 check(assigneeAt >= 0 && statsAt === assigneeAt + 1,
   'the header statistics do not follow the assignee chip: ' + assigneeAt + ' vs ' + statsAt)
 check(artifact.includes('.tk-insp-stats{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0;max-width:100%}'),
   'the header statistics have no compact inline stylesheet rule')
+
+/* The assignee chip is the details affordance: a real button with the
+   details tooltip, and the separate gauge control is gone. */
+const taskOwnerChip = metaKids[assigneeAt]
+check(taskOwnerChip?.type === 'button', 'the task dialog assignee chip is not an interactive button')
+check(taskOwnerChip?.props?.title === 'agentDetails' && taskOwnerChip?.props?.['aria-label'] === 'agentDetails',
+  'the assignee chip has no agent-details tooltip')
+check(surface(taskOwnerChip).texts.includes('builder'), 'the clickable assignee chip lost the owner name')
+check(within(headActionBar, node => node.type === 'button'
+  && node.props?.['aria-label'] === 'agentDetails').length === 0,
+  'the task dialog header still carries the separate details button')
+check(artifact.includes('.tk-owner-chip{font-family:inherit;min-width:0;max-width:100%;padding:0 5px;overflow:hidden;cursor:pointer}'),
+  'the clickable assignee chip has no stylesheet rule')
 
 /* The task dialog is two columns: facts on the left, Markdown on the right. */
 const taskDialog = withTask.nodes.find(node => node.props?.['data-task-id'] === 'task-1'
@@ -965,6 +978,36 @@ check(!reportView.texts.includes('Draw the columns.'), 'the Report tab still ren
 reportView.nodes.find(node => node.props?.['data-tab'] === 'description')?.props?.onClick?.()
 resetHooks()
 surface(tabBody(props))
+
+/* The assignee chip opens the owning agent's dialog on top of the task
+   dialog, which comes back when the stacked dialog closes. */
+taskOwnerChip?.props?.onClick?.()
+resetHooks()
+const stackedDialogs = surface(tabBody(props))
+check(stackedDialogs.nodes.some(node => node.props?.['data-agent-dialog'] === 'session-a'),
+  'clicking the assignee chip did not open the agent dialog')
+const ownTarget = {}
+stackedDialogs.nodes.filter(node => node.props?.className === 'tk-backdrop').pop()
+  ?.props?.onMouseDown?.({ target: ownTarget, currentTarget: ownTarget })
+resetHooks()
+const backToTask = surface(tabBody(props))
+check(backToTask.nodes.some(node => node.props?.['data-task-id'] === 'task-1' && node.props?.role === 'dialog'),
+  'closing the stacked agent dialog lost the task dialog')
+
+/* A task without an owner keeps the plain, non-interactive chip. */
+const ownerlessCard = withTask.nodes.find(node => typeof node.type === 'function'
+  && node.type.name === 'TaskCard' && node.props?.task?.id === 'task-2')
+ownerlessCard?.props?.onOpen?.('task-2')
+resetHooks()
+const ownerlessDialog = surface(tabBody(props))
+const ownerlessNode = ownerlessDialog.nodes.find(node => node.props?.['data-task-id'] === 'task-2'
+  && node.props?.role === 'dialog')
+const ownerlessMeta = within(ownerlessNode, node => node.props?.className === 'tk-insp-meta')[0]
+const ownerlessChildren = Array.isArray(ownerlessMeta?.props?.children) ? ownerlessMeta.props.children : []
+check(ownerlessChildren.find(child => child?.props?.children === 'statusUnowned')?.type?.name === 'Chip',
+  'a task without an owner got a clickable assignee chip')
+check(!ownerlessDialog.classes.has('tk-owner-chip'),
+  'an ownerless task rendered the clickable owner-chip styles')
 
 /* Navigating from the task dialog must also close it. */
 const openFromTask = within(taskTree, node => node.type === 'button'

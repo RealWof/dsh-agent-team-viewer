@@ -2172,6 +2172,10 @@ window.__ModuleLoader__.load({
 .tk-owner-link>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-owner-link:hover{color:var(--dsw-alias-brand-primary);text-decoration:underline}
 .tk-owner-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px;border-radius:3px}
+.tk-owner-chip{font-family:inherit;min-width:0;max-width:100%;padding:0 5px;overflow:hidden;cursor:pointer}
+.tk-owner-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-owner-chip:hover{color:var(--dsw-alias-brand-primary);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
+.tk-owner-chip:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 12px;text-align:center;
   border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}
 .tk-error{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border:1px solid var(--dsw-alias-state-error-primary);
@@ -6310,7 +6314,19 @@ window.__ModuleLoader__.load({
       const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
 
       // The owning agent's actions sit in the header's right corner, left of
-      // the close control, so the agent block itself stays facts only.
+      // the close control, so the agent block itself stays facts only. The
+      // assignee chip is the details affordance: with a resolved owner and an
+      // inspector it becomes a button, otherwise it stays a plain chip.
+      const ownerChip = typeof onInspect === 'function' && ownerId !== undefined
+        ? h('button', {
+          type: 'button',
+          className: 'tk-chip tk-owner-chip',
+          title: t('agentDetails'),
+          'aria-label': t('agentDetails'),
+          onClick: () => { onInspect(ownerId) },
+        }, h(Icon, { name: 'users', size: 10 }), h('span', null, agentName))
+        : h(Chip, { icon: 'users' }, agentName)
+
       const headActions = agent === undefined
         ? null
         : h('span', { className: 'tk-insp-actions' },
@@ -6327,14 +6343,7 @@ window.__ModuleLoader__.load({
             title: t('agentOpenAsideHint'),
             'aria-label': t('agentOpenAsideHint'),
             onClick: () => { onOpenAgent(task.ownerId, 'aside') },
-          }, h(Icon, { name: 'panel-right', size: 13 })),
-          typeof onInspect !== 'function' ? null : h('button', {
-            type: 'button',
-            className: 'tk-icon-btn',
-            title: t('agentDetails'),
-            'aria-label': t('agentDetails'),
-            onClick: () => { onInspect(task.ownerId) },
-          }, h(Icon, { name: 'gauge', size: 13 })))
+          }, h(Icon, { name: 'panel-right', size: 13 })))
 
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
@@ -6343,9 +6352,7 @@ window.__ModuleLoader__.load({
             h(StateDot, { state, size: 10 }),
             h(Chip, { tone: statusTone }, statusLabel),
             h('span', { className: 'tk-card-id' }, '#' + String(task.id).replace(/^task-/, '')),
-            agent === undefined
-              ? h(Chip, { icon: 'users' }, owner)
-              : h(Chip, { icon: 'users' }, agentName),
+            ownerChip,
             agentLine.length === 0
               ? null
               : h('span', {
