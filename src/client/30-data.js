@@ -1201,14 +1201,20 @@
           group.agents.push(agent)
         }
         // The Lead is pinned on top of its own column, without a group head.
-        // The rest follow the role/custom grouping when a switch is on, and
-        // the flat order when both are off.
+        // The rest follow the role/custom grouping when a switch is on; with
+        // both switches off they follow the view sort like every other list.
         return groups.map(column => {
           const leadRow = column.agents.find(agent => agent.isLead === true)
           const rest = column.agents.filter(agent => agent.isLead !== true)
           const units = planAgentGroups(rest, settings)
           if (units === null) {
-            return { ...column, agents: leadRow === undefined ? rest : [leadRow, ...rest], groups: null, lead: leadRow }
+            const ordered = sortAgents(rest, settings.sort)
+            return {
+              ...column,
+              agents: leadRow === undefined ? ordered : [leadRow, ...ordered],
+              groups: null,
+              lead: leadRow,
+            }
           }
           const rows = leadRow === undefined ? [] : [leadRow]
           for (const unit of units) rows.push(...unit.agents)

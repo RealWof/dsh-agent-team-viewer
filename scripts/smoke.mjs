@@ -1096,7 +1096,7 @@ check(restored.nodes.some(node => node.props?.['data-agent-column'] === 'done'),
 const SETTINGS_STORAGE_KEY = 'dsh.agent-team-viewer.settings.v1'
 
 /** Load another copy of the bundle so its view-settings store is re-read. */
-const boardFromFreshBundle = () => {
+const boardFromFreshBundle = (state = listState) => {
   let captured
   const target = { ...globalThis.window, __ModuleLoader__: { load: definition => { captured = definition } } }
   new Function('window', artifact)(target)
@@ -1107,7 +1107,7 @@ const boardFromFreshBundle = () => {
   plugin.apply(ctx)
   resetSlots()
   resetHooks()
-  return surface(tabBody(props))
+  return surface(tabBody({ ...props, useSessions: selector => selector(state) }))
 }
 
 // The seeded fold state above would hide the columns; start from a clean one.
@@ -1137,6 +1137,28 @@ check(!flatBoard.nodes.some(node => node.props?.['data-subgroup'] !== undefined)
   'a subgroup head is rendered with both grouping switches off')
 check(flatBoard.nodes.filter(node => node.props?.className === 'tk-agent-row').length === 3,
   'the flat fallback lost an agent row')
+
+// ...and the flat rows still follow the view sort, with the Lead pinned first.
+const flatSortState = JSON.parse(JSON.stringify(listState))
+flatSortState.byId['session-a'].running = false
+delete flatSortState.projectionsBySession['session-b'].values.subagentTiming
+const flatIdleRows = rendered => {
+  const idle = rendered.nodes.find(node => node.props?.['data-agent-column'] === 'idle')
+  return within(idle, node => node.props?.className === 'tk-agent-row').map(node => node.props?.['data-agent-id'])
+}
+const setFlatSort = sort => {
+  storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: false, customGroups: false, sort }))
+  return boardFromFreshBundle(flatSortState)
+}
+const newestFlatRows = flatIdleRows(setFlatSort('newest'))
+check(newestFlatRows.join(',') === 'session-b,session-a',
+  'the flat agent strip ignores the newest-first view sort, got: ' + newestFlatRows.join(','))
+const oldestFlatRows = flatIdleRows(setFlatSort('oldest'))
+check(oldestFlatRows.join(',') === 'session-a,session-b',
+  'the flat agent strip ignores the oldest-first view sort, got: ' + oldestFlatRows.join(','))
+const nameFlatRows = flatIdleRows(setFlatSort('name'))
+check(nameFlatRows.join(',') === 'session-a,session-b',
+  'the flat agent strip ignores the name view sort, got: ' + nameFlatRows.join(','))
 
 /* --- Report ----------------------------------------------------------- */
 
