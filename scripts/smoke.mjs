@@ -569,13 +569,17 @@ check(activeRows[0]?.props?.['data-lead'] === 'true', 'the lead is not the first
 check(strip.texts.includes('colActive') && strip.texts.includes('colDone') && strip.texts.includes('colAgentIdle'),
   'an agent group header is missing its label')
 
-/* Both section headers carry the sort choice, and it edits the same setting. */
-const sortSelects = strip.nodes.filter(node => node.props?.className === 'tk-sort')
-check(sortSelects.length === 2, 'the section headers do not both carry a sort selector, got ' + sortSelects.length)
-check(sortSelects.every(node => node.props?.value === 'newest'),
-  'the section sort selectors do not show the current view sort')
-check(sortSelects.every(node => node.props?.['aria-label'] === 'setSorting'),
-  'the sort selector has no localized aria label')
+/* Both section headers carry the sort menu, and it edits the same setting. */
+const sortMenus = strip.nodes.filter(node => node.props?.className === 'tk-sort')
+const sortButtons = strip.nodes.filter(node => node.props?.className === 'tk-sort-btn')
+check(sortMenus.length === 2 && sortButtons.length === 2,
+  'the section headers do not both carry a sort menu, got ' + sortButtons.length)
+check(sortButtons.every(node => node.props?.['aria-haspopup'] === 'menu'
+  && node.props?.['aria-expanded'] === 'false' && node.props?.['aria-label'] === 'setSorting'),
+'the sort button has no localized accessibility state')
+check(strip.texts.filter(text => text === 'setSortNewest').length === 2,
+  'the section sort menus do not name the current option')
+check(!strip.texts.includes('agentOpenHint'), 'the agents header still shows the static open-chat hint')
 
 /* --- Role grouping: two agents of one role share a nested head -------- */
 
@@ -1279,12 +1283,22 @@ const nameFlatRows = flatIdleRows(setFlatSort('name'))
 check(nameFlatRows.join(',') === 'session-a,session-b',
   'the flat agent strip ignores the name view sort, got: ' + nameFlatRows.join(','))
 
-// The header selector writes the same `sort` preference the Settings page edits.
+// The header menu writes the same `sort` preference the Settings page edits.
 const sortable = boardFromFreshBundle()
-sortable.nodes.find(node => node.props?.className === 'tk-sort')
-  ?.props?.onChange?.({ target: { value: 'oldest' } })
+sortable.nodes.find(node => node.props?.className === 'tk-sort-btn')
+  ?.props?.onClick?.({ stopPropagation: () => {} })
+resetHooks()
+const menuOpen = surface(tabBody(props))
+const sortOptions = menuOpen.nodes.filter(node => node.props?.className === 'tk-sort-option')
+check(sortOptions.length === 3, 'the sort menu does not offer three options, got ' + sortOptions.length)
+check(menuOpen.nodes.some(node => node.props?.className === 'tk-sort-btn' && node.props?.['aria-expanded'] === 'true'),
+  'the sort menu did not report itself open')
+check(sortOptions.every(node => node.props?.role === 'menuitemradio'),
+  'the sort options do not expose the radio menu role')
+sortOptions.find(node => node.props?.['data-value'] === 'oldest')
+  ?.props?.onClick?.({ stopPropagation: () => {} })
 check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).sort === 'oldest',
-  'the header sort selector did not persist the view sort')
+  'the header sort menu did not persist the view sort')
 
 // The dialog scale is its own preference: a seeded value zooms only the panel.
 storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ sort: 'newest', dialogScale: 1.25 }))

@@ -1667,10 +1667,29 @@ window.__ModuleLoader__.load({
 .tk-head-title{margin:0;min-width:0;font-size:13px;line-height:18px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-head-sub{min-width:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .tk-head-spacer{flex:1 1 auto;min-width:4px}
-.tk-sort{flex:none;max-width:118px;min-width:0;padding:0 1px;border:0;border-radius:var(--dsw-radius-sm);
-  background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;line-height:14px;cursor:pointer}
-.tk-sort:hover{color:var(--dsw-alias-label-primary)}
-.tk-sort:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-sort{position:relative;flex:none;max-width:132px;min-width:0}
+.tk-sort-btn{display:inline-flex;align-items:center;gap:3px;max-width:132px;min-width:0;padding:1px 3px;
+  border:1px solid transparent;border-radius:var(--dsw-radius-sm);background:transparent;
+  color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;line-height:14px;cursor:pointer}
+.tk-sort-btn:hover{color:var(--dsw-alias-label-primary);
+  background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent))}
+.tk-sort-btn:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-sort-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-sort-chevron{flex:none;transition:transform .12s ease}
+.tk-sort-btn[aria-expanded="true"] .tk-sort-chevron{transform:rotate(180deg)}
+@media (prefers-reduced-motion: reduce){.tk-sort-chevron{transition:none}}
+.tk-sort-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:6;min-width:132px;padding:3px;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);
+  background:var(--dsw-alias-bg-layer-2);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+.tk-sort-option{display:flex;align-items:center;gap:5px;width:100%;min-width:0;padding:3px 6px;border:0;
+  border-radius:3px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;
+  line-height:15px;text-align:left;white-space:nowrap;cursor:pointer}
+.tk-sort-option:hover,.tk-sort-option:focus-visible,.tk-sort-option[data-active="true"]{background:var(--dsw-alias-interactive-bg-hover,
+  color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent));outline:none}
+.tk-sort-option[aria-checked="true"]{background:var(--dsw-alias-interactive-bg-hover,
+  color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent))}
+.tk-sort-check{flex:none;visibility:hidden;color:var(--dsw-alias-brand-primary)}
+.tk-sort-option[aria-checked="true"] .tk-sort-check{visibility:visible}
 .tk-readonly{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
   border-radius:999px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
 .tk-icon-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;
@@ -1886,7 +1905,8 @@ window.__ModuleLoader__.load({
 .tk-set-text:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-set-text:disabled{cursor:not-allowed;opacity:.6}
 .tk-set-select{min-width:0;padding:3px 6px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);
-  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
+  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
+.tk-set-select option{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 .tk-set-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 `
 
@@ -4129,27 +4149,130 @@ window.__ModuleLoader__.load({
             : null))
     }
 
+    /** The sort choices the header menu offers, in display order. */
+    const SORT_OPTIONS = [
+      { value: 'newest', labelKey: 'setSortNewest' },
+      { value: 'oldest', labelKey: 'setSortOldest' },
+      { value: 'name', labelKey: 'setSortName' },
+    ]
+
     /**
-     * The compact sort choice both section headers carry. It writes the same
+     * The compact sort menu both section headers carry. It writes the same
      * `sort` view setting the Settings page edits, so the board reorders in
-     * place without leaving the tab.
+     * place without leaving the tab. A native `<select>` renders its popup in
+     * the platform's own (light) surface over the dark panel, so the menu is
+     * drawn from the product's theme tokens instead.
      * @param props - `sort`, `onChange` and `t`.
      */
     function SortSelect({ sort, onChange, t }) {
+      const [open, setOpen] = useState(false)
+      const [active, setActive] = useState(() => Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort)))
+      const rootRef = useRef(null)
+      const buttonRef = useRef(null)
       const label = t('setSorting')
-      return h('select', {
+      const current = SORT_OPTIONS.find(option => option.value === sort) ?? SORT_OPTIONS[0]
+
+      // Close on an outside pointer press or Escape while the menu is open.
+      useEffect(() => {
+        if (!open) return undefined
+        const onPointer = event => {
+          const root = rootRef.current
+          if (root !== null && typeof root.contains === 'function'
+            && typeof event.target === 'object' && root.contains(event.target)) return
+          setOpen(false)
+        }
+        const onKey = event => {
+          if (event !== null && event.key === 'Escape') setOpen(false)
+        }
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+          document.addEventListener('pointerdown', onPointer)
+        }
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+          window.addEventListener('keydown', onKey)
+        }
+        return () => {
+          if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+            document.removeEventListener('pointerdown', onPointer)
+          }
+          if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+            window.removeEventListener('keydown', onKey)
+          }
+        }
+      }, [open])
+
+      const choose = value => {
+        setOpen(false)
+        if (typeof onChange === 'function') onChange(value)
+      }
+      const move = step => {
+        const from = open ? active : Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort))
+        setActive((from + step + SORT_OPTIONS.length) % SORT_OPTIONS.length)
+        if (!open) setOpen(true)
+      }
+      const closeMenu = () => {
+        setOpen(false)
+        const node = buttonRef.current
+        if (node !== null && node !== undefined && typeof node.focus === 'function') node.focus()
+      }
+      const onKeyDown = event => {
+        if (event === null || typeof event !== 'object') return
+        if (event.key === 'Escape' && open) {
+          stopEvent(event)
+          closeMenu()
+          return
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          stopEvent(event)
+          move(event.key === 'ArrowDown' ? 1 : -1)
+          return
+        }
+        if (open && (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar')) {
+          stopEvent(event)
+          choose(SORT_OPTIONS[active].value)
+        }
+      }
+
+      return h('div', {
         className: 'tk-sort',
         'data-sort': 'true',
-        value: sort,
+        ref: rootRef,
+        onKeyDown,
+      },
+      h('button', {
+        type: 'button',
+        className: 'tk-sort-btn',
+        ref: buttonRef,
         title: label,
         'aria-label': label,
-        onChange: event => {
-          if (typeof onChange === 'function') onChange(event.target.value)
+        'aria-haspopup': 'menu',
+        'aria-expanded': open ? 'true' : 'false',
+        onClick: event => {
+          stopEvent(event)
+          if (!open) setActive(Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort)))
+          setOpen(value => !value)
         },
       },
-      h('option', { value: 'newest' }, t('setSortNewest')),
-      h('option', { value: 'oldest' }, t('setSortOldest')),
-      h('option', { value: 'name' }, t('setSortName')))
+      h('span', { className: 'tk-sort-label' }, t(current.labelKey)),
+      h(Icon, { name: 'chevron-down', size: 10, className: 'tk-sort-chevron' })),
+      open
+        ? h('div', { className: 'tk-sort-menu', role: 'menu', 'aria-label': label },
+          SORT_OPTIONS.map((option, index) => h('button', {
+            key: option.value,
+            type: 'button',
+            role: 'menuitemradio',
+            className: 'tk-sort-option',
+            'data-value': option.value,
+            'data-active': index === active ? 'true' : 'false',
+            'aria-checked': option.value === sort ? 'true' : 'false',
+            onFocus: () => { setActive(index) },
+            onClick: event => {
+              stopEvent(event)
+              choose(option.value)
+            },
+          },
+          h(Icon, { name: 'check', size: 10, className: 'tk-sort-check' }),
+          h('span', null, t(option.labelKey)))))
+        : null)
     }
 
     /**
@@ -4275,10 +4398,9 @@ window.__ModuleLoader__.load({
           h('h3', { className: 'tk-sec-title' }, t('agentsHeading')),
           h('span', { className: 'tk-sec-note' }, String(subagents) + ' ' + countLabel),
           h('span', { className: 'tk-head-spacer' }),
-          h('span', {
-            className: 'tk-note',
-            title: costState === 'missing' ? t('costMissingHint') : undefined,
-          }, costState === 'missing' ? t('costMissing') : t('agentOpenHint')),
+          costState === 'missing'
+            ? h('span', { className: 'tk-note', title: t('costMissingHint') }, t('costMissing'))
+            : null,
           h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
           ? null

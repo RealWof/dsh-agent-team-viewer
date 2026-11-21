@@ -416,27 +416,130 @@
             : null))
     }
 
+    /** The sort choices the header menu offers, in display order. */
+    const SORT_OPTIONS = [
+      { value: 'newest', labelKey: 'setSortNewest' },
+      { value: 'oldest', labelKey: 'setSortOldest' },
+      { value: 'name', labelKey: 'setSortName' },
+    ]
+
     /**
-     * The compact sort choice both section headers carry. It writes the same
+     * The compact sort menu both section headers carry. It writes the same
      * `sort` view setting the Settings page edits, so the board reorders in
-     * place without leaving the tab.
+     * place without leaving the tab. A native `<select>` renders its popup in
+     * the platform's own (light) surface over the dark panel, so the menu is
+     * drawn from the product's theme tokens instead.
      * @param props - `sort`, `onChange` and `t`.
      */
     function SortSelect({ sort, onChange, t }) {
+      const [open, setOpen] = useState(false)
+      const [active, setActive] = useState(() => Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort)))
+      const rootRef = useRef(null)
+      const buttonRef = useRef(null)
       const label = t('setSorting')
-      return h('select', {
+      const current = SORT_OPTIONS.find(option => option.value === sort) ?? SORT_OPTIONS[0]
+
+      // Close on an outside pointer press or Escape while the menu is open.
+      useEffect(() => {
+        if (!open) return undefined
+        const onPointer = event => {
+          const root = rootRef.current
+          if (root !== null && typeof root.contains === 'function'
+            && typeof event.target === 'object' && root.contains(event.target)) return
+          setOpen(false)
+        }
+        const onKey = event => {
+          if (event !== null && event.key === 'Escape') setOpen(false)
+        }
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+          document.addEventListener('pointerdown', onPointer)
+        }
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+          window.addEventListener('keydown', onKey)
+        }
+        return () => {
+          if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+            document.removeEventListener('pointerdown', onPointer)
+          }
+          if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+            window.removeEventListener('keydown', onKey)
+          }
+        }
+      }, [open])
+
+      const choose = value => {
+        setOpen(false)
+        if (typeof onChange === 'function') onChange(value)
+      }
+      const move = step => {
+        const from = open ? active : Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort))
+        setActive((from + step + SORT_OPTIONS.length) % SORT_OPTIONS.length)
+        if (!open) setOpen(true)
+      }
+      const closeMenu = () => {
+        setOpen(false)
+        const node = buttonRef.current
+        if (node !== null && node !== undefined && typeof node.focus === 'function') node.focus()
+      }
+      const onKeyDown = event => {
+        if (event === null || typeof event !== 'object') return
+        if (event.key === 'Escape' && open) {
+          stopEvent(event)
+          closeMenu()
+          return
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          stopEvent(event)
+          move(event.key === 'ArrowDown' ? 1 : -1)
+          return
+        }
+        if (open && (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar')) {
+          stopEvent(event)
+          choose(SORT_OPTIONS[active].value)
+        }
+      }
+
+      return h('div', {
         className: 'tk-sort',
         'data-sort': 'true',
-        value: sort,
+        ref: rootRef,
+        onKeyDown,
+      },
+      h('button', {
+        type: 'button',
+        className: 'tk-sort-btn',
+        ref: buttonRef,
         title: label,
         'aria-label': label,
-        onChange: event => {
-          if (typeof onChange === 'function') onChange(event.target.value)
+        'aria-haspopup': 'menu',
+        'aria-expanded': open ? 'true' : 'false',
+        onClick: event => {
+          stopEvent(event)
+          if (!open) setActive(Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort)))
+          setOpen(value => !value)
         },
       },
-      h('option', { value: 'newest' }, t('setSortNewest')),
-      h('option', { value: 'oldest' }, t('setSortOldest')),
-      h('option', { value: 'name' }, t('setSortName')))
+      h('span', { className: 'tk-sort-label' }, t(current.labelKey)),
+      h(Icon, { name: 'chevron-down', size: 10, className: 'tk-sort-chevron' })),
+      open
+        ? h('div', { className: 'tk-sort-menu', role: 'menu', 'aria-label': label },
+          SORT_OPTIONS.map((option, index) => h('button', {
+            key: option.value,
+            type: 'button',
+            role: 'menuitemradio',
+            className: 'tk-sort-option',
+            'data-value': option.value,
+            'data-active': index === active ? 'true' : 'false',
+            'aria-checked': option.value === sort ? 'true' : 'false',
+            onFocus: () => { setActive(index) },
+            onClick: event => {
+              stopEvent(event)
+              choose(option.value)
+            },
+          },
+          h(Icon, { name: 'check', size: 10, className: 'tk-sort-check' }),
+          h('span', null, t(option.labelKey)))))
+        : null)
     }
 
     /**
@@ -562,10 +665,9 @@
           h('h3', { className: 'tk-sec-title' }, t('agentsHeading')),
           h('span', { className: 'tk-sec-note' }, String(subagents) + ' ' + countLabel),
           h('span', { className: 'tk-head-spacer' }),
-          h('span', {
-            className: 'tk-note',
-            title: costState === 'missing' ? t('costMissingHint') : undefined,
-          }, costState === 'missing' ? t('costMissing') : t('agentOpenHint')),
+          costState === 'missing'
+            ? h('span', { className: 'tk-note', title: t('costMissingHint') }, t('costMissing'))
+            : null,
           h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
           ? null
