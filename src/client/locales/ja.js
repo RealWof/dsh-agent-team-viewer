@@ -148,4 +148,6 @@
       groupingOn: 'グループ化オン',
       groupingOff: 'グループ化オフ',
       groupingToggleHint: 'このセクションのグループ化を切り替えます',
+      setShowModelProvider: 'プロバイダーを表示',
+      setShowModelProviderHint: 'エージェントのモデル行でプロバイダーをモデルの前に表示します。ツールチップには常に含まれます。',
     }

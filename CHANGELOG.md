@@ -8,8 +8,13 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Added
 
+- A **Show the provider** view setting (off by default, disabled while **Show the agent model** is
+  off) puts the provider at the front of the agent model line. With it on the line reads
+  `provider · model · effort`; with it off it reads `model · effort`; the tooltip always carries the
+  full line, and an agent whose selection is unknown gets no line.
 - A **Show the agent model** view setting (off by default) adds a compact, ellipsized
-  `provider · model · effort` line under each agent name, with the full text in its tooltip. An agent
+  `model · effort` line in the bottom-right of each agent row, with the full
+  `provider · model · effort` text in its tooltip. An agent
   whose selection is unknown gets no line, and the agent dialog is unchanged.
 - The Settings page ends with an **About** block whose localized button links open the repository,
   the README and the CHANGELOG on GitHub in a new tab.

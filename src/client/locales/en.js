@@ -147,4 +147,6 @@
       groupingOn: 'Grouping is on',
       groupingOff: 'Grouping is off',
       groupingToggleHint: 'Toggle grouping in this section',
+      setShowModelProvider: 'Show the provider',
+      setShowModelProviderHint: 'Puts the provider before the model in the agent model line; the tooltip always keeps it.',
     }

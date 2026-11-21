@@ -148,4 +148,6 @@
       groupingOn: 'Regroupement activé',
       groupingOff: 'Regroupement désactivé',
       groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
+      setShowModelProvider: 'Afficher le fournisseur',
+      setShowModelProviderHint: 'Place le fournisseur avant le modèle dans la ligne de l\u2019agent ; l\u2019infobulle le garde toujours.',
     }

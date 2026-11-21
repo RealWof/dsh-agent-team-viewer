@@ -148,4 +148,6 @@
       groupingOn: 'Agrupamento ativado',
       groupingOff: 'Agrupamento desativado',
       groupingToggleHint: 'Alternar o agrupamento nesta seção',
+      setShowModelProvider: 'Mostrar o provedor',
+      setShowModelProviderHint: 'Coloca o provedor antes do modelo na linha do agente; a dica sempre o inclui.',
     }

@@ -284,8 +284,10 @@ window.__ModuleLoader__.load({
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
      * `showAgentModel` stays off so the agent rows stay as compact as the
-     * Subagents menu's, and the model line is opt-in.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean }}
+     * Subagents menu's, and the model line is opt-in. `showModelProvider` stays
+     * off too: the line starts at `model · effort`, and the provider joins it
+     * only when the reader asks for it — the tooltip always carries it.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -299,6 +301,7 @@ window.__ModuleLoader__.load({
       uiScale: 1,
       dialogScale: 1,
       showAgentModel: false,
+      showModelProvider: false,
     }
 
     /**
@@ -350,6 +353,7 @@ window.__ModuleLoader__.load({
         dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.dialogScale),
         showAgentModel: boolean(read('showAgentModel'), VIEW_SETTINGS_DEFAULTS.showAgentModel),
+        showModelProvider: boolean(read('showModelProvider'), VIEW_SETTINGS_DEFAULTS.showModelProvider),
       }
     }
 
@@ -637,7 +641,9 @@ window.__ModuleLoader__.load({
             VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale)),
 
         h(SettingsGroup, { title: t('agentsHeading'), icon: 'users' },
-          switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint'))),
+          switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint')),
+          switchRow('showModelProvider', t('setShowModelProvider'), t('setShowModelProviderHint'), false,
+            settings.showAgentModel !== true)),
 
         h(SettingsGroup, { title: t('aboutHeading'), icon: 'link' },
           h('div', { className: 'tk-set-about' },
@@ -810,6 +816,8 @@ window.__ModuleLoader__.load({
       groupingOn: 'Grouping is on',
       groupingOff: 'Grouping is off',
       groupingToggleHint: 'Toggle grouping in this section',
+      setShowModelProvider: 'Show the provider',
+      setShowModelProviderHint: 'Puts the provider before the model in the agent model line; the tooltip always keeps it.',
     }
 
 /**
@@ -962,6 +970,8 @@ window.__ModuleLoader__.load({
       groupingOn: 'Группировка включена',
       groupingOff: 'Группировка выключена',
       groupingToggleHint: 'Переключить группировку в этом разделе',
+      setShowModelProvider: 'Показывать провайдера',
+      setShowModelProviderHint: 'Ставит провайдера перед моделью в строке модели агента; в подсказке он есть всегда.',
     }
 
 /**
@@ -1114,6 +1124,8 @@ window.__ModuleLoader__.load({
       groupingOn: '分组已开启',
       groupingOff: '分组已关闭',
       groupingToggleHint: '切换此分区的分组',
+      setShowModelProvider: '显示提供商',
+      setShowModelProviderHint: '在代理模型行中把提供商放在模型之前；提示中始终保留提供商。',
     }
 
 /**
@@ -1266,6 +1278,8 @@ window.__ModuleLoader__.load({
       groupingOn: 'グループ化オン',
       groupingOff: 'グループ化オフ',
       groupingToggleHint: 'このセクションのグループ化を切り替えます',
+      setShowModelProvider: 'プロバイダーを表示',
+      setShowModelProviderHint: 'エージェントのモデル行でプロバイダーをモデルの前に表示します。ツールチップには常に含まれます。',
     }
 
 /**
@@ -1418,6 +1432,8 @@ window.__ModuleLoader__.load({
       groupingOn: 'Agrupación activada',
       groupingOff: 'Agrupación desactivada',
       groupingToggleHint: 'Alternar la agrupación en esta sección',
+      setShowModelProvider: 'Mostrar el proveedor',
+      setShowModelProviderHint: 'Muestra el proveedor antes del modelo en la línea del agente; la información lo conserva siempre.',
     }
 
 /**
@@ -1570,6 +1586,8 @@ window.__ModuleLoader__.load({
       groupingOn: 'Regroupement activé',
       groupingOff: 'Regroupement désactivé',
       groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
+      setShowModelProvider: 'Afficher le fournisseur',
+      setShowModelProviderHint: 'Place le fournisseur avant le modèle dans la ligne de l\u2019agent ; l\u2019infobulle le garde toujours.',
     }
 
 /**
@@ -1722,6 +1740,8 @@ window.__ModuleLoader__.load({
       groupingOn: 'Gruppierung an',
       groupingOff: 'Gruppierung aus',
       groupingToggleHint: 'Gruppierung in diesem Bereich umschalten',
+      setShowModelProvider: 'Anbieter anzeigen',
+      setShowModelProviderHint: 'Setzt den Anbieter vor das Modell in der Modellzeile des Agenten; der Tooltip enthält ihn immer.',
     }
 
 /**
@@ -1874,6 +1894,8 @@ window.__ModuleLoader__.load({
       groupingOn: 'Agrupamento ativado',
       groupingOff: 'Agrupamento desativado',
       groupingToggleHint: 'Alternar o agrupamento nesta seção',
+      setShowModelProvider: 'Mostrar o provedor',
+      setShowModelProviderHint: 'Coloca o provedor antes do modelo na linha do agente; a dica sempre o inclui.',
     }
 
 /* ------------------------------------------------------------------ *
@@ -2036,8 +2058,9 @@ window.__ModuleLoader__.load({
 .tk-agent-name:hover{text-decoration:underline}
 .tk-agent-name:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px;border-radius:3px}
 .tk-agent-mode{flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
-.tk-agent-model{min-width:0;padding-left:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
-  font-size:9px;line-height:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.tk-agent-model{display:block;width:100%;min-width:0;margin-top:1px;text-align:right;overflow:hidden;
+  text-overflow:ellipsis;white-space:nowrap;font-size:9px;line-height:12px;
+  color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
 .tk-agent-jump{width:18px;height:18px}
 .tk-task-link{display:flex;align-items:center;gap:5px;width:100%;min-width:0;padding:3px 4px;border:0;border-radius:4px;
   background:transparent;color:inherit;font:inherit;font-size:11px;line-height:15px;text-align:left;cursor:pointer}
@@ -5029,20 +5052,27 @@ window.__ModuleLoader__.load({
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row. `showAgentModel` adds
-     * an opt-in ellipsized provider · model · effort line.
+     * an opt-in ellipsized model line on the bottom-right; `showModelProvider`
+     * decides whether its visible text starts with the provider or only the
+     * model — the tooltip carries the full `provider · model · effort` either
+     * way.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
      *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
-     *   and `showAgentModel` from the view settings.
+     *   `showAgentModel` and `showModelProvider` from the view settings.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
       const selection = agent.model
-      const modelParts = selection === undefined
+      const partsOf = fields => (selection === undefined
         ? []
-        : [selection.provider, selection.model, selection.effort]
-          .filter(part => typeof part === 'string' && part !== '')
-      const modelLine = modelParts.join(' · ')
+        : fields.map(field => selection[field]).filter(part => typeof part === 'string' && part !== ''))
+      // The tooltip always names the provider; the visible line drops it unless
+      // the reader asked for it. An unknown selection adds no line at all.
+      const modelTitle = partsOf(['provider', 'model', 'effort']).join(' · ')
+      const modelLine = partsOf(showModelProvider === true
+        ? ['provider', 'model', 'effort']
+        : ['model', 'effort']).join(' · ')
       const modelVisible = showAgentModel === true && modelLine !== ''
       const items = agentMetricLine(stats, t)
       const rosterRead = Array.isArray(jobs)
@@ -5111,7 +5141,6 @@ window.__ModuleLoader__.load({
             onOpenAgent(agent.id, 'aside')
           },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
-      modelVisible ? h('span', { className: 'tk-agent-model', title: modelLine }, modelLine) : null,
       showJobs !== true && items.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
@@ -5126,7 +5155,8 @@ window.__ModuleLoader__.load({
               title: jobsLabel,
               'aria-label': jobsLabel,
             }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length))
-            : null))
+            : null),
+      modelVisible ? h('span', { className: 'tk-agent-model', title: modelTitle }, modelLine) : null)
     }
 
     /** The sort choices the header menu offers, in display order. */
@@ -5372,13 +5402,13 @@ window.__ModuleLoader__.load({
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `agentGroupingOn`
-     *   and `onToggleAgentGrouping`.
+     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `showModelProvider`,
+     *   `agentGroupingOn` and `onToggleAgentGrouping`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
-      showAgentModel = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
+      showAgentModel = false, showModelProvider = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -5398,6 +5428,7 @@ window.__ModuleLoader__.load({
         onInspect,
         hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
         showAgentModel,
+        showModelProvider,
       })
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
@@ -5777,6 +5808,7 @@ window.__ModuleLoader__.load({
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
               showAgentModel: settings.showAgentModel === true,
+              showModelProvider: settings.showModelProvider === true,
               agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
               onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
             })

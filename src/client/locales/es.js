@@ -148,4 +148,6 @@
       groupingOn: 'Agrupación activada',
       groupingOff: 'Agrupación desactivada',
       groupingToggleHint: 'Alternar la agrupación en esta sección',
+      setShowModelProvider: 'Mostrar el proveedor',
+      setShowModelProviderHint: 'Muestra el proveedor antes del modelo en la línea del agente; la información lo conserva siempre.',
     }

@@ -148,4 +148,6 @@
       groupingOn: '分组已开启',
       groupingOff: '分组已关闭',
       groupingToggleHint: '切换此分区的分组',
+      setShowModelProvider: '显示提供商',
+      setShowModelProviderHint: '在代理模型行中把提供商放在模型之前；提示中始终保留提供商。',
     }

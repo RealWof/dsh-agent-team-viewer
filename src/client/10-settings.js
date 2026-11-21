@@ -29,8 +29,10 @@
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
      * `showAgentModel` stays off so the agent rows stay as compact as the
-     * Subagents menu's, and the model line is opt-in.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean }}
+     * Subagents menu's, and the model line is opt-in. `showModelProvider` stays
+     * off too: the line starts at `model · effort`, and the provider joins it
+     * only when the reader asks for it — the tooltip always carries it.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -44,6 +46,7 @@
       uiScale: 1,
       dialogScale: 1,
       showAgentModel: false,
+      showModelProvider: false,
     }
 
     /**
@@ -95,6 +98,7 @@
         dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.dialogScale),
         showAgentModel: boolean(read('showAgentModel'), VIEW_SETTINGS_DEFAULTS.showAgentModel),
+        showModelProvider: boolean(read('showModelProvider'), VIEW_SETTINGS_DEFAULTS.showModelProvider),
       }
     }
 
@@ -382,7 +386,9 @@
             VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale)),
 
         h(SettingsGroup, { title: t('agentsHeading'), icon: 'users' },
-          switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint'))),
+          switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint')),
+          switchRow('showModelProvider', t('setShowModelProvider'), t('setShowModelProviderHint'), false,
+            settings.showAgentModel !== true)),
 
         h(SettingsGroup, { title: t('aboutHeading'), icon: 'link' },
           h('div', { className: 'tk-set-about' },

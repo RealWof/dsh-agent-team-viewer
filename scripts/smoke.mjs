@@ -1817,7 +1817,7 @@ check(scaleRanges.some(node => node.props?.['aria-label'] === 'setDialogScale'),
 /* The page is a calm row list: muted group headings, one row per preference
    with its control at the right, and no boxed inspector cards. */
 const settingsRows = settingsView.nodes.filter(node => node.props?.className === 'tk-set-row')
-check(settingsRows.length === 9, 'the Settings page is not a row list, got ' + settingsRows.length + ' rows')
+check(settingsRows.length === 10, 'the Settings page is not a row list, got ' + settingsRows.length + ' rows')
 const settingsRowTitles = settingsRows.map(node => {
   const copy = within(node, child => child.props?.className === 'tk-set-copy')[0]
   return within(copy, child => child.props?.className === 'tk-set-title')[0]?.props?.children
@@ -1837,8 +1837,8 @@ check(settingsGroups.every(group => within(group, child => child.props?.classNam
   'a settings section has no muted heading')
 check(!settingsView.nodes.some(node => node.props?.className === 'tk-sec'),
   'the Settings page still wraps its sections in inspector boxes')
-check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 5,
-  'the Settings page does not render its five booleans as switches')
+check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 6,
+  'the Settings page does not render its six booleans as switches')
 check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch-input')
   .every(node => node.props?.type === 'checkbox'),
 'the settings switch no longer wraps a real checkbox')
@@ -1953,12 +1953,16 @@ check(clampedRoot?.props?.style?.zoom === 0.8,
 resetSlots()
 const clampedSettings = surface(settingsSection({ t: key => key }))
 const settingBoxes = clampedSettings.nodes.filter(node => node.props?.type === 'checkbox')
-check(settingBoxes.length === 5, 'the Settings page lost a checkbox')
+check(settingBoxes.length === 6, 'the Settings page lost a checkbox')
 check(settingBoxes[0]?.props?.checked === true && settingBoxes[1]?.props?.checked === true
   && settingBoxes[2]?.props?.checked === false && settingBoxes[3]?.props?.checked === false,
 'the Settings page does not render the sanitized booleans')
 check(settingBoxes[4]?.props?.checked === false && settingBoxes[4]?.props?.['aria-label'] === 'setShowAgentModel',
   'the agent-model switch is missing or does not default to off')
+check(settingBoxes[5]?.props?.checked === false && settingBoxes[5]?.props?.['aria-label'] === 'setShowModelProvider',
+  'the provider switch is missing or does not default to off')
+check(settingBoxes[5]?.props?.disabled === true,
+  'the provider switch is not disabled while the agent model line is off')
 const settingTextareas = clampedSettings.nodes.filter(node => node.props?.className === 'tk-set-text')
 const settingTextarea = settingTextareas[0]
 check(settingTextareas.length === 2, 'the Settings page lost a custom-groups editor')
@@ -1991,7 +1995,7 @@ check(clampedWrite.animationMs === 1000 && clampedWrite.uiScale === 1.4 && clamp
 check(clampedWrite.sort === 'newest' && clampedWrite.autoRoleGroups === true
   && clampedWrite.customGroups === true && clampedWrite.customGroupsText === ''
   && clampedWrite.taskCustomGroups === false && clampedWrite.taskCustomGroupsText === ''
-  && clampedWrite.showAgentModel === false,
+  && clampedWrite.showAgentModel === false && clampedWrite.showModelProvider === false,
 'the settings writer did not sanitize the invalid fields: ' + JSON.stringify(clampedWrite))
 settingTextarea?.props?.onChange?.({ target: { value: 'crew: builder, reviewer\nqa: test' } })
 check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).customGroupsText === 'crew: builder, reviewer\nqa: test',
@@ -2018,23 +2022,62 @@ const modelSwitch = modelSettings.nodes.find(node => node.props?.type === 'check
   && node.props?.['aria-label'] === 'setShowAgentModel')
 check(modelSwitch?.props?.checked === false, 'the agent-model switch does not default to off')
 check(modelSettings.texts.includes('setShowAgentModelHint'), 'the agent-model switch has no hint')
+const providerSwitch = modelSettings.nodes.find(node => node.props?.type === 'checkbox'
+  && node.props?.['aria-label'] === 'setShowModelProvider')
+check(providerSwitch?.props?.checked === false, 'the provider switch does not default to off')
+check(modelSettings.texts.includes('setShowModelProviderHint'), 'the provider switch has no hint')
+check(providerSwitch?.props?.disabled === true,
+  'the provider switch is enabled while the agent-model master switch is off')
 modelSwitch?.props?.onChange?.({ target: { checked: true } })
 check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).showAgentModel === true,
   'the agent-model switch did not persist')
+
+// The provider row belongs under the master switch and only activates with it.
+resetSlots()
+const providerSettings = surface(settingsSection({ t: key => key }))
+const providerBox = providerSettings.nodes.find(node => node.props?.type === 'checkbox'
+  && node.props?.['aria-label'] === 'setShowModelProvider')
+check(providerBox?.props?.disabled === false,
+  'the provider switch stays disabled beside an enabled agent model line')
+const settingsTitles = providerSettings.nodes.filter(node => node.props?.className === 'tk-set-title')
+  .map(node => node.props?.children)
+check(settingsTitles.indexOf('setShowModelProvider') === settingsTitles.indexOf('setShowAgentModel') + 1,
+  'the provider switch is not the row right under the agent-model switch')
+
 const modelBoard = boardFromFreshBundle()
 const modelRow = modelBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
   && node.props?.className === 'tk-agent-row')
 const modelLine = within(modelRow, node => node.props?.className === 'tk-agent-model')[0]
 check(modelLine !== undefined, 'the agent row has no model line with the setting on')
-check(String(modelLine?.props?.children) === 'deepseek · deepseek-chat · high',
-  'the model line has the wrong text: ' + String(modelLine?.props?.children))
+check(String(modelLine?.props?.children) === 'deepseek-chat · high',
+  'the model line shows the provider while its switch is off: ' + String(modelLine?.props?.children))
 check(modelLine?.props?.title === 'deepseek · deepseek-chat · high',
-  'the model line lost its full-text title')
+  'the model line tooltip lost the provider: ' + String(modelLine?.props?.title))
+const rowChildren = Array.isArray(modelRow?.props?.children) ? modelRow.props.children : []
+const metaIndex = rowChildren.findIndex(child => child?.props?.className === 'tk-agent-meta')
+const modelIndex = rowChildren.findIndex(child => child?.props?.className === 'tk-agent-model')
+check(metaIndex >= 0 && modelIndex === metaIndex + 1 && modelIndex === rowChildren.length - 1,
+  'the model line is not a separate line after the meta line: meta ' + metaIndex + ', model ' + modelIndex)
 const modelUnknownRow = modelBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-b'
   && node.props?.className === 'tk-agent-row')
 check(within(modelUnknownRow, node => node.props?.className === 'tk-agent-model').length === 0,
   'an agent without a known model got a model line')
-check(artifact.includes('.tk-agent-model{'), 'the model line has no ellipsizing stylesheet rule')
+
+// Switching the provider on prepends it to the visible line and keeps the title.
+providerBox?.props?.onChange?.({ target: { checked: true } })
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).showModelProvider === true,
+  'the provider switch did not persist')
+const providerBoard = boardFromFreshBundle()
+const providerRow = providerBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')
+const providerLine = within(providerRow, node => node.props?.className === 'tk-agent-model')[0]
+check(String(providerLine?.props?.children) === 'deepseek · deepseek-chat · high',
+  'the provider did not join the visible model line: ' + String(providerLine?.props?.children))
+check(providerLine?.props?.title === 'deepseek · deepseek-chat · high',
+  'the model line tooltip diverged from the visible full line')
+check(artifact.includes('.tk-agent-model{display:block;width:100%;min-width:0;margin-top:1px;text-align:right;overflow:hidden;'),
+  'the model line is not a truncated bottom-right block')
+check(artifact.includes('font-size:9px;line-height:12px'), 'the model line lost its compact type')
 if (settingsBeforeModel === undefined) storage.delete(SETTINGS_STORAGE_KEY)
 else storage.set(SETTINGS_STORAGE_KEY, settingsBeforeModel)
 

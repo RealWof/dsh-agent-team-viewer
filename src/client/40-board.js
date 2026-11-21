@@ -384,20 +384,27 @@
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row. `showAgentModel` adds
-     * an opt-in ellipsized provider · model · effort line.
+     * an opt-in ellipsized model line on the bottom-right; `showModelProvider`
+     * decides whether its visible text starts with the provider or only the
+     * model — the tooltip carries the full `provider · model · effort` either
+     * way.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
      *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
-     *   and `showAgentModel` from the view settings.
+     *   `showAgentModel` and `showModelProvider` from the view settings.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
       const selection = agent.model
-      const modelParts = selection === undefined
+      const partsOf = fields => (selection === undefined
         ? []
-        : [selection.provider, selection.model, selection.effort]
-          .filter(part => typeof part === 'string' && part !== '')
-      const modelLine = modelParts.join(' · ')
+        : fields.map(field => selection[field]).filter(part => typeof part === 'string' && part !== ''))
+      // The tooltip always names the provider; the visible line drops it unless
+      // the reader asked for it. An unknown selection adds no line at all.
+      const modelTitle = partsOf(['provider', 'model', 'effort']).join(' · ')
+      const modelLine = partsOf(showModelProvider === true
+        ? ['provider', 'model', 'effort']
+        : ['model', 'effort']).join(' · ')
       const modelVisible = showAgentModel === true && modelLine !== ''
       const items = agentMetricLine(stats, t)
       const rosterRead = Array.isArray(jobs)
@@ -466,7 +473,6 @@
             onOpenAgent(agent.id, 'aside')
           },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
-      modelVisible ? h('span', { className: 'tk-agent-model', title: modelLine }, modelLine) : null,
       showJobs !== true && items.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
@@ -481,7 +487,8 @@
               title: jobsLabel,
               'aria-label': jobsLabel,
             }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length))
-            : null))
+            : null),
+      modelVisible ? h('span', { className: 'tk-agent-model', title: modelTitle }, modelLine) : null)
     }
 
     /** The sort choices the header menu offers, in display order. */
@@ -727,13 +734,13 @@
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `agentGroupingOn`
-     *   and `onToggleAgentGrouping`.
+     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `showModelProvider`,
+     *   `agentGroupingOn` and `onToggleAgentGrouping`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
-      showAgentModel = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
+      showAgentModel = false, showModelProvider = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -753,6 +760,7 @@
         onInspect,
         hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
         showAgentModel,
+        showModelProvider,
       })
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
@@ -1132,6 +1140,7 @@
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
               showAgentModel: settings.showAgentModel === true,
+              showModelProvider: settings.showModelProvider === true,
               agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
               onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
             })
