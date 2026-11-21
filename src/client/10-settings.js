@@ -336,11 +336,13 @@
         h(Styles, null),
         h('p', { className: 'tk-set-note' }, t('settingsNote')),
 
-        h(SettingsGroup, { title: t('setGrouping'), icon: 'layers' },
+        h(SettingsGroup, { title: t('setAgentGroups'), icon: 'layers' },
           switchRow('autoRoleGroups', t('setAutoRoleGroups'), t('setAutoRoleGroupsHint')),
           switchRow('customGroups', t('setCustomGroups'), t('setCustomGroupsHint'), true),
           textBlock(t('setCustomGroups'), 'customGroupsText', settings.customGroupsText,
-            t('setCustomGroupsExample'), settings.customGroups !== true),
+            t('setCustomGroupsExample'), settings.customGroups !== true)),
+
+        h(SettingsGroup, { title: t('setTaskGroups'), icon: 'layers' },
           switchRow('taskCustomGroups', t('setTaskCustomGroups'), t('setTaskCustomGroupsHint'), true),
           textBlock(t('setTaskCustomGroups'), 'taskCustomGroupsText', settings.taskCustomGroupsText,
             t('setTaskCustomGroupsExample'), settings.taskCustomGroups !== true)),

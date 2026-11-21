@@ -1958,9 +1958,21 @@ check(settingsRows.every(node => within(node, child => child.props?.className ==
 check(settingsRows.filter(node => within(node, child => child.props?.className === 'tk-set-desc').length > 0).length >= 5,
   'the settings rows lost their short descriptions')
 const settingsGroups = settingsView.nodes.filter(node => node.props?.className === 'tk-set-group')
-check(settingsGroups.length === 6, 'the Settings page lost a section group, got ' + settingsGroups.length)
+check(settingsGroups.length === 7, 'the Settings page lost a section group, got ' + settingsGroups.length)
 check(settingsGroups.every(group => within(group, child => child.props?.className === 'tk-set-group-title').length === 1),
   'a settings section has no muted heading')
+const settingsGroupTitles = settingsGroups.map(group => surface(within(group,
+  child => child.props?.className === 'tk-set-group-title')[0]).joined)
+check(settingsGroupTitles.includes('setAgentGroups') && settingsGroupTitles.includes('setTaskGroups'),
+  'the grouping preferences are not split into agent and task groups: ' + settingsGroupTitles.join(', '))
+const agentGroupHead = settingsGroups.find(group => surface(within(group,
+  child => child.props?.className === 'tk-set-group-title')[0]).joined === 'setAgentGroups')
+const taskGroupHead = settingsGroups.find(group => surface(within(group,
+  child => child.props?.className === 'tk-set-group-title')[0]).joined === 'setTaskGroups')
+for (const [head, label] of [[agentGroupHead, 'agent'], [taskGroupHead, 'task']]) {
+  check(within(head, child => child.type === 'path' && child.props?.d === 'm12 2 9 5-9 5-9-5 9-5Z').length === 1,
+    'the ' + label + ' group heading does not carry the layers icon')
+}
 check(!settingsView.nodes.some(node => node.props?.className === 'tk-sec'),
   'the Settings page still wraps its sections in inspector boxes')
 check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 6,
