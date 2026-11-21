@@ -57,6 +57,7 @@
   "scripts": {
     "build": "node scripts/build-client.js",
     "check": "node scripts/build-client.js && node scripts/check-i18n.mjs && node scripts/smoke.mjs && node scripts/check-pack.mjs",
+    "check:commits": "node scripts/check-commits.mjs",
     "check:pack": "node scripts/check-pack.mjs",
     "smoke": "node scripts/smoke.mjs",
     "i18n": "node scripts/check-i18n.mjs",
