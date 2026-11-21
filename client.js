@@ -75,6 +75,17 @@ window.__ModuleLoader__.load({
      * the dialog.
      */
     const REPORT_WAIT_MS = 2000
+    /**
+     * How many settled agents one board mount may check for a failed last turn.
+     * Each check opens the session's durable event window cheaply, but a huge
+     * tree must not open one history per row.
+     */
+    const SESSION_ERROR_CHECK_CAP = 24
+    /**
+     * How long one error check waits for a never-opened session's history to
+     * publish its first window. The board must never hang on a slow open.
+     */
+    const SESSION_ERROR_WAIT_MS = 1500
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
@@ -772,6 +783,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: 'Open the agent chat beside the board',
       agentTasksHint: 'Tasks this agent owns on the board',
       leadLabel: 'lead',
+      sessionError: 'Session error',
+      errorQuota: 'Quota exhausted',
+      errorAuth: 'Authentication failed',
+      errorTurnFailed: 'The last turn failed',
       agentDetails: 'Details',
       agentTasksHeading: 'Agent tasks',
       agentNoTasks: 'No tasks',
@@ -932,6 +947,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: 'Открыть чат агента рядом с доской',
       agentTasksHint: 'Задачи этого агента на доске',
       leadLabel: 'лид',
+      sessionError: 'Ошибка сессии',
+      errorQuota: 'Квота исчерпана',
+      errorAuth: 'Ошибка аутентификации',
+      errorTurnFailed: 'Последний ход завершился ошибкой',
       agentDetails: 'Подробнее',
       agentTasksHeading: 'Задачи агента',
       agentNoTasks: 'Задач нет',
@@ -1092,6 +1111,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: '在看板旁打开代理会话',
       agentTasksHint: '该代理在看板上的任务',
       leadLabel: '主代理',
+      sessionError: '会话错误',
+      errorQuota: '配额已用尽',
+      errorAuth: '身份验证失败',
+      errorTurnFailed: '上一轮执行失败',
       agentDetails: '详情',
       agentTasksHeading: '代理任务',
       agentNoTasks: '无任务',
@@ -1252,6 +1275,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: 'ボードの隣でエージェントのチャットを開きます',
       agentTasksHint: 'このエージェントが担当するボード上のタスク',
       leadLabel: 'リード',
+      sessionError: 'セッションエラー',
+      errorQuota: 'クォータを使い切りました',
+      errorAuth: '認証に失敗しました',
+      errorTurnFailed: '前回のターンが失敗しました',
       agentDetails: '詳細',
       agentTasksHeading: 'エージェントのタスク',
       agentNoTasks: 'タスクなし',
@@ -1412,6 +1439,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: 'Abrir el chat del agente junto al tablero',
       agentTasksHint: 'Tareas de este agente en el tablero',
       leadLabel: 'lead',
+      sessionError: 'Error de sesión',
+      errorQuota: 'Cuota agotada',
+      errorAuth: 'Error de autenticación',
+      errorTurnFailed: 'El último turno falló',
       agentDetails: 'Detalles',
       agentTasksHeading: 'Tareas del agente',
       agentNoTasks: 'Sin tareas',
@@ -1572,6 +1603,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: 'Ouvrir le chat de l\u2019agent à côté du tableau',
       agentTasksHint: 'Tâches de cet agent sur le tableau',
       leadLabel: 'lead',
+      sessionError: 'Erreur de session',
+      errorQuota: 'Quota épuisé',
+      errorAuth: 'Échec de l’authentification',
+      errorTurnFailed: 'Le dernier tour a échoué',
       agentDetails: 'Détails',
       agentTasksHeading: 'Tâches de l\u2019agent',
       agentNoTasks: 'Aucune tâche',
@@ -1732,6 +1767,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: 'Agent-Chat neben dem Board öffnen',
       agentTasksHint: 'Aufgaben dieses Agenten auf dem Board',
       leadLabel: 'Lead',
+      sessionError: 'Sitzungsfehler',
+      errorQuota: 'Kontingent erschöpft',
+      errorAuth: 'Anmeldung fehlgeschlagen',
+      errorTurnFailed: 'Der letzte Durchlauf ist fehlgeschlagen',
       agentDetails: 'Details',
       agentTasksHeading: 'Aufgaben des Agenten',
       agentNoTasks: 'Keine Aufgaben',
@@ -1892,6 +1931,10 @@ window.__ModuleLoader__.load({
       agentOpenAsideHint: 'Abrir o chat do agente ao lado do painel',
       agentTasksHint: 'Tarefas deste agente no painel',
       leadLabel: 'lead',
+      sessionError: 'Erro de sessão',
+      errorQuota: 'Cota esgotada',
+      errorAuth: 'Falha na autenticação',
+      errorTurnFailed: 'A última rodada falhou',
       agentDetails: 'Detalhes',
       agentTasksHeading: 'Tarefas do agente',
       agentNoTasks: 'Sem tarefas',
@@ -2122,6 +2165,12 @@ window.__ModuleLoader__.load({
 .tk-agent-row[data-activity="running"]{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 20%,var(--dsw-alias-border-l1))}
 .tk-agent-row[data-hover="true"]{border-color:var(--dsw-alias-brand-primary);
   box-shadow:0 0 0 1px color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
+.tk-agent-row[data-error="true"]{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,transparent);
+  border-left:3px solid var(--dsw-alias-state-error-primary);padding-left:3px;
+  background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,var(--dsw-alias-bg-layer-1))}
+.tk-agent-row[data-error="true"]:hover{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,var(--dsw-alias-bg-layer-1))}
+.tk-agent-error{display:inline-flex;align-items:center;justify-content:center;flex:none;cursor:help;
+  color:var(--dsw-alias-state-error-primary)}
 .tk-agent-main{display:flex;align-items:center;gap:4px;min-width:0}
 .tk-agent-meta{display:flex;align-items:center;flex-wrap:wrap;row-gap:2px;column-gap:5px;min-width:0;padding-left:13px}
 .tk-agent-jobs{flex:none;min-width:24px;justify-content:center;cursor:default;font-variant-numeric:tabular-nums}
@@ -2165,6 +2214,7 @@ window.__ModuleLoader__.load({
 .tk-error{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border:1px solid var(--dsw-alias-state-error-primary);
   border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-state-error-primary);font-size:11px;line-height:16px;overflow-wrap:anywhere}
 .tk-note{font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary)}
+.tk-error-note{min-width:0;overflow-wrap:anywhere;color:var(--dsw-alias-state-error-primary)}
 .tk-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;font-size:10px;line-height:14px;
   color:var(--dsw-alias-label-secondary);border-top:1px solid var(--dsw-alias-border-l1);padding-top:7px}
 .tk-backdrop{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;
@@ -4421,6 +4471,143 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Track which agent sessions ended their last turn with an error.
+     *
+     * The durable truth is each session's event log, and no projection carries
+     * it, so the board checks a settled agent once per mount and follows every
+     * new failure through the live `api-session/error` push. State is per-mount
+     * only: a fresh page re-checks, a reload loses nothing durable.
+     *
+     * A running agent is treated as not broken: a retry clears the old mark,
+     * and only a new live failure re-adds it. The live payload has no replay,
+     * so the first check per settled agent is what covers failures that
+     * happened before the board was opened.
+     *
+     * @param services - the injected face: `subscribeSessionErrors`, `loadSessionError`.
+     * @param agents - the strip rows, including the Lead, in render order.
+     * @returns a map from agent id to `{ message, code?, at }`; only agents
+     *   that are not running appear in it.
+     */
+    function useAgentErrors(services, agents) {
+      const [errors, setErrors] = useState({})
+      const checked = useRef(new Set())
+      const mounted = useRef(true)
+      const controller = useRef(undefined)
+      const agentsRef = useRef(agents)
+      agentsRef.current = agents
+      const errorsRef = useRef(errors)
+      errorsRef.current = errors
+      // A settled/running flip is the retry edge the mark follows.
+      const agentKey = agents.map(agent => agent.id + ':' + (agent.running === true ? '1' : '0')).join(',')
+
+      // The live push fires for every failed turn, including sessions whose
+      // card is not open and subagents the chat never activated.
+      useEffect(() => {
+        let off
+        try {
+          off = typeof services.subscribeSessionErrors === 'function'
+            ? services.subscribeSessionErrors(event => {
+              if (mounted.current !== true) return
+              if (event === null || typeof event !== 'object') return
+              if (typeof event.sessionId !== 'string' || event.sessionId === '') return
+              const message = typeof event.message === 'string' ? event.message : ''
+              const at = typeof event.at === 'number' && Number.isFinite(event.at) ? event.at : Date.now()
+              setErrors(current => ({ ...current, [event.sessionId]: { message, at } }))
+            })
+            : undefined
+        } catch {
+          off = undefined
+        }
+        return () => {
+          try {
+            if (typeof off === 'function') off()
+          } catch {
+            // The Remote may already be gone with the page.
+          }
+        }
+      }, [services])
+
+      // A retry starts a new turn: the old failure must not survive it. The
+      // live push re-adds the mark if this new turn fails again.
+      useEffect(() => {
+        setErrors(current => {
+          let next
+          for (const agent of agentsRef.current) {
+            if (agent.running !== true || current[agent.id] === undefined) continue
+            next = next ?? { ...current }
+            delete next[agent.id]
+          }
+          return next ?? current
+        })
+      }, [agentKey])
+
+      // One abort lifetime per mount; a changing agent list must not cancel a
+      // check that is already in flight.
+      useEffect(() => {
+        mounted.current = true
+        return () => {
+          mounted.current = false
+          const active = controller.current
+          controller.current = undefined
+          try {
+            if (active !== undefined && typeof active.abort === 'function') active.abort()
+          } catch {
+            // Aborting an already aborted check is harmless.
+          }
+        }
+      }, [])
+
+      // Backfill once per settled agent, low concurrency and bounded in count.
+      // `checked` is marked before the read so re-renders cannot duplicate it.
+      useEffect(() => {
+        if (typeof services.loadSessionError !== 'function') return
+        let active = controller.current
+        if (active === undefined && typeof AbortController === 'function') {
+          active = new AbortController()
+          controller.current = active
+        }
+        const signal = active?.signal
+        const pending = []
+        for (const agent of agentsRef.current) {
+          if (checked.current.size >= SESSION_ERROR_CHECK_CAP) break
+          if (agent.running === true) continue
+          if (errorsRef.current[agent.id] !== undefined) continue
+          if (checked.current.has(agent.id)) continue
+          checked.current.add(agent.id)
+          pending.push(agent.id)
+        }
+        if (pending.length === 0) return
+        const run = async () => {
+          for (const id of pending) {
+            if (mounted.current !== true || signal?.aborted === true) return
+            let value
+            try {
+              value = await services.loadSessionError(id, signal)
+            } catch {
+              value = undefined
+            }
+            if (mounted.current !== true || signal?.aborted === true) return
+            if (value === null || value === undefined) continue
+            setErrors(current => (current[id] === undefined ? { ...current, [id]: value } : current))
+          }
+        }
+        run()
+      }, [agentKey, services])
+
+      return useMemo(() => {
+        const visible = {}
+        for (const agent of agentsRef.current) {
+          if (agent.running === true) continue
+          const value = errors[agent.id]
+          if (value !== undefined) visible[agent.id] = value
+        }
+        return visible
+        // The agent key is the running-state identity for this projection.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [errors, agentKey])
+    }
+
+    /**
      * Resolve the team board of the Lead session. The seat's own projection is
      * the live one, so it wins whenever this board is rendered for the Lead
      * session itself; otherwise the list payload of the root session is used,
@@ -4581,6 +4768,9 @@ window.__ModuleLoader__.load({
           return String(left.name).localeCompare(String(right.name))
         })
       }, [agents, lead])
+
+      /** The failed-last-turn marks of the strip, per mount and by agent id. */
+      const agentErrors = useAgentErrors(services, stripAgents)
 
       /**
        * The sessions whose job rosters the board watches. The strip lists the
@@ -4804,6 +4994,7 @@ window.__ModuleLoader__.load({
         timelines,
         agents: stripAgents,
         agentColumns,
+        agentErrors,
         jobs,
         totals,
         agentStats,
@@ -4846,6 +5037,9 @@ window.__ModuleLoader__.load({
       openAgent: () => {},
       openFileLink: () => {},
       checkLocalPath: async () => undefined,
+      loadAgentReport: async () => undefined,
+      loadSessionError: async () => undefined,
+      subscribeSessionErrors: () => () => {},
       agentLabel: (key, fallback) => fallback,
     }
 
@@ -5212,14 +5406,21 @@ window.__ModuleLoader__.load({
      * wraps; `showModelProvider`, `showModelName` and `showModelEffort` pick
      * its visible parts — the tooltip carries the full `provider · model ·
      * effort` either way.
-     * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
-     *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
-     *   and `showAgentModel`, `showModelProvider`, `showModelName`,
-     *   `showModelEffort` from the view settings.
+     * @param props - `agent`, `stats`, `jobs`, `error`, `now`, `t`, `tAgent`,
+     *   `flipGroup`, `onOpenAgent`, `onInspect`, `hovered` when a card owner is
+     *   hovered, and `showAgentModel`, `showModelProvider`, `showModelName`,
+     *   `showModelEffort` from the view settings. `error` is the failed
+     *   last-turn mark of this agent, when any.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true }) {
+    function AgentRow({ agent, stats, jobs, error = undefined, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
+      // A live push carries the message only; an empty one still says the last
+      // turn failed rather than showing a bare label.
+      const errorText = error === null || error === undefined
+        ? undefined
+        : (typeof error.message === 'string' && error.message !== '' ? error.message : t('errorTurnFailed'))
+      const errorTitle = errorText === undefined ? undefined : t('sessionError') + ': ' + errorText
       const selection = agent.model
       const partsOf = fields => (selection === undefined
         ? []
@@ -5281,10 +5482,12 @@ window.__ModuleLoader__.load({
         className: 'tk-agent-row',
         role: 'button',
         tabIndex: 0,
-        'aria-label': agent.name,
+        title: errorTitle,
+        'aria-label': errorTitle === undefined ? agent.name : agent.name + ' — ' + errorTitle,
         'data-activity': agent.activity,
         'data-agent-id': agent.id,
         'data-lead': agent.isLead === true ? 'true' : 'false',
+        'data-error': errorText === undefined ? undefined : 'true',
         'data-hover': hovered === true ? 'true' : 'false',
         'data-flip-id': 'agent:' + agent.id,
         'data-flip-group': flipGroup,
@@ -5302,12 +5505,22 @@ window.__ModuleLoader__.load({
         h('button', {
           type: 'button',
           className: 'tk-agent-name',
-          title: activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
+          title: (errorTitle === undefined ? '' : errorTitle + ' — ')
+            + activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
           onClick: event => {
             stopEvent(event)
             onOpenAgent(agent.id, 'main')
           },
         }, agent.name),
+        // A failed session gets a small mark beside its name; the row title
+        // carries the same text, so hovering the card shows it too.
+        errorText === undefined
+          ? null
+          : h('span', {
+            className: 'tk-agent-error',
+            title: errorTitle,
+            'aria-label': errorTitle,
+          }, h(Icon, { name: 'alert', size: 10 })),
         // The word beside the name is the DSH subagent mode, not a status: its
         // tooltip names the mode and explains what it means.
         mode === undefined ? null : h('span', {
@@ -5537,14 +5750,15 @@ window.__ModuleLoader__.load({
      * uses — the Lead first inside its own group, then every subagent. When a
      * grouping switch is on, each status column renders custom and role groups
      * with their own foldable headers; otherwise it stays a flat list.
-     * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
-     *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
-     *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `showModelProvider`,
-     *   `agentGroups` (`roles` and `custom` flags) and `onToggleAgentGroup`.
+     * @param props - `columns`, `agentStats`, `jobsByAgent`, `agentErrors`, `now`,
+     *   `columnCount`, `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`,
+     *   `onInspect`, `onSortChange`, `hoverOwnerId`, `onToggleSection`,
+     *   `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`, `showAgentModel`,
+     *   `showModelProvider`, `agentGroups` (`roles` and `custom` flags) and
+     *   `onToggleAgentGroup`.
      */
     function AgentsStrip({
-      boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
+      boardId, columns, agentStats, jobsByAgent, agentErrors = {}, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
       showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true,
       agentGroups = { roles: false, custom: false }, onToggleAgentGroup = undefined,
@@ -5559,6 +5773,7 @@ window.__ModuleLoader__.load({
         agent,
         stats: agentStats[agent.id],
         jobs: jobsByAgent[agent.id],
+        error: agentErrors[agent.id],
         now,
         t,
         tAgent,
@@ -5943,6 +6158,7 @@ window.__ModuleLoader__.load({
               columns: model.agentColumns,
               agentStats: model.agentStats,
               jobsByAgent: model.jobs.byAgent,
+              agentErrors: model.agentErrors,
               now: model.now,
               columnCount,
               costState: model.costState,
@@ -6039,6 +6255,7 @@ window.__ModuleLoader__.load({
             agent: inspected,
             stats: model.agentStats[inspected.id],
             jobs: model.jobs.byAgent[inspected.id],
+            error: model.agentErrors[inspected.id],
             tasks: agentTasks,
             costState: model.costState,
             whoById: model.whoById,
@@ -6662,11 +6879,11 @@ window.__ModuleLoader__.load({
      * The agent dialog: what this agent did, the tasks it owns and the
      * background jobs it is running — the two lists fold and scroll on their
      * own, and the tasks come first.
-     * @param props - `agent`, `stats`, `jobs`, `tasks`, `whoById`, `now`, `t`,
-     *   `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
+     * @param props - `agent`, `stats`, `jobs`, `error`, `tasks`, `whoById`, `now`,
+     *   `t`, `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
      */
     function AgentDialog({
-      agent, stats, jobs, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
+      agent, stats, jobs, error = undefined, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
     }) {
       useEffect(() => {
         const onKey = event => {
@@ -6689,6 +6906,11 @@ window.__ModuleLoader__.load({
       const mode = modeOf(agent, tAgent)
       const parent = agent.parentId === undefined ? undefined : whoById[agent.parentId]
       const sessionId = String(agent.id).replace(/^session-/, '')
+      // The row marks a failed last turn; the dialog repeats the text when the
+      // failure is still the agent's current state.
+      const errorText = error === null || error === undefined
+        ? undefined
+        : (typeof error.message === 'string' && error.message !== '' ? error.message : t('errorTurnFailed'))
 
       // The agent's actions sit in the header's right corner, left of the
       // close control, exactly like the task dialog's; the body below stays
@@ -6736,6 +6958,13 @@ window.__ModuleLoader__.load({
         KeyRow({ name: 'session', label: t('agentSession'), children: h('span', { className: 'tk-mono' }, sessionId) }),
         KeyRow({ name: 'created', label: t('agentCreated'), children: formatStamp(agent.createdAt) }),
         KeyRow({ name: 'activity', label: t('agentLastActivity'), children: formatStamp(agent.updatedAt ?? agent.startedAt) }),
+        errorText === undefined
+          ? null
+          : KeyRow({
+            name: 'error',
+            label: t('sessionError'),
+            children: h('span', { className: 'tk-error-note' }, errorText),
+          }),
         agent.model === undefined ? null : KeyRow({ name: 'model', label: t('agentModel'), children: modelValue }),
         effortValue === undefined ? null : KeyRow({ name: 'effort', label: t('agentEffort'), children: effortValue }),
         agent.preset === undefined ? null : KeyRow({
@@ -7415,6 +7644,181 @@ window.__ModuleLoader__.load({
           }
         }
 
+        /**
+         * The newest `turn/end` event in one durable session window. The event
+         * log is the only place a failed turn is durably recorded; a later
+         * successful turn closes the turn and therefore clears the mark.
+         * @param entries - `SessionEventWindow.entries` from a binding.
+         * @returns the newest `turn/end` event, or undefined when the window
+         *   is empty or still opening.
+         */
+        const lastTurnEndOf = (entries) => {
+          if (!Array.isArray(entries)) return undefined
+          for (let index = entries.length - 1; index >= 0; index -= 1) {
+            const entry = entries[index]
+            const event = entry?.type === 'event' ? entry.event : undefined
+            if (event?.type === 'turn/end') return event
+          }
+          return undefined
+        }
+
+        /**
+         * The user-facing text of one turn failure. A provider's `AUTH` message
+         * may echo a credential fragment, so the shipped Chat projection drops
+         * it; this board mirrors that and shows the localized label instead.
+         * @param failure - the `LlmFailure` on a turn/end error reason.
+         * @returns the message text, never empty.
+         */
+        const errorMessageOf = (failure) => {
+          const rawCode = typeof failure?.code === 'string' ? failure.code : ''
+          const code = rawCode.toUpperCase()
+          if (code !== 'AUTH') {
+            const raw = typeof failure?.message === 'string' ? failure.message.trim() : ''
+            if (raw !== '') return raw
+          }
+          if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA') return t('errorQuota')
+          if (code === 'AUTH') return t('errorAuth')
+          return t('errorTurnFailed')
+        }
+
+        /**
+         * Wait for a retained session's initial open, bounded by a short timer
+         * so a slow or failed open cannot pin the board. The caller releases
+         * the reference in its own `finally`.
+         * @param reference - the retained session reference.
+         * @param signal - optional caller abort signal.
+         * @returns nothing; never rejects.
+         */
+        const waitForSessionReady = (reference, signal) => new Promise(resolve => {
+          const ready = reference?.ready
+          if (ready === null || typeof ready !== 'object' || typeof ready.then !== 'function') {
+            resolve()
+            return
+          }
+          let settled = false
+          let timer
+          let onAbort
+          const finish = () => {
+            if (settled) return
+            settled = true
+            if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer)
+            if (onAbort !== undefined && signal !== undefined && signal !== null
+              && typeof signal.removeEventListener === 'function') {
+              signal.removeEventListener('abort', onAbort)
+            }
+            resolve()
+          }
+          if (typeof setTimeout === 'function') timer = setTimeout(finish, SESSION_ERROR_WAIT_MS)
+          if (signal !== undefined && signal !== null && typeof signal.addEventListener === 'function') {
+            onAbort = finish
+            if (signal.aborted === true) finish()
+            else signal.addEventListener('abort', onAbort, { once: true })
+          }
+          // Without a clock there is nothing to bound the wait, so read the
+          // first snapshot now instead of holding the reference indefinitely.
+          if (timer === undefined) finish()
+          else ready.then(finish, finish)
+        })
+
+        /**
+         * Read the newest failed turn of one agent session from its durable
+         * event log. The session is retained only for this read, so its history
+         * opens in the background; a never-opened session's first snapshot is
+         * empty, and the read then waits briefly for `reference.ready`. No
+         * projection carries the error, and the session's chat tree is not
+         * activated.
+         * @param agentId - the agent's Session id.
+         * @param signal - optional abort signal from the board mount.
+         * @returns `{ message, code, at }`, or undefined when the last turn did
+         *   not fail, or when the read is aborted or unavailable.
+         */
+        const loadSessionError = async (agentId, signal) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            const retainOptions = { source: 'agent-team-viewer' }
+            if (signal !== undefined && signal !== null) retainOptions.signal = signal
+            reference = sessions.retain(address ?? agentId, retainOptions)
+            const binding = reference?.binding
+            const source = binding?.eventSource
+            if (source === null || source === undefined || typeof source.getSnapshot !== 'function') return undefined
+            let entries = source.getSnapshot()?.entries
+            if (lastTurnEndOf(entries) === undefined) {
+              await waitForSessionReady(reference, signal)
+              if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+              entries = source.getSnapshot()?.entries
+            }
+            const event = lastTurnEndOf(entries)
+            const reason = event?.data?.reason
+            if (reason === null || reason === undefined || reason.kind !== 'error') return undefined
+            const failure = reason.error
+            if (failure === null || typeof failure !== 'object') return undefined
+            return {
+              message: errorMessageOf(failure),
+              code: typeof failure.code === 'string' && failure.code !== '' ? failure.code.toUpperCase() : undefined,
+              at: typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : Date.now(),
+            }
+          } catch {
+            // A missing service, an unopened session, a failed open or an abort
+            // proves nothing about the turn, so the card stays unmarked.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
+        /**
+         * Subscribe to the live `api-session/error` push. The payload carries
+         * the message only and has no replay, so a mount backfills what it
+         * missed while this subscription keeps new failures current.
+         * @param listener - called with `{ sessionId, message, at }`.
+         * @returns the unsubscribe function; a no-op when the Remote is absent.
+         */
+        const subscribeSessionErrors = (listener) => {
+          try {
+            if (typeof listener !== 'function') return () => {}
+            const remote = ctx.get('remote')
+            if (remote === null || remote === undefined) return () => {}
+            const subscribe = typeof remote.$on === 'function'
+              ? remote.$on
+              : (typeof remote.on === 'function' ? remote.on : undefined)
+            if (typeof subscribe !== 'function') return () => {}
+            const off = subscribe.call(remote, 'api-session/error', (sessionId, message) => {
+              try {
+                if (typeof sessionId !== 'string' || sessionId === '') return
+                listener({
+                  sessionId,
+                  message: typeof message === 'string' ? message : String(message ?? ''),
+                  at: Date.now(),
+                })
+              } catch {
+                // One board listener must not break the shared Remote dispatcher.
+              }
+            })
+            if (typeof off !== 'function') return () => {}
+            return () => {
+              try {
+                off()
+              } catch {
+                // The Remote may already be gone with the page.
+              }
+            }
+          } catch {
+            // Forwarded events need an answering connection; the board still reads history.
+            return () => {}
+          }
+        }
+
         /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */        const services = {
           faceOf,
           refreshProjections,
@@ -7429,6 +7833,8 @@ window.__ModuleLoader__.load({
           openFileLink,
           checkLocalPath,
           loadAgentReport,
+          loadSessionError,
+          subscribeSessionErrors,
           agentLabel,
         }
 

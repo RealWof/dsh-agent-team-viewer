@@ -590,6 +590,181 @@
           }
         }
 
+        /**
+         * The newest `turn/end` event in one durable session window. The event
+         * log is the only place a failed turn is durably recorded; a later
+         * successful turn closes the turn and therefore clears the mark.
+         * @param entries - `SessionEventWindow.entries` from a binding.
+         * @returns the newest `turn/end` event, or undefined when the window
+         *   is empty or still opening.
+         */
+        const lastTurnEndOf = (entries) => {
+          if (!Array.isArray(entries)) return undefined
+          for (let index = entries.length - 1; index >= 0; index -= 1) {
+            const entry = entries[index]
+            const event = entry?.type === 'event' ? entry.event : undefined
+            if (event?.type === 'turn/end') return event
+          }
+          return undefined
+        }
+
+        /**
+         * The user-facing text of one turn failure. A provider's `AUTH` message
+         * may echo a credential fragment, so the shipped Chat projection drops
+         * it; this board mirrors that and shows the localized label instead.
+         * @param failure - the `LlmFailure` on a turn/end error reason.
+         * @returns the message text, never empty.
+         */
+        const errorMessageOf = (failure) => {
+          const rawCode = typeof failure?.code === 'string' ? failure.code : ''
+          const code = rawCode.toUpperCase()
+          if (code !== 'AUTH') {
+            const raw = typeof failure?.message === 'string' ? failure.message.trim() : ''
+            if (raw !== '') return raw
+          }
+          if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA') return t('errorQuota')
+          if (code === 'AUTH') return t('errorAuth')
+          return t('errorTurnFailed')
+        }
+
+        /**
+         * Wait for a retained session's initial open, bounded by a short timer
+         * so a slow or failed open cannot pin the board. The caller releases
+         * the reference in its own `finally`.
+         * @param reference - the retained session reference.
+         * @param signal - optional caller abort signal.
+         * @returns nothing; never rejects.
+         */
+        const waitForSessionReady = (reference, signal) => new Promise(resolve => {
+          const ready = reference?.ready
+          if (ready === null || typeof ready !== 'object' || typeof ready.then !== 'function') {
+            resolve()
+            return
+          }
+          let settled = false
+          let timer
+          let onAbort
+          const finish = () => {
+            if (settled) return
+            settled = true
+            if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer)
+            if (onAbort !== undefined && signal !== undefined && signal !== null
+              && typeof signal.removeEventListener === 'function') {
+              signal.removeEventListener('abort', onAbort)
+            }
+            resolve()
+          }
+          if (typeof setTimeout === 'function') timer = setTimeout(finish, SESSION_ERROR_WAIT_MS)
+          if (signal !== undefined && signal !== null && typeof signal.addEventListener === 'function') {
+            onAbort = finish
+            if (signal.aborted === true) finish()
+            else signal.addEventListener('abort', onAbort, { once: true })
+          }
+          // Without a clock there is nothing to bound the wait, so read the
+          // first snapshot now instead of holding the reference indefinitely.
+          if (timer === undefined) finish()
+          else ready.then(finish, finish)
+        })
+
+        /**
+         * Read the newest failed turn of one agent session from its durable
+         * event log. The session is retained only for this read, so its history
+         * opens in the background; a never-opened session's first snapshot is
+         * empty, and the read then waits briefly for `reference.ready`. No
+         * projection carries the error, and the session's chat tree is not
+         * activated.
+         * @param agentId - the agent's Session id.
+         * @param signal - optional abort signal from the board mount.
+         * @returns `{ message, code, at }`, or undefined when the last turn did
+         *   not fail, or when the read is aborted or unavailable.
+         */
+        const loadSessionError = async (agentId, signal) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            const retainOptions = { source: 'agent-team-viewer' }
+            if (signal !== undefined && signal !== null) retainOptions.signal = signal
+            reference = sessions.retain(address ?? agentId, retainOptions)
+            const binding = reference?.binding
+            const source = binding?.eventSource
+            if (source === null || source === undefined || typeof source.getSnapshot !== 'function') return undefined
+            let entries = source.getSnapshot()?.entries
+            if (lastTurnEndOf(entries) === undefined) {
+              await waitForSessionReady(reference, signal)
+              if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+              entries = source.getSnapshot()?.entries
+            }
+            const event = lastTurnEndOf(entries)
+            const reason = event?.data?.reason
+            if (reason === null || reason === undefined || reason.kind !== 'error') return undefined
+            const failure = reason.error
+            if (failure === null || typeof failure !== 'object') return undefined
+            return {
+              message: errorMessageOf(failure),
+              code: typeof failure.code === 'string' && failure.code !== '' ? failure.code.toUpperCase() : undefined,
+              at: typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : Date.now(),
+            }
+          } catch {
+            // A missing service, an unopened session, a failed open or an abort
+            // proves nothing about the turn, so the card stays unmarked.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
+        /**
+         * Subscribe to the live `api-session/error` push. The payload carries
+         * the message only and has no replay, so a mount backfills what it
+         * missed while this subscription keeps new failures current.
+         * @param listener - called with `{ sessionId, message, at }`.
+         * @returns the unsubscribe function; a no-op when the Remote is absent.
+         */
+        const subscribeSessionErrors = (listener) => {
+          try {
+            if (typeof listener !== 'function') return () => {}
+            const remote = ctx.get('remote')
+            if (remote === null || remote === undefined) return () => {}
+            const subscribe = typeof remote.$on === 'function'
+              ? remote.$on
+              : (typeof remote.on === 'function' ? remote.on : undefined)
+            if (typeof subscribe !== 'function') return () => {}
+            const off = subscribe.call(remote, 'api-session/error', (sessionId, message) => {
+              try {
+                if (typeof sessionId !== 'string' || sessionId === '') return
+                listener({
+                  sessionId,
+                  message: typeof message === 'string' ? message : String(message ?? ''),
+                  at: Date.now(),
+                })
+              } catch {
+                // One board listener must not break the shared Remote dispatcher.
+              }
+            })
+            if (typeof off !== 'function') return () => {}
+            return () => {
+              try {
+                off()
+              } catch {
+                // The Remote may already be gone with the page.
+              }
+            }
+          } catch {
+            // Forwarded events need an answering connection; the board still reads history.
+            return () => {}
+          }
+        }
+
         /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */        const services = {
           faceOf,
           refreshProjections,
@@ -604,6 +779,8 @@
           openFileLink,
           checkLocalPath,
           loadAgentReport,
+          loadSessionError,
+          subscribeSessionErrors,
           agentLabel,
         }
 

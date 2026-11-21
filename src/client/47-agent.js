@@ -155,11 +155,11 @@
      * The agent dialog: what this agent did, the tasks it owns and the
      * background jobs it is running — the two lists fold and scroll on their
      * own, and the tasks come first.
-     * @param props - `agent`, `stats`, `jobs`, `tasks`, `whoById`, `now`, `t`,
-     *   `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
+     * @param props - `agent`, `stats`, `jobs`, `error`, `tasks`, `whoById`, `now`,
+     *   `t`, `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
      */
     function AgentDialog({
-      agent, stats, jobs, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
+      agent, stats, jobs, error = undefined, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
     }) {
       useEffect(() => {
         const onKey = event => {
@@ -182,6 +182,11 @@
       const mode = modeOf(agent, tAgent)
       const parent = agent.parentId === undefined ? undefined : whoById[agent.parentId]
       const sessionId = String(agent.id).replace(/^session-/, '')
+      // The row marks a failed last turn; the dialog repeats the text when the
+      // failure is still the agent's current state.
+      const errorText = error === null || error === undefined
+        ? undefined
+        : (typeof error.message === 'string' && error.message !== '' ? error.message : t('errorTurnFailed'))
 
       // The agent's actions sit in the header's right corner, left of the
       // close control, exactly like the task dialog's; the body below stays
@@ -229,6 +234,13 @@
         KeyRow({ name: 'session', label: t('agentSession'), children: h('span', { className: 'tk-mono' }, sessionId) }),
         KeyRow({ name: 'created', label: t('agentCreated'), children: formatStamp(agent.createdAt) }),
         KeyRow({ name: 'activity', label: t('agentLastActivity'), children: formatStamp(agent.updatedAt ?? agent.startedAt) }),
+        errorText === undefined
+          ? null
+          : KeyRow({
+            name: 'error',
+            label: t('sessionError'),
+            children: h('span', { className: 'tk-error-note' }, errorText),
+          }),
         agent.model === undefined ? null : KeyRow({ name: 'model', label: t('agentModel'), children: modelValue }),
         effortValue === undefined ? null : KeyRow({ name: 'effort', label: t('agentEffort'), children: effortValue }),
         agent.preset === undefined ? null : KeyRow({

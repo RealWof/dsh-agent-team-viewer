@@ -320,6 +320,131 @@ const boardServices = boardRegistration?.inject?.('session-a')?.services
 check(boardServices !== undefined, 'the board registration injects no services')
 check(typeof boardServices?.loadAgentReport === 'function', 'the board has no agent-report reader')
 check(typeof boardServices?.openFileLink === 'function', 'the board has no write-scope opener')
+check(typeof boardServices?.loadSessionError === 'function', 'the board has no session-error reader')
+check(typeof boardServices?.subscribeSessionErrors === 'function', 'the board has no live session-error subscription')
+
+/* --- Session errors: durable turn/end, bounded open wait, release ------- */
+
+const errorReads = { retained: [], released: 0 }
+let errorEntries = []
+let errorReady = Promise.resolve()
+const errorSource = { getSnapshot: () => ({ entries: errorEntries }) }
+const errorSessions = {
+  subagentAddress: id => (id === 'session-a'
+    ? { childSessionId: id, parentSessionId: 'root', mode: 'continuable' }
+    : undefined),
+  retain: (target, options) => {
+    errorReads.retained.push([target, options?.source])
+    return {
+      binding: { eventSource: errorSource },
+      ready: errorReady,
+      release: () => { errorReads.released += 1 },
+    }
+  },
+}
+const previousErrorGet = ctx.get
+ctx.get = name => (name === 'sessions' ? errorSessions : undefined)
+const errorTurnEnd = (time, reason) => ({
+  type: 'event',
+  event: { type: 'turn/end', seq: 1, time, data: { turn: 1, reason } },
+})
+const errorFailure = (message, code) => errorTurnEnd(1000, { kind: 'error', error: { message, code } })
+errorEntries = [errorFailure('Provider said no', 'UNKNOWN')]
+const firstError = await boardServices.loadSessionError('session-a')
+check(firstError?.message === 'Provider said no' && firstError?.code === 'UNKNOWN'
+  && firstError?.at === 1000, 'the session-error reader lost the turn failure: ' + JSON.stringify(firstError))
+check(errorReads.retained[0]?.[1] === 'agent-team-viewer',
+  'the session-error reader did not name its retain source')
+check(errorReads.retained[0]?.[0]?.childSessionId === 'session-a',
+  'a subagent error read did not retain the subagent address')
+check(errorReads.released === 1, 'the session-error reader leaked its retained reference')
+
+// A later completed turn closes the turn and clears the mark; an older failure
+// must not resurrect it.
+errorEntries = [
+  errorFailure('Old failure', 'UNKNOWN'),
+  errorTurnEnd(1001, { kind: 'completed' }),
+]
+check(await boardServices.loadSessionError('session-a') === undefined,
+  'a session whose last turn completed is still reported as failed')
+check(errorReads.released === 2, 'the clean-turn read did not release its reference')
+
+// A message is used verbatim; an empty one falls back by code. AUTH is
+// deliberately label-only because a provider may echo a credential fragment.
+errorEntries = [errorFailure('   ', 'QUOTA')]
+check((await boardServices.loadSessionError('session-a'))?.message === 'errorQuota',
+  'a quota failure without a message did not use the localized quota label')
+errorEntries = [errorFailure('api key sk-live-secret', 'AUTH')]
+check((await boardServices.loadSessionError('session-a'))?.message === 'errorAuth',
+  'an AUTH failure did not fall back to the localized authentication label')
+errorEntries = [errorFailure('', 'UNKNOWN')]
+check((await boardServices.loadSessionError('session-a'))?.message === 'errorTurnFailed',
+  'a failure without a message or known code did not use the failed-turn label')
+
+// A never-opened session publishes an empty first window; the read waits for
+// the retained open and reads the window again.
+errorEntries = []
+let resolveErrorReady
+errorReady = new Promise(resolve => { resolveErrorReady = resolve })
+const lateError = boardServices.loadSessionError('session-a')
+errorEntries = [errorFailure('Opened late', 'UNKNOWN')]
+resolveErrorReady()
+check((await lateError)?.message === 'Opened late',
+  'the session-error reader did not re-read after a never-opened session became ready')
+errorReady = Promise.resolve()
+
+// An aborted mount does not retain or wait.
+const retainedBeforeAbort = errorReads.retained.length
+check(await boardServices.loadSessionError('session-a', { aborted: true }) === undefined,
+  'an aborted session-error read returned a value')
+check(errorReads.retained.length === retainedBeforeAbort,
+  'an aborted session-error read still retained the session')
+
+ctx.get = previousErrorGet
+check(await boardServices.loadSessionError('session-a') === undefined,
+  'a missing sessions service rejected the session-error read')
+
+/* The live error push: `$on` or `on`, an unsubscribe, and no listener throw. */
+const liveSubscriptions = []
+const liveStops = []
+const liveRemote = {
+  $on: (event, listener) => {
+    liveSubscriptions.push([event, listener])
+    return () => { liveStops.push(event) }
+  },
+}
+ctx.get = name => (name === 'remote' ? liveRemote : undefined)
+const liveReceived = []
+const stopLive = boardServices.subscribeSessionErrors(event => { liveReceived.push(event) })
+check(typeof stopLive === 'function', 'the live error subscription did not return an unsubscribe')
+check(liveSubscriptions[0]?.[0] === 'api-session/error',
+  'the live error subscription did not ask for api-session/error')
+liveSubscriptions[0]?.[1]?.('session-b', 'Remote failure')
+check(liveReceived[0]?.sessionId === 'session-b' && liveReceived[0]?.message === 'Remote failure'
+  && typeof liveReceived[0]?.at === 'number', 'the live error listener got no session event')
+stopLive()
+check(liveStops.includes('api-session/error'), 'the live error unsubscribe was not called')
+// A listener that throws must not break the shared Remote dispatcher.
+let liveThrew = false
+const stopThrowing = boardServices.subscribeSessionErrors(() => { throw new Error('board listener') })
+try {
+  liveSubscriptions[1]?.[1]?.('session-b', 'Remote failure')
+} catch {
+  liveThrew = true
+}
+check(liveThrew === false, 'a throwing board listener escaped the live error subscription')
+stopThrowing()
+// An older host exposes the same push as `.on`.
+const fallbackSubscriptions = []
+ctx.get = name => (name === 'remote'
+  ? { on: (event, listener) => { fallbackSubscriptions.push([event, listener]); return () => {} } }
+  : undefined)
+boardServices.subscribeSessionErrors(() => {})()
+check(fallbackSubscriptions[0]?.[0] === 'api-session/error',
+  'the live error subscription did not fall back to remote.on')
+ctx.get = previousErrorGet
+check(typeof boardServices.subscribeSessionErrors(() => {}) === 'function',
+  'the live error subscription is not a no-op without a Remote')
 
 /* The local-path checker: folders use `list`, files use `stat`, and a file
    miss falls back to `list` because an API may not classify a directory. */
@@ -3199,6 +3324,112 @@ boardServices.openFileLink('', 'src/client')
 check(navigation.tabs.length === 2 && navigation.resources.length === 2,
   'an empty scope or session id was treated as a link')
 ctx.get = previousGet
+
+/* --- Agent cards: a failed last turn marks the row -------------------- */
+
+storage.delete(COLLAPSE_STORAGE_KEY)
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: false, customGroups: false, sort: 'newest' }))
+const errorBoardState = JSON.parse(JSON.stringify(listState))
+errorBoardState.byId.root.running = false
+errorBoardState.byId['session-a'].running = true
+errorBoardState.byId['session-b'].running = false
+const errorChecks = []
+let errorListener
+const errorProps = {
+  ...props,
+  useSessions: selector => selector(errorBoardState),
+  services: {
+    ...props.services,
+    subscribeSessionErrors: listener => {
+      errorListener = listener
+      return () => {}
+    },
+    loadSessionError: async agentId => {
+      errorChecks.push(agentId)
+      return agentId === 'session-b'
+        ? { message: 'Provider rejected the request: quota exceeded', code: 'QUOTA', at: 7 }
+        : undefined
+    },
+  },
+}
+const errorRowOf = (rendered, id) => rendered.nodes.find(node => node.props?.['data-agent-id'] === id
+  && node.props?.className === 'tk-agent-row')
+
+resetSlots()
+persistRefs = true
+deferCleanups = true
+resetHooks()
+surface(tabBody(errorProps))
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const errorView = surface(tabBody(errorProps))
+const failedRow = errorRowOf(errorView, 'session-b')
+check(failedRow?.props?.['data-error'] === 'true',
+  'a failed last turn did not mark its agent row')
+check(String(failedRow?.props?.title).startsWith('sessionError')
+  && String(failedRow?.props?.title).includes('Provider rejected the request: quota exceeded'),
+'the failed agent row tooltip does not carry the session error label and text: ' + String(failedRow?.props?.title))
+check(String(failedRow?.props?.['aria-label']).includes('Provider rejected the request: quota exceeded'),
+  'the failed agent row lost its accessible error text')
+check(within(failedRow, node => node.props?.className === 'tk-agent-error').length === 1,
+  'the failed agent row has no alert mark beside the name')
+check(artifact.includes('.tk-agent-row[data-error="true"]{')
+  && artifact.includes('border-left:3px solid var(--dsw-alias-state-error-primary)'),
+'the failed agent row has no error stylesheet rule')
+check(errorRowOf(errorView, 'root')?.props?.['data-error'] === undefined,
+  'a clean session was marked as failed')
+check(errorRowOf(errorView, 'session-a')?.props?.['data-error'] === undefined,
+  'a running agent was marked as failed')
+check(!errorChecks.includes('session-a'),
+  'the board checked a running agent for an old failure')
+const uniqueErrorChecks = [...new Set(errorChecks)]
+check(uniqueErrorChecks.length === errorChecks.length,
+  'an agent was checked more than once in one mount: ' + JSON.stringify(errorChecks))
+
+// A live push marks a settled card immediately; a running agent stays clear.
+errorListener?.({ sessionId: 'session-b', message: 'Live provider failure', at: 8 })
+errorListener?.({ sessionId: 'session-a', message: 'Running provider failure', at: 9 })
+resetHooks()
+const liveErrorView = surface(tabBody(errorProps))
+const liveFailedRow = errorRowOf(liveErrorView, 'session-b')
+check(liveFailedRow?.props?.['data-error'] === 'true',
+  'a live session error did not mark the agent card')
+check(String(liveFailedRow?.props?.title).includes('Live provider failure'),
+  'the live session error is missing from the card tooltip: ' + String(liveFailedRow?.props?.title))
+check(errorRowOf(liveErrorView, 'session-a')?.props?.['data-error'] === undefined,
+  'a live error marked a running agent as broken')
+
+// The agent dialog repeats the same text for the failed session.
+liveFailedRow?.props?.onClick?.()
+resetHooks()
+const liveErrorDialogView = surface(tabBody(errorProps))
+const failedDialog = liveErrorDialogView.nodes.find(node => node.props?.['data-agent-dialog'] === 'session-b')
+check(failedDialog !== undefined, 'the failed agent dialog did not open')
+const failedDialogNote = within(failedDialog, node => node.props?.className === 'tk-error-note')[0]
+check(surface(failedDialogNote).joined.includes('Live provider failure'),
+  'the agent dialog does not repeat the session error text')
+within(failedDialog, node => node.type === 'button' && node.props?.['aria-label'] === 'close')[0]
+  ?.props?.onClick?.()
+resetHooks()
+
+// A retry clears the mark; the same mount must not backfill it again.
+errorBoardState.byId['session-b'].running = true
+resetHooks()
+const retryView = surface(tabBody(errorProps))
+check(errorRowOf(retryView, 'session-b')?.props?.['data-error'] === undefined,
+  'a retrying agent kept its old error mark')
+errorBoardState.byId['session-b'].running = false
+resetHooks()
+const afterRetryView = surface(tabBody(errorProps))
+check(errorRowOf(afterRetryView, 'session-b')?.props?.['data-error'] === undefined,
+  'a successful retry left the old error mark behind')
+check(errorChecks.filter(id => id === 'session-b').length === 1,
+  'the retrying agent was backfilled more than once in one mount')
+
+flushCleanups()
+persistRefs = false
+deferCleanups = false
+resetSlots()
 
 /* --- Report ----------------------------------------------------------- */
 

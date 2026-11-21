@@ -33,6 +33,7 @@ All notable changes to this plugin are documented here. The format follows
 - File references in text appear as attachment chips, and write scopes in the task dialog are links.
 - Background wall time keeps a lifetime total after jobs finish, and the background-jobs chip stays on
   the agent row after its jobs settle.
+- Agent cards highlight sessions whose last turn failed and show the error on hover.
 - **Animations**
   - Cards glide between columns instead of jumping.
   - Changing values — time, tokens, totals, cost — fade and update smoothly.

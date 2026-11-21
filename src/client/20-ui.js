@@ -151,6 +151,12 @@
 .tk-agent-row[data-activity="running"]{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 20%,var(--dsw-alias-border-l1))}
 .tk-agent-row[data-hover="true"]{border-color:var(--dsw-alias-brand-primary);
   box-shadow:0 0 0 1px color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
+.tk-agent-row[data-error="true"]{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,transparent);
+  border-left:3px solid var(--dsw-alias-state-error-primary);padding-left:3px;
+  background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,var(--dsw-alias-bg-layer-1))}
+.tk-agent-row[data-error="true"]:hover{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,var(--dsw-alias-bg-layer-1))}
+.tk-agent-error{display:inline-flex;align-items:center;justify-content:center;flex:none;cursor:help;
+  color:var(--dsw-alias-state-error-primary)}
 .tk-agent-main{display:flex;align-items:center;gap:4px;min-width:0}
 .tk-agent-meta{display:flex;align-items:center;flex-wrap:wrap;row-gap:2px;column-gap:5px;min-width:0;padding-left:13px}
 .tk-agent-jobs{flex:none;min-width:24px;justify-content:center;cursor:default;font-variant-numeric:tabular-nums}
@@ -194,6 +200,7 @@
 .tk-error{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border:1px solid var(--dsw-alias-state-error-primary);
   border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-state-error-primary);font-size:11px;line-height:16px;overflow-wrap:anywhere}
 .tk-note{font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary)}
+.tk-error-note{min-width:0;overflow-wrap:anywhere;color:var(--dsw-alias-state-error-primary)}
 .tk-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;font-size:10px;line-height:14px;
   color:var(--dsw-alias-label-secondary);border-top:1px solid var(--dsw-alias-border-l1);padding-top:7px}
 .tk-backdrop{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;

@@ -1353,6 +1353,143 @@
     }
 
     /**
+     * Track which agent sessions ended their last turn with an error.
+     *
+     * The durable truth is each session's event log, and no projection carries
+     * it, so the board checks a settled agent once per mount and follows every
+     * new failure through the live `api-session/error` push. State is per-mount
+     * only: a fresh page re-checks, a reload loses nothing durable.
+     *
+     * A running agent is treated as not broken: a retry clears the old mark,
+     * and only a new live failure re-adds it. The live payload has no replay,
+     * so the first check per settled agent is what covers failures that
+     * happened before the board was opened.
+     *
+     * @param services - the injected face: `subscribeSessionErrors`, `loadSessionError`.
+     * @param agents - the strip rows, including the Lead, in render order.
+     * @returns a map from agent id to `{ message, code?, at }`; only agents
+     *   that are not running appear in it.
+     */
+    function useAgentErrors(services, agents) {
+      const [errors, setErrors] = useState({})
+      const checked = useRef(new Set())
+      const mounted = useRef(true)
+      const controller = useRef(undefined)
+      const agentsRef = useRef(agents)
+      agentsRef.current = agents
+      const errorsRef = useRef(errors)
+      errorsRef.current = errors
+      // A settled/running flip is the retry edge the mark follows.
+      const agentKey = agents.map(agent => agent.id + ':' + (agent.running === true ? '1' : '0')).join(',')
+
+      // The live push fires for every failed turn, including sessions whose
+      // card is not open and subagents the chat never activated.
+      useEffect(() => {
+        let off
+        try {
+          off = typeof services.subscribeSessionErrors === 'function'
+            ? services.subscribeSessionErrors(event => {
+              if (mounted.current !== true) return
+              if (event === null || typeof event !== 'object') return
+              if (typeof event.sessionId !== 'string' || event.sessionId === '') return
+              const message = typeof event.message === 'string' ? event.message : ''
+              const at = typeof event.at === 'number' && Number.isFinite(event.at) ? event.at : Date.now()
+              setErrors(current => ({ ...current, [event.sessionId]: { message, at } }))
+            })
+            : undefined
+        } catch {
+          off = undefined
+        }
+        return () => {
+          try {
+            if (typeof off === 'function') off()
+          } catch {
+            // The Remote may already be gone with the page.
+          }
+        }
+      }, [services])
+
+      // A retry starts a new turn: the old failure must not survive it. The
+      // live push re-adds the mark if this new turn fails again.
+      useEffect(() => {
+        setErrors(current => {
+          let next
+          for (const agent of agentsRef.current) {
+            if (agent.running !== true || current[agent.id] === undefined) continue
+            next = next ?? { ...current }
+            delete next[agent.id]
+          }
+          return next ?? current
+        })
+      }, [agentKey])
+
+      // One abort lifetime per mount; a changing agent list must not cancel a
+      // check that is already in flight.
+      useEffect(() => {
+        mounted.current = true
+        return () => {
+          mounted.current = false
+          const active = controller.current
+          controller.current = undefined
+          try {
+            if (active !== undefined && typeof active.abort === 'function') active.abort()
+          } catch {
+            // Aborting an already aborted check is harmless.
+          }
+        }
+      }, [])
+
+      // Backfill once per settled agent, low concurrency and bounded in count.
+      // `checked` is marked before the read so re-renders cannot duplicate it.
+      useEffect(() => {
+        if (typeof services.loadSessionError !== 'function') return
+        let active = controller.current
+        if (active === undefined && typeof AbortController === 'function') {
+          active = new AbortController()
+          controller.current = active
+        }
+        const signal = active?.signal
+        const pending = []
+        for (const agent of agentsRef.current) {
+          if (checked.current.size >= SESSION_ERROR_CHECK_CAP) break
+          if (agent.running === true) continue
+          if (errorsRef.current[agent.id] !== undefined) continue
+          if (checked.current.has(agent.id)) continue
+          checked.current.add(agent.id)
+          pending.push(agent.id)
+        }
+        if (pending.length === 0) return
+        const run = async () => {
+          for (const id of pending) {
+            if (mounted.current !== true || signal?.aborted === true) return
+            let value
+            try {
+              value = await services.loadSessionError(id, signal)
+            } catch {
+              value = undefined
+            }
+            if (mounted.current !== true || signal?.aborted === true) return
+            if (value === null || value === undefined) continue
+            setErrors(current => (current[id] === undefined ? { ...current, [id]: value } : current))
+          }
+        }
+        run()
+      }, [agentKey, services])
+
+      return useMemo(() => {
+        const visible = {}
+        for (const agent of agentsRef.current) {
+          if (agent.running === true) continue
+          const value = errors[agent.id]
+          if (value !== undefined) visible[agent.id] = value
+        }
+        return visible
+        // The agent key is the running-state identity for this projection.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [errors, agentKey])
+    }
+
+    /**
      * Resolve the team board of the Lead session. The seat's own projection is
      * the live one, so it wins whenever this board is rendered for the Lead
      * session itself; otherwise the list payload of the root session is used,
@@ -1513,6 +1650,9 @@
           return String(left.name).localeCompare(String(right.name))
         })
       }, [agents, lead])
+
+      /** The failed-last-turn marks of the strip, per mount and by agent id. */
+      const agentErrors = useAgentErrors(services, stripAgents)
 
       /**
        * The sessions whose job rosters the board watches. The strip lists the
@@ -1736,6 +1876,7 @@
         timelines,
         agents: stripAgents,
         agentColumns,
+        agentErrors,
         jobs,
         totals,
         agentStats,

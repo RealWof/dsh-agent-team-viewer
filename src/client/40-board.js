@@ -24,6 +24,9 @@
       openAgent: () => {},
       openFileLink: () => {},
       checkLocalPath: async () => undefined,
+      loadAgentReport: async () => undefined,
+      loadSessionError: async () => undefined,
+      subscribeSessionErrors: () => () => {},
       agentLabel: (key, fallback) => fallback,
     }
 
@@ -390,14 +393,21 @@
      * wraps; `showModelProvider`, `showModelName` and `showModelEffort` pick
      * its visible parts — the tooltip carries the full `provider · model ·
      * effort` either way.
-     * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
-     *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
-     *   and `showAgentModel`, `showModelProvider`, `showModelName`,
-     *   `showModelEffort` from the view settings.
+     * @param props - `agent`, `stats`, `jobs`, `error`, `now`, `t`, `tAgent`,
+     *   `flipGroup`, `onOpenAgent`, `onInspect`, `hovered` when a card owner is
+     *   hovered, and `showAgentModel`, `showModelProvider`, `showModelName`,
+     *   `showModelEffort` from the view settings. `error` is the failed
+     *   last-turn mark of this agent, when any.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true }) {
+    function AgentRow({ agent, stats, jobs, error = undefined, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
+      // A live push carries the message only; an empty one still says the last
+      // turn failed rather than showing a bare label.
+      const errorText = error === null || error === undefined
+        ? undefined
+        : (typeof error.message === 'string' && error.message !== '' ? error.message : t('errorTurnFailed'))
+      const errorTitle = errorText === undefined ? undefined : t('sessionError') + ': ' + errorText
       const selection = agent.model
       const partsOf = fields => (selection === undefined
         ? []
@@ -459,10 +469,12 @@
         className: 'tk-agent-row',
         role: 'button',
         tabIndex: 0,
-        'aria-label': agent.name,
+        title: errorTitle,
+        'aria-label': errorTitle === undefined ? agent.name : agent.name + ' — ' + errorTitle,
         'data-activity': agent.activity,
         'data-agent-id': agent.id,
         'data-lead': agent.isLead === true ? 'true' : 'false',
+        'data-error': errorText === undefined ? undefined : 'true',
         'data-hover': hovered === true ? 'true' : 'false',
         'data-flip-id': 'agent:' + agent.id,
         'data-flip-group': flipGroup,
@@ -480,12 +492,22 @@
         h('button', {
           type: 'button',
           className: 'tk-agent-name',
-          title: activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
+          title: (errorTitle === undefined ? '' : errorTitle + ' — ')
+            + activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
           onClick: event => {
             stopEvent(event)
             onOpenAgent(agent.id, 'main')
           },
         }, agent.name),
+        // A failed session gets a small mark beside its name; the row title
+        // carries the same text, so hovering the card shows it too.
+        errorText === undefined
+          ? null
+          : h('span', {
+            className: 'tk-agent-error',
+            title: errorTitle,
+            'aria-label': errorTitle,
+          }, h(Icon, { name: 'alert', size: 10 })),
         // The word beside the name is the DSH subagent mode, not a status: its
         // tooltip names the mode and explains what it means.
         mode === undefined ? null : h('span', {
@@ -715,14 +737,15 @@
      * uses — the Lead first inside its own group, then every subagent. When a
      * grouping switch is on, each status column renders custom and role groups
      * with their own foldable headers; otherwise it stays a flat list.
-     * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
-     *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
-     *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `showModelProvider`,
-     *   `agentGroups` (`roles` and `custom` flags) and `onToggleAgentGroup`.
+     * @param props - `columns`, `agentStats`, `jobsByAgent`, `agentErrors`, `now`,
+     *   `columnCount`, `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`,
+     *   `onInspect`, `onSortChange`, `hoverOwnerId`, `onToggleSection`,
+     *   `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`, `showAgentModel`,
+     *   `showModelProvider`, `agentGroups` (`roles` and `custom` flags) and
+     *   `onToggleAgentGroup`.
      */
     function AgentsStrip({
-      boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
+      boardId, columns, agentStats, jobsByAgent, agentErrors = {}, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
       showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true,
       agentGroups = { roles: false, custom: false }, onToggleAgentGroup = undefined,
@@ -737,6 +760,7 @@
         agent,
         stats: agentStats[agent.id],
         jobs: jobsByAgent[agent.id],
+        error: agentErrors[agent.id],
         now,
         t,
         tAgent,
@@ -1121,6 +1145,7 @@
               columns: model.agentColumns,
               agentStats: model.agentStats,
               jobsByAgent: model.jobs.byAgent,
+              agentErrors: model.agentErrors,
               now: model.now,
               columnCount,
               costState: model.costState,
@@ -1217,6 +1242,7 @@
             agent: inspected,
             stats: model.agentStats[inspected.id],
             jobs: model.jobs.byAgent[inspected.id],
+            error: model.agentErrors[inspected.id],
             tasks: agentTasks,
             costState: model.costState,
             whoById: model.whoById,

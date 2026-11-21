@@ -64,6 +64,17 @@
      * the dialog.
      */
     const REPORT_WAIT_MS = 2000
+    /**
+     * How many settled agents one board mount may check for a failed last turn.
+     * Each check opens the session's durable event window cheaply, but a huge
+     * tree must not open one history per row.
+     */
+    const SESSION_ERROR_CHECK_CAP = 24
+    /**
+     * How long one error check waits for a never-opened session's history to
+     * publish its first window. The board must never hang on a slow open.
+     */
+    const SESSION_ERROR_WAIT_MS = 1500
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
