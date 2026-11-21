@@ -340,7 +340,11 @@
       const showJobs = rosterRead && JOBS_SEEN.has(agent.id)
       const live = liveJobsOf(agentJobs)
       const longest = live.length === 0 ? undefined : jobElapsed(live[0], now)
-      const backgroundMs = backgroundSpanOf(agentJobs, now)
+      // The metric already adds the remembered history to the live roster;
+      // the chip's tooltip shows the same lifetime total.
+      const backgroundMs = stats !== undefined && typeof stats.backgroundMs === 'number'
+        ? stats.backgroundMs
+        : backgroundSpanOf(agentJobs, now)
       // The chip counts every background job the agent owns, a settled zero
       // included; the live color and the tooltip tell how many of them still
       // hold it and how much wall time the background took.

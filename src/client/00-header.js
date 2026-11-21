@@ -58,6 +58,18 @@
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
+    /**
+     * Identity of the browser-local background-time store. The jobs service
+     * only publishes the live roster: a settled JobView stays until its owner
+     * session is disposed and is then gone, so no API can total the lifetime
+     * background time. The board merges the roster's intervals into this store
+     * per agent and totals their union.
+     */
+    const BACKGROUND_KEY = 'dsh.agent-team-viewer.background.v1'
+    /** Merged intervals one agent keeps; the newest win when the cap is hit. */
+    const BACKGROUND_INTERVALS_LIMIT = 300
+    /** Agents the background store keeps; the freshest win when the cap is hit. */
+    const BACKGROUND_AGENTS_LIMIT = 200
     /** Items one expanded group shows before the "show all" control. */
     const VISIBLE_LIMIT = 5
     /** A group bigger than this folds itself the first time it is seen that big. */

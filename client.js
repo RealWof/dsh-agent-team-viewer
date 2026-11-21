@@ -69,6 +69,18 @@ window.__ModuleLoader__.load({
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
+    /**
+     * Identity of the browser-local background-time store. The jobs service
+     * only publishes the live roster: a settled JobView stays until its owner
+     * session is disposed and is then gone, so no API can total the lifetime
+     * background time. The board merges the roster's intervals into this store
+     * per agent and totals their union.
+     */
+    const BACKGROUND_KEY = 'dsh.agent-team-viewer.background.v1'
+    /** Merged intervals one agent keeps; the newest win when the cap is hit. */
+    const BACKGROUND_INTERVALS_LIMIT = 300
+    /** Agents the background store keeps; the freshest win when the cap is hit. */
+    const BACKGROUND_AGENTS_LIMIT = 200
     /** Items one expanded group shows before the "show all" control. */
     const VISIBLE_LIMIT = 5
     /** A group bigger than this folds itself the first time it is seen that big. */
@@ -2863,6 +2875,13 @@ window.__ModuleLoader__.load({
       const runningMs = agent.running && agent.startedAt !== undefined ? Math.max(0, context.now - agent.startedAt) : 0
       const durationMs = settled > 0 || runningMs > 0 ? settled + runningMs : undefined
       const jobRows = context.jobs?.[agent.id]
+      // The roster is live and may already have dropped settled jobs with
+      // their owner session; the browser store keeps what it saw before.
+      const storedSpans = BACKGROUND.value[agent.id]
+      const rosterSpans = jobRows === undefined ? undefined : jobSpansOf(jobRows, context.now)
+      const backgroundSpans = storedSpans === undefined && rosterSpans === undefined
+        ? undefined
+        : mergeIntervals([...(storedSpans ?? []), ...(rosterSpans ?? [])])
       return {
         tokens: tokensOf(usage),
         hasTokens: usage !== undefined,
@@ -2872,8 +2891,8 @@ window.__ModuleLoader__.load({
         turns: rawStats === undefined ? undefined : num(rawStats.turns),
         cost: context.costs[agent.id],
         durationMs,
-        // Known for the agents whose roster is watched; undefined otherwise.
-        backgroundMs: jobRows === undefined ? undefined : backgroundSpanOf(jobRows, context.now),
+        // Known for the agents whose roster is watched or remembered.
+        backgroundMs: backgroundSpans === undefined ? undefined : backgroundMsOf(backgroundSpans),
         taskCount: context.taskCounts?.[agent.id] ?? 0,
       }
     }
@@ -2992,6 +3011,61 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The `[start, end]` intervals the given jobs occupied. A live job runs up
+     * to `now`; a job that never started contributes nothing.
+     * @param jobs - the agent's jobs.
+     * @param now - the ticking clock.
+     * @returns the intervals, unmerged.
+     */
+    function jobSpansOf(jobs, now) {
+      const spans = []
+      for (const job of jobs ?? []) {
+        const startedAt = num(job?.startedAt, 0)
+        if (startedAt <= 0) continue
+        const end = isLiveJob(job) ? num(now, 0) : num(job?.finishedAt, 0)
+        if (end > startedAt) spans.push([startedAt, end])
+      }
+      return spans
+    }
+
+    /**
+     * Merge overlapping or touching intervals, sorted by their start.
+     * @param intervals - candidate `[start, end]` pairs, in any order.
+     * @returns the coalesced, sorted intervals; invalid pairs are dropped.
+     */
+    function mergeIntervals(intervals) {
+      const spans = []
+      for (const span of intervals ?? []) {
+        const from = num(span?.[0], NaN)
+        const to = num(span?.[1], NaN)
+        if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) continue
+        spans.push([from, to])
+      }
+      spans.sort((left, right) => left[0] - right[0] || left[1] - right[1])
+      const merged = []
+      for (const span of spans) {
+        const last = merged[merged.length - 1]
+        if (last !== undefined && span[0] <= last[1]) {
+          last[1] = Math.max(last[1], span[1])
+          continue
+        }
+        merged.push([span[0], span[1]])
+      }
+      return merged
+    }
+
+    /**
+     * The wall time a set of intervals occupies, counting overlaps once.
+     * @param intervals - merged or unmerged `[start, end]` pairs.
+     * @returns the occupied milliseconds; 0 when nothing ran.
+     */
+    function backgroundMsOf(intervals) {
+      let total = 0
+      for (const span of mergeIntervals(intervals)) total += span[1] - span[0]
+      return total
+    }
+
+    /**
      * The wall time the given jobs occupied: the union of their intervals, so
      * two concurrent commands are counted once. A live job runs up to `now`.
      * This is the "time in background processes" figure, next to the agent's
@@ -3001,33 +3075,127 @@ window.__ModuleLoader__.load({
      * @returns the occupied milliseconds; 0 when nothing ever ran.
      */
     function backgroundSpanOf(jobs, now) {
-      const spans = []
-      for (const job of jobs ?? []) {
-        const startedAt = num(job?.startedAt, 0)
-        if (startedAt <= 0) continue
-        const end = isLiveJob(job) ? num(now, 0) : num(job?.finishedAt, 0)
-        if (end > startedAt) spans.push([startedAt, end])
-      }
-      spans.sort((left, right) => left[0] - right[0])
-      let total = 0
-      let from
-      let to
-      for (const span of spans) {
-        if (from === undefined) {
-          from = span[0]
-          to = span[1]
-          continue
+      return backgroundMsOf(jobSpansOf(jobs, now))
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Background-time history: the DSH jobs service only exposes the live
+     * roster. A settled JobView stays in its owner's roster until the owner
+     * session is disposed, and then it is gone, so no API can answer "how much
+     * background time did this agent ever use?". The board therefore folds the
+     * roster's intervals into localStorage, merged per agent, and totals the
+     * union of that store and the live roster. Nothing here touches a job.
+     * ------------------------------------------------------------------ */
+
+    /** Whether a stored key is safe to copy through `Object.keys`. */
+    function safeBackgroundKey(key) {
+      return typeof key === 'string' && key !== '' && key !== '__proto__'
+        && key !== 'constructor' && key !== 'prototype'
+    }
+
+    /**
+     * Read the stored background intervals.
+     * @returns `{ value, raw }`: sanitized merged intervals per agent id, and
+     *   the stored text used to skip an unchanged write.
+     */
+    function readBackground() {
+      try {
+        const raw = window.localStorage.getItem(BACKGROUND_KEY)
+        if (raw === null || raw === '') return { value: {}, raw: '' }
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return { value: {}, raw: '' }
+        const value = {}
+        for (const key of Object.keys(parsed)) {
+          if (!safeBackgroundKey(key) || !Array.isArray(parsed[key])) continue
+          const merged = mergeIntervals(parsed[key])
+          if (merged.length > 0) value[key] = merged
         }
-        if (span[0] <= to) {
-          to = Math.max(to, span[1])
-          continue
-        }
-        total += to - from
-        from = span[0]
-        to = span[1]
+        return { value, raw }
+      } catch {
+        // A blocked or corrupt store only costs the lifetime background time.
+        return { value: {}, raw: '' }
       }
-      if (from !== undefined) total += to - from
-      return total
+    }
+
+    /** Module-wide background store: the jobs fold writes it, the metrics read it. */
+    const BACKGROUND = readBackground()
+
+    /**
+     * Apply the per-agent and agent-count caps to a background store. Merged
+     * intervals are kept newest-first within an agent, and agents are kept by
+     * their latest interval, so a long-lived tree cannot grow the store without
+     * bound.
+     * @param value - the candidate store.
+     * @returns the capped copy.
+     */
+    function capBackground(value) {
+      const rows = []
+      for (const key of Object.keys(value)) {
+        if (!safeBackgroundKey(key)) continue
+        const merged = mergeIntervals(value[key])
+        if (merged.length === 0) continue
+        const kept = merged.length > BACKGROUND_INTERVALS_LIMIT
+          ? merged.slice(merged.length - BACKGROUND_INTERVALS_LIMIT)
+          : merged
+        rows.push({ key, intervals: kept, latest: kept[kept.length - 1][1] })
+      }
+      rows.sort((left, right) => right.latest - left.latest)
+      const capped = {}
+      for (const row of rows.slice(0, BACKGROUND_AGENTS_LIMIT)) capped[row.key] = row.intervals
+      return capped
+    }
+
+    /**
+     * Persist the background store only when it changed.
+     * @param value - the capped store to write.
+     * @returns whether a write happened.
+     */
+    function writeBackground(value) {
+      const text = JSON.stringify(value)
+      if (text === BACKGROUND.raw) return false
+      try {
+        window.localStorage.setItem(BACKGROUND_KEY, text)
+        BACKGROUND.raw = text
+        return true
+      } catch {
+        // A blocked store stops persistence for this page only.
+        return false
+      }
+    }
+
+    /**
+     * Fold one jobs-update's roster intervals into the background store. Called
+     * on every jobs change, not on the ticking clock: a live job's interval is
+     * already counted up to this moment. Writes only when the merged store
+     * actually moved, so an unchanged update costs nothing.
+     * @param jobsByAgent - `useAgentJobs().byAgent`.
+     * @param now - the moment the roster was read.
+     * @returns whether the store changed.
+     */
+    function noteBackground(jobsByAgent, now) {
+      if (jobsByAgent === null || typeof jobsByAgent !== 'object') return false
+      const at = num(now, Date.now())
+      const next = { ...BACKGROUND.value }
+      let changed = false
+      for (const agentId of Object.keys(jobsByAgent)) {
+        if (!safeBackgroundKey(agentId)) continue
+        const rows = jobsByAgent[agentId]
+        if (!Array.isArray(rows)) continue
+        const spans = jobSpansOf(rows, at)
+        if (spans.length === 0) continue
+        const previous = Array.isArray(next[agentId]) ? next[agentId] : []
+        const merged = mergeIntervals(previous.concat(spans))
+        const same = merged.length === previous.length
+          && merged.every((span, index) => span[0] === previous[index][0] && span[1] === previous[index][1])
+        if (same) continue
+        next[agentId] = merged
+        changed = true
+      }
+      if (!changed) return false
+      const capped = capBackground(next)
+      BACKGROUND.value = capped
+      writeBackground(capped)
+      return true
     }
 
     /**
@@ -3291,6 +3459,14 @@ window.__ModuleLoader__.load({
 
       /** The attributed jobs of every watched agent; read-only and optional. */
       const jobs = useAgentJobs(services, jobsIds)
+
+      // Settled JobViews are dropped with their owner session, so the roster
+      // alone cannot total the lifetime background time: fold each roster
+      // change into the browser store. Live jobs are already counted up to
+      // this moment, so the ticking clock does not need this effect.
+      useEffect(() => {
+        noteBackground(jobs.byAgent, Date.now())
+      }, [jobs.byAgent])
 
       /** The same rows, grouped by the status the task columns use. */
       const agentColumns = useMemo(() => {
@@ -3840,7 +4016,11 @@ window.__ModuleLoader__.load({
       const showJobs = rosterRead && JOBS_SEEN.has(agent.id)
       const live = liveJobsOf(agentJobs)
       const longest = live.length === 0 ? undefined : jobElapsed(live[0], now)
-      const backgroundMs = backgroundSpanOf(agentJobs, now)
+      // The metric already adds the remembered history to the live roster;
+      // the chip's tooltip shows the same lifetime total.
+      const backgroundMs = stats !== undefined && typeof stats.backgroundMs === 'number'
+        ? stats.backgroundMs
+        : backgroundSpanOf(agentJobs, now)
       // The chip counts every background job the agent owns, a settled zero
       // included; the live color and the tooltip tell how many of them still
       // hold it and how much wall time the background took.
