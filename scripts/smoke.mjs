@@ -437,6 +437,25 @@ check(chipCount(leadChip) === '1', 'the muted jobs chip does not count the settl
 check(leadChip?.props?.['data-live'] === 'false', 'a settled-only jobs chip is marked live')
 check(String(leadChip?.props?.title ?? '').includes('jobsHeading'), 'a settled-only chip has no background-processes title')
 check(jobsChipOf(rowOf('session-b')) === undefined, 'an agent without background jobs got a chip')
+const jobsMeta = within(rowOf('session-a'), node => node.props?.className === 'tk-agent-meta')[0]
+const jobsMetaChildren = Array.isArray(jobsMeta?.props?.children) ? jobsMeta.props.children : []
+check(jobsMetaChildren.length > 0 && jobsMetaChildren[jobsMetaChildren.length - 1] === ownerChip,
+  'the jobs chip does not close the metric line after the metrics')
+
+/* A job that finished keeps the chip as a muted zero: the agent was seen working. */
+const savedJobs = jobsState.rows['session-a']
+jobsState.rows['session-a'] = []
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const settledJobsBoard = surface(tabBody(props))
+const settledRow = settledJobsBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')
+const settledChip = jobsChipOf(settledRow)
+check(settledChip !== undefined, 'an agent whose jobs settled lost its chip')
+check(chipCount(settledChip) === '0', 'the settled chip does not show the current zero count')
+check(settledChip?.props?.['data-live'] === 'false', 'the settled chip is still marked live')
+check(String(settledChip?.props?.title ?? '').includes('jobsHeading'), 'the settled chip lost its tooltip')
+jobsState.rows['session-a'] = savedJobs
 
 const watchedJobs = [...new Set(jobsWatch.started)]
 check(watchedJobs.length === 3 && ['root', 'session-a', 'session-b'].every(id => watchedJobs.includes(id)),

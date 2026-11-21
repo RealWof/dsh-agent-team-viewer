@@ -26,6 +26,14 @@
     }
 
     /**
+     * Agent ids that owned at least one background job while this page has
+     * been open. The set survives remounts of the tab, so a chip that appeared
+     * once stays behind as a settled count instead of vanishing when the
+     * process finishes. Page state only — nothing here reaches localStorage.
+     */
+    const JOBS_SEEN = new Set()
+
+    /**
      * Pick the money figure to show. The board shows the API-equivalent value
      * of the tokens (list prices), not the wallet spend: on a subscription the
      * wallet spend is zero while the tokens still have an equivalent cost.
@@ -272,15 +280,20 @@
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
       const items = agentMetricLine(stats, t)
-      const agentJobs = Array.isArray(jobs) ? jobs : []
+      const rosterRead = Array.isArray(jobs)
+      const agentJobs = rosterRead ? jobs : []
+      // Once an agent owned a job, keep the chip as a settled count even after
+      // the last process finishes; the set lives for the page, not the mount.
+      if (rosterRead && agentJobs.length > 0) JOBS_SEEN.add(agent.id)
+      const showJobs = rosterRead && JOBS_SEEN.has(agent.id)
       const live = liveJobsOf(agentJobs)
       const longest = live.length === 0 ? undefined : jobElapsed(live[0], now)
       const backgroundMs = backgroundSpanOf(agentJobs, now)
-      // The chip counts every background job the agent owns; the live color and
-      // the tooltip tell how many of them still hold it and how much wall time
-      // the background took next to the run duration beside it.
+      // The chip counts every background job the agent owns, a settled zero
+      // included; the live color and the tooltip tell how many of them still
+      // hold it and how much wall time the background took.
       const jobsLabel = agentJobs.length === 0
-        ? undefined
+        ? t('jobsHeading') + ': 0'
         : (live.length === 0
           ? t('jobsHeading') + ': ' + String(agentJobs.length)
           : t('jobsRunningCount') + ': ' + String(live.length)
@@ -336,17 +349,21 @@
             onOpenAgent(agent.id, 'aside')
           },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
-      agentJobs.length === 0 && items.length === 0
+      showJobs !== true && items.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
-          agentJobs.length === 0 ? null : h('span', {
-            key: 'jobs',
-            className: 'tk-chip tk-agent-jobs',
-            'data-live': live.length > 0 ? 'true' : 'false',
-            title: jobsLabel,
-            'aria-label': jobsLabel,
-          }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length)),
-          items))
+          // The metrics keep their order and their place; the chip closes the
+          // line, so appearing or vanishing never shifts a metric icon.
+          items,
+          showJobs === true
+            ? h('span', {
+              key: 'jobs',
+              className: 'tk-chip tk-agent-jobs',
+              'data-live': live.length > 0 ? 'true' : 'false',
+              title: jobsLabel,
+              'aria-label': jobsLabel,
+            }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length))
+            : null))
     }
 
     /**

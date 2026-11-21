@@ -115,7 +115,7 @@
 .tk-agent-row[data-activity="running"]{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 20%,var(--dsw-alias-border-l1))}
 .tk-agent-main{display:flex;align-items:center;gap:4px;min-width:0}
 .tk-agent-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;padding-left:13px}
-.tk-agent-jobs{flex:none;cursor:default;font-variant-numeric:tabular-nums}
+.tk-agent-jobs{flex:none;margin-left:auto;min-width:24px;justify-content:center;cursor:default;font-variant-numeric:tabular-nums}
 .tk-agent-jobs[data-live="true"]{color:var(--dsw-alias-brand-primary);
   border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent)}
 .tk-agent-name{min-width:0;max-width:100%;padding:0;border:0;background:transparent;color:var(--dsw-alias-label-primary);
