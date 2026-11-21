@@ -768,7 +768,6 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agent',
       agentMode: 'Mode',
       agentOpen: 'Open',
-      agentOpenAside: 'Beside',
       agentOpenHint: 'Open the agent chat in the main view',
       agentOpenAsideHint: 'Open the agent chat beside the board',
       agentTasksHint: 'Tasks this agent owns on the board',
@@ -931,7 +930,6 @@ window.__ModuleLoader__.load({
       agentLabel: 'Агент',
       agentMode: 'Режим',
       agentOpen: 'Открыть',
-      agentOpenAside: 'Рядом',
       agentOpenHint: 'Открыть чат агента в основном окне',
       agentOpenAsideHint: 'Открыть чат агента рядом с доской',
       agentTasksHint: 'Задачи этого агента на доске',
@@ -1094,7 +1092,6 @@ window.__ModuleLoader__.load({
       agentLabel: '代理',
       agentMode: '模式',
       agentOpen: '打开',
-      agentOpenAside: '旁边',
       agentOpenHint: '在主视图中打开代理会话',
       agentOpenAsideHint: '在看板旁打开代理会话',
       agentTasksHint: '该代理在看板上的任务',
@@ -1257,7 +1254,6 @@ window.__ModuleLoader__.load({
       agentLabel: 'エージェント',
       agentMode: 'モード',
       agentOpen: '開く',
-      agentOpenAside: 'となり',
       agentOpenHint: 'メインビューでエージェントのチャットを開きます',
       agentOpenAsideHint: 'ボードの隣でエージェントのチャットを開きます',
       agentTasksHint: 'このエージェントが担当するボード上のタスク',
@@ -1420,7 +1416,6 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agente',
       agentMode: 'Modo',
       agentOpen: 'Abrir',
-      agentOpenAside: 'Al lado',
       agentOpenHint: 'Abrir el chat del agente en la vista principal',
       agentOpenAsideHint: 'Abrir el chat del agente junto al tablero',
       agentTasksHint: 'Tareas de este agente en el tablero',
@@ -1583,7 +1578,6 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agent',
       agentMode: 'Mode',
       agentOpen: 'Ouvrir',
-      agentOpenAside: 'À côté',
       agentOpenHint: 'Ouvrir le chat de l\u2019agent dans la vue principale',
       agentOpenAsideHint: 'Ouvrir le chat de l\u2019agent à côté du tableau',
       agentTasksHint: 'Tâches de cet agent sur le tableau',
@@ -1746,7 +1740,6 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agent',
       agentMode: 'Modus',
       agentOpen: 'Öffnen',
-      agentOpenAside: 'Daneben',
       agentOpenHint: 'Agent-Chat in der Hauptansicht öffnen',
       agentOpenAsideHint: 'Agent-Chat neben dem Board öffnen',
       agentTasksHint: 'Aufgaben dieses Agenten auf dem Board',
@@ -1909,7 +1902,6 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agente',
       agentMode: 'Modo',
       agentOpen: 'Abrir',
-      agentOpenAside: 'Ao lado',
       agentOpenHint: 'Abrir o chat do agente na visão principal',
       agentOpenAsideHint: 'Abrir o chat do agente ao lado do painel',
       agentTasksHint: 'Tarefas deste agente no painel',
@@ -6711,6 +6703,25 @@ window.__ModuleLoader__.load({
       const parent = agent.parentId === undefined ? undefined : whoById[agent.parentId]
       const sessionId = String(agent.id).replace(/^session-/, '')
 
+      // The agent's actions sit in the header's right corner, left of the
+      // close control, exactly like the task dialog's; the body below stays
+      // facts and lists only.
+      const headActions = h('span', { className: 'tk-insp-actions' },
+        h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenHint'),
+          'aria-label': t('agentOpenHint'),
+          onClick: () => { onOpenAgent(agent.id, 'main') },
+        }, h(Icon, { name: 'chevron-right', size: 13 })),
+        agent.isLead === true ? null : h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenAsideHint'),
+          'aria-label': t('agentOpenAsideHint'),
+          onClick: () => { onOpenAgent(agent.id, 'aside') },
+        }, h(Icon, { name: 'panel-right', size: 13 })))
+
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
           h('h2', { className: 'tk-insp-title' }, agent.name),
@@ -6721,6 +6732,7 @@ window.__ModuleLoader__.load({
               ? h(Chip, { tone: 'info', icon: 'users' }, t('leadLabel'))
               : (mode === undefined ? null : h(Chip, { icon: 'users' }, mode)))),
         h('span', { className: 'tk-head-spacer' }),
+        headActions,
         h('button', {
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
@@ -6821,20 +6833,7 @@ window.__ModuleLoader__.load({
             h(AgentMetrics, { stats, agent, costState, t })),
           h(Section, { title: t('stateLabel'), icon: 'layers' }, facts),
           tasksBlock,
-          jobsBlock,
-          h('div', { className: 'tk-actions' },
-            h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenHint'),
-              onClick: () => { onOpenAgent(agent.id, 'main') },
-            }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen')),
-            agent.isLead === true ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenAsideHint'),
-              onClick: () => { onOpenAgent(agent.id, 'aside') },
-            }, h(Icon, { name: 'panel-right', size: 11 }), t('agentOpenAside')))))))
+          jobsBlock))))
     }
 
     /* ------------------------------------------------------------------ *

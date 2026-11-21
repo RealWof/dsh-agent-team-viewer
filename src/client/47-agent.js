@@ -183,6 +183,25 @@
       const parent = agent.parentId === undefined ? undefined : whoById[agent.parentId]
       const sessionId = String(agent.id).replace(/^session-/, '')
 
+      // The agent's actions sit in the header's right corner, left of the
+      // close control, exactly like the task dialog's; the body below stays
+      // facts and lists only.
+      const headActions = h('span', { className: 'tk-insp-actions' },
+        h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenHint'),
+          'aria-label': t('agentOpenHint'),
+          onClick: () => { onOpenAgent(agent.id, 'main') },
+        }, h(Icon, { name: 'chevron-right', size: 13 })),
+        agent.isLead === true ? null : h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenAsideHint'),
+          'aria-label': t('agentOpenAsideHint'),
+          onClick: () => { onOpenAgent(agent.id, 'aside') },
+        }, h(Icon, { name: 'panel-right', size: 13 })))
+
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
           h('h2', { className: 'tk-insp-title' }, agent.name),
@@ -193,6 +212,7 @@
               ? h(Chip, { tone: 'info', icon: 'users' }, t('leadLabel'))
               : (mode === undefined ? null : h(Chip, { icon: 'users' }, mode)))),
         h('span', { className: 'tk-head-spacer' }),
+        headActions,
         h('button', {
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
@@ -293,18 +313,5 @@
             h(AgentMetrics, { stats, agent, costState, t })),
           h(Section, { title: t('stateLabel'), icon: 'layers' }, facts),
           tasksBlock,
-          jobsBlock,
-          h('div', { className: 'tk-actions' },
-            h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenHint'),
-              onClick: () => { onOpenAgent(agent.id, 'main') },
-            }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen')),
-            agent.isLead === true ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenAsideHint'),
-              onClick: () => { onOpenAgent(agent.id, 'aside') },
-            }, h(Icon, { name: 'panel-right', size: 11 }), t('agentOpenAside')))))))
+          jobsBlock))))
     }

@@ -76,7 +76,6 @@
       agentLabel: 'Agent',
       agentMode: 'Mode',
       agentOpen: 'Open',
-      agentOpenAside: 'Beside',
       agentOpenHint: 'Open the agent chat in the main view',
       agentOpenAsideHint: 'Open the agent chat beside the board',
       agentTasksHint: 'Tasks this agent owns on the board',

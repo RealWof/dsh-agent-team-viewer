@@ -77,7 +77,6 @@
       agentLabel: 'エージェント',
       agentMode: 'モード',
       agentOpen: '開く',
-      agentOpenAside: 'となり',
       agentOpenHint: 'メインビューでエージェントのチャットを開きます',
       agentOpenAsideHint: 'ボードの隣でエージェントのチャットを開きます',
       agentTasksHint: 'このエージェントが担当するボード上のタスク',

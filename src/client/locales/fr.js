@@ -77,7 +77,6 @@
       agentLabel: 'Agent',
       agentMode: 'Mode',
       agentOpen: 'Ouvrir',
-      agentOpenAside: 'À côté',
       agentOpenHint: 'Ouvrir le chat de l\u2019agent dans la vue principale',
       agentOpenAsideHint: 'Ouvrir le chat de l\u2019agent à côté du tableau',
       agentTasksHint: 'Tâches de cet agent sur le tableau',

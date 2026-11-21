@@ -77,7 +77,6 @@
       agentLabel: 'Agent',
       agentMode: 'Modus',
       agentOpen: 'Öffnen',
-      agentOpenAside: 'Daneben',
       agentOpenHint: 'Agent-Chat in der Hauptansicht öffnen',
       agentOpenAsideHint: 'Agent-Chat neben dem Board öffnen',
       agentTasksHint: 'Aufgaben dieses Agenten auf dem Board',

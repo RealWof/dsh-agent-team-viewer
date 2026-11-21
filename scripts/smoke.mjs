@@ -1015,6 +1015,36 @@ check(atText('statsHeading') < atText('stateLabel') && atText('stateLabel') < at
 const dialogNode = withAgent.nodes.find(node => node.props?.['data-agent-dialog'] === 'session-a')
 check(dialogNode?.props?.style?.zoom === 1, 'the agent dialog does not use the default dialog scale')
 check(dialogNode?.props?.['data-layout'] === undefined, 'the agent dialog picked up the task two-column layout')
+
+/* The agent actions live in the header's right corner, left of the close
+   control, and the dialog body keeps no action footer of its own. */
+const agentDialogHead = within(dialogNode, node => node.props?.className === 'tk-insp-head')[0]
+const agentHeadActionBar = within(agentDialogHead, node => node.props?.className === 'tk-insp-actions')[0]
+check(agentHeadActionBar !== undefined, 'the agent dialog header has no agent actions')
+const agentHeadActionLabels = within(agentHeadActionBar, node => node.type === 'button')
+  .map(node => node.props?.['aria-label'])
+check(agentHeadActionLabels.join(',') === 'agentOpenHint,agentOpenAsideHint',
+  'the agent dialog header actions are not the open/aside controls: ' + agentHeadActionLabels.join(','))
+check(within(agentHeadActionBar, node => node.type === 'button' && node.props?.className === 'tk-icon-btn').length === 2,
+  'the agent dialog header actions are not compact icon buttons')
+const agentHeadChildren = Array.isArray(agentDialogHead?.props?.children) ? agentDialogHead.props.children : []
+check(agentHeadChildren.findIndex(child => child?.props?.className === 'tk-insp-actions')
+  === agentHeadChildren.length - 2, 'the agent actions are not immediately left of the close button')
+check(agentHeadChildren[agentHeadChildren.length - 1]?.props?.['aria-label'] === 'close',
+  'the close button is not the last control of the agent dialog header')
+check(within(dialogNode, node => node.props?.className === 'tk-actions').length === 0,
+  'the agent dialog still carries its old action footer')
+within(agentHeadActionBar, node => node.type === 'button' && node.props?.['aria-label'] === 'agentOpenHint')[0]
+  ?.props?.onClick?.()
+check(opened.length === 5 && opened[4]?.[0] === 'session-a' && opened[4]?.[1] === 'main',
+  'the agent header open action did not open the agent chat')
+// The header action closes the dialog through the board; reopen it for the
+// fold and list checks below.
+resetHooks()
+const reopenedAgentBoard = surface(tabBody(props))
+reopenedAgentBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')?.props?.onClick?.()
+resetHooks()
 const metricTiles = within(dialogNode, node => node.props?.className === 'tk-metric')
 const backgroundTile = metricTiles.find(tile => surface(tile).texts.includes('metricBackground'))
 check(backgroundTile !== undefined, 'the agent dialog has no background-time tile')

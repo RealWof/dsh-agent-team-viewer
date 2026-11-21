@@ -77,7 +77,6 @@
       agentLabel: 'Agente',
       agentMode: 'Modo',
       agentOpen: 'Abrir',
-      agentOpenAside: 'Ao lado',
       agentOpenHint: 'Abrir o chat do agente na visão principal',
       agentOpenAsideHint: 'Abrir o chat do agente ao lado do painel',
       agentTasksHint: 'Tarefas deste agente no painel',

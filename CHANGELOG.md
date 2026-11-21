@@ -81,6 +81,9 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Changed
 
+- The agent dialog's **Open** and **Beside** actions moved from the body footer into the dialog
+  header's right corner as compact icon buttons immediately left of the close control, matching the
+  task dialog; the Lead keeps its single **Open** action, and the dialog body is facts and lists only.
 - The task dialog's agent actions (**Open**, **Aside**, **Details**) moved from the agent block's
   footer into the dialog header's right corner as compact icon buttons immediately left of the close
   control, so the agent block keeps only the agent's facts and metrics.

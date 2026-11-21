@@ -77,7 +77,6 @@
       agentLabel: 'Агент',
       agentMode: 'Режим',
       agentOpen: 'Открыть',
-      agentOpenAside: 'Рядом',
       agentOpenHint: 'Открыть чат агента в основном окне',
       agentOpenAsideHint: 'Открыть чат агента рядом с доской',
       agentTasksHint: 'Задачи этого агента на доске',

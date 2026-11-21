@@ -77,7 +77,6 @@
       agentLabel: '代理',
       agentMode: '模式',
       agentOpen: '打开',
-      agentOpenAside: '旁边',
       agentOpenHint: '在主视图中打开代理会话',
       agentOpenAsideHint: '在看板旁打开代理会话',
       agentTasksHint: '该代理在看板上的任务',
