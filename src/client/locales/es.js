@@ -150,4 +150,5 @@
       groupingToggleHint: 'Alternar la agrupación en esta sección',
       setShowModelProvider: 'Mostrar el proveedor',
       setShowModelProviderHint: 'Muestra el proveedor antes del modelo en la línea del agente; la información lo conserva siempre.',
+      agentModeHint: 'Los agentes continuables conservan su sesión para mensajes posteriores; los de un solo uso terminan con la tarea; los externos se ejecutan fuera de este tablero.',
     }

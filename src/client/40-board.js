@@ -461,7 +461,12 @@
             onOpenAgent(agent.id, 'main')
           },
         }, agent.name),
-        mode === undefined ? null : h('span', { className: 'tk-agent-mode' }, mode),
+        // The word beside the name is the DSH subagent mode, not a status: its
+        // tooltip names the mode and explains what it means.
+        mode === undefined ? null : h('span', {
+          className: 'tk-agent-mode',
+          title: t('agentMode') + ': ' + mode + ' — ' + t('agentModeHint'),
+        }, mode),
         h('span', { className: 'tk-head-spacer' }),
         h('button', {
           type: 'button',

@@ -150,4 +150,5 @@
       groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
       setShowModelProvider: 'Afficher le fournisseur',
       setShowModelProviderHint: 'Place le fournisseur avant le modèle dans la ligne de l\u2019agent ; l\u2019infobulle le garde toujours.',
+      agentModeHint: 'Les agents continuables gardent leur session pour les messages suivants ; les agents ponctuels finissent avec la tâche ; les agents externes travaillent hors de ce tableau.',
     }

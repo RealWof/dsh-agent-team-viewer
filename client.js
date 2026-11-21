@@ -818,6 +818,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Toggle grouping in this section',
       setShowModelProvider: 'Show the provider',
       setShowModelProviderHint: 'Puts the provider before the model in the agent model line; the tooltip always keeps it.',
+      agentModeHint: 'Continuable agents keep their session for follow-up messages; one-shot agents finish after the task; external agents run outside this board.',
     }
 
 /**
@@ -972,6 +973,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Переключить группировку в этом разделе',
       setShowModelProvider: 'Показывать провайдера',
       setShowModelProviderHint: 'Ставит провайдера перед моделью в строке модели агента; в подсказке он есть всегда.',
+      agentModeHint: 'Продолжаемые агенты сохраняют сессию для следующих сообщений; одноразовые завершаются после задачи; внешние работают вне этой доски.',
     }
 
 /**
@@ -1126,6 +1128,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: '切换此分区的分组',
       setShowModelProvider: '显示提供商',
       setShowModelProviderHint: '在代理模型行中把提供商放在模型之前；提示中始终保留提供商。',
+      agentModeHint: '可续代理会保留会话以便后续消息；一次性代理在任务完成后结束；外部代理在此看板之外运行。',
     }
 
 /**
@@ -1280,6 +1283,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'このセクションのグループ化を切り替えます',
       setShowModelProvider: 'プロバイダーを表示',
       setShowModelProviderHint: 'エージェントのモデル行でプロバイダーをモデルの前に表示します。ツールチップには常に含まれます。',
+      agentModeHint: '継続可能なエージェントはフォローアップ用にセッションを保持し、ワンショットはタスク後に終了し、外部エージェントはこのボードの外で動作します。',
     }
 
 /**
@@ -1434,6 +1438,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Alternar la agrupación en esta sección',
       setShowModelProvider: 'Mostrar el proveedor',
       setShowModelProviderHint: 'Muestra el proveedor antes del modelo en la línea del agente; la información lo conserva siempre.',
+      agentModeHint: 'Los agentes continuables conservan su sesión para mensajes posteriores; los de un solo uso terminan con la tarea; los externos se ejecutan fuera de este tablero.',
     }
 
 /**
@@ -1588,6 +1593,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
       setShowModelProvider: 'Afficher le fournisseur',
       setShowModelProviderHint: 'Place le fournisseur avant le modèle dans la ligne de l\u2019agent ; l\u2019infobulle le garde toujours.',
+      agentModeHint: 'Les agents continuables gardent leur session pour les messages suivants ; les agents ponctuels finissent avec la tâche ; les agents externes travaillent hors de ce tableau.',
     }
 
 /**
@@ -1742,6 +1748,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Gruppierung in diesem Bereich umschalten',
       setShowModelProvider: 'Anbieter anzeigen',
       setShowModelProviderHint: 'Setzt den Anbieter vor das Modell in der Modellzeile des Agenten; der Tooltip enthält ihn immer.',
+      agentModeHint: 'Fortsetzbare Agenten behalten ihre Sitzung für Folgenachrichten; Einmal-Agenten enden mit der Aufgabe; externe Agenten laufen außerhalb dieses Boards.',
     }
 
 /**
@@ -1896,6 +1903,7 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Alternar o agrupamento nesta seção',
       setShowModelProvider: 'Mostrar o provedor',
       setShowModelProviderHint: 'Coloca o provedor antes do modelo na linha do agente; a dica sempre o inclui.',
+      agentModeHint: 'Agentes continuáveis mantêm a sessão para mensagens de seguimento; agentes de uso único terminam com a tarefa; agentes externos rodam fora deste quadro.',
     }
 
 /* ------------------------------------------------------------------ *
@@ -5129,7 +5137,12 @@ window.__ModuleLoader__.load({
             onOpenAgent(agent.id, 'main')
           },
         }, agent.name),
-        mode === undefined ? null : h('span', { className: 'tk-agent-mode' }, mode),
+        // The word beside the name is the DSH subagent mode, not a status: its
+        // tooltip names the mode and explains what it means.
+        mode === undefined ? null : h('span', {
+          className: 'tk-agent-mode',
+          title: t('agentMode') + ': ' + mode + ' — ' + t('agentModeHint'),
+        }, mode),
         h('span', { className: 'tk-head-spacer' }),
         h('button', {
           type: 'button',

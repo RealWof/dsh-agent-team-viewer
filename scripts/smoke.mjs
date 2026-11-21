@@ -473,6 +473,21 @@ check(board.nodes.some(node => node.props?.className === 'tk-state'), 'the task 
 check(within(rowOf('session-a'), node => node.props?.className === 'tk-state').length > 0,
   'the agent row lost its state dot')
 
+/* The word beside an agent name is the DSH subagent mode: its tooltip names
+   the mode and explains it, and the Lead has no mode at all. */
+const modeSpanOf = id => within(rowOf(id), node => node.props?.className === 'tk-agent-mode')[0]
+const modeTitle = String(modeSpanOf('session-a')?.props?.title ?? '')
+check(modeSpanOf('session-a')?.props?.children === 'continuable',
+  'the continuable agent lost its mode word beside the name')
+check(modeTitle.includes('agentMode') && modeTitle.includes('continuable')
+  && modeTitle.includes('agentModeHint'),
+'the agent mode has no localized explanation: ' + modeTitle)
+check(String(modeSpanOf('session-b')?.props?.title ?? '').includes('one-shot'),
+  'the one-shot agent mode has no mode name in its tooltip')
+check(String(modeSpanOf('session-b')?.props?.title ?? '').includes('agentModeHint'),
+  'the one-shot agent mode does not share the explanation')
+check(modeSpanOf('root') === undefined, 'the Lead row shows a subagent mode')
+
 const agentMetricsRow = within(rowOf('session-a'), node => node.props?.className === 'tk-agent-meta')
 check(agentMetricsRow.length === 1, 'the agent row has no metric line')
 const agentStats = within(rowOf('session-a'), node => node.props?.className === 'tk-stat')

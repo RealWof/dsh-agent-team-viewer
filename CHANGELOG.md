@@ -78,6 +78,9 @@ All notable changes to this plugin are documented here. The format follows
   the left and the control on the right, separated by hairline rules. Booleans are now switch-style
   controls that still drive the native checkbox, sliders keep their value at the right, the two group
   editors run full width below their row, and no inspector-style cards are drawn.
+- The word next to an agent name (`continuable`, `one-shot`, `external`) is the DSH subagent mode,
+  not a status: its tooltip now names the mode and explains what the three modes mean, and the Lead
+  still carries no mode.
 - The Settings nav item now reads exactly **Agent Team Viewer** in every language: the plugin name is
   the one literal that never goes through a dictionary, while the page content and its hints stay
   translated.
