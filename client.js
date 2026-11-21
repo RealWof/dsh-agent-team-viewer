@@ -3606,6 +3606,9 @@ window.__ModuleLoader__.load({
     function BoardTab(props) {
       const { t } = props
       const services = props.services ?? NO_SERVICES
+      // Panel scale is a view preference; the panel root below is the only
+      // element it touches — the header action and the dialogs are elsewhere.
+      const [settings] = useViewSettings()
       const model = useTeamModel(props, services)
       const [selected, setSelected] = useState(null)
       const [inspectedAgent, setInspectedAgent] = useState(null)
@@ -3682,7 +3685,7 @@ window.__ModuleLoader__.load({
         : model.tasks.filter(task => task.ownerId === inspected.id)
       const tasksCollapsed = isSectionCollapsed('tasks')
 
-      return h('div', { className: 'tk-root', ref: rootRef },
+      return h('div', { className: 'tk-root', ref: rootRef, style: { zoom: settings.uiScale } },
         h(Styles, null),
         h('div', { className: 'tk-scroll' },
           h('div', { className: 'tk-head' },
