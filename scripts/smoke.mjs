@@ -530,6 +530,9 @@ check(within(roleHead, node => node.props?.className === 'tk-col-count')[0]?.pro
   'the nested group head does not count its members')
 check(within(sharedActive, node => node.props?.className === 'tk-agent-row').length === 3,
   'the nested role group did not render its two members under the lead')
+const sharedRows = within(sharedActive, node => node.props?.className === 'tk-agent-row')
+check(sharedRows[0]?.props?.['data-lead'] === 'true' && sharedRows[1]?.props?.['data-agent-id'] === 'session-b',
+  'agents inside a role group are not ordered newest first')
 roleHead?.props?.onClick?.()
 resetHooks()
 const roleFolded = surface(tabBody({ ...props, useSessions: selector => selector(sharedRoleState) }))
@@ -835,6 +838,9 @@ const manyCapped = surface(tabBody(propsWith(bulkState('pending', 8))))
 const cappedQueued = manyCapped.nodes.find(node => node.props?.['data-column'] === 'queued')
 check(within(cappedQueued, node => node.props?.['data-task-id'] !== undefined).length === 5,
   'the show-less control did not fall back to the cap')
+const firstQueued = within(cappedQueued, node => node.props?.['data-task-id'] !== undefined)[0]
+check(firstQueued?.props?.['data-task-id'] === 'task-bulk-8',
+  'the default newest-first order does not put the newest id on top: ' + String(firstQueued?.props?.['data-task-id']))
 
 // A pile past AUTO_COLLAPSE_AT folds itself on the first sight of that size,
 // and an explicit toggle wins over the auto-collapse afterwards.
@@ -1084,6 +1090,53 @@ check(within(restoredActive, node => node.props?.['data-group-body'] !== undefin
   'a stored folded group rendered its body after the restart')
 check(countPill(restored, 'group', 'agents:active') === '2', 'a stored folded group lost its count')
 check(restored.nodes.some(node => node.props?.['data-agent-column'] === 'done'), 'restoring one group hid another')
+
+/* --- View settings: custom grouping and the flat fallback -------------- */
+
+const SETTINGS_STORAGE_KEY = 'dsh.agent-team-viewer.settings.v1'
+
+/** Load another copy of the bundle so its view-settings store is re-read. */
+const boardFromFreshBundle = () => {
+  let captured
+  const target = { ...globalThis.window, __ModuleLoader__: { load: definition => { captured = definition } } }
+  new Function('window', artifact)(target)
+  const plugin = captured.factory((name) => {
+    if (name === 'react') return React
+    throw new Error('unexpected require: ' + name)
+  })
+  plugin.apply(ctx)
+  resetSlots()
+  resetHooks()
+  return surface(tabBody(props))
+}
+
+// The seeded fold state above would hide the columns; start from a clean one.
+storage.delete(COLLAPSE_STORAGE_KEY)
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  autoRoleGroups: true,
+  customGroups: true,
+  customGroupsText: 'crew: standard',
+  sort: 'newest',
+  animateCards: false,
+  animationMs: 0,
+  uiScale: 1,
+}))
+const customBoard = boardFromFreshBundle()
+const customActive = customBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+const customHead = within(customActive, node => node.props?.['data-target'] === 'agents:active:custom:crew')[0]
+check(customHead !== undefined, 'the custom group editor did not produce a group head')
+check(within(customHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '1',
+  'the custom group head does not count its single member')
+check(within(customActive, node => node.props?.className === 'tk-agent-row').length === 2,
+  'the custom group did not keep the lead and its one member')
+
+// With both grouping switches off the column goes back to a flat list.
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: false, customGroups: false }))
+const flatBoard = boardFromFreshBundle()
+check(!flatBoard.nodes.some(node => node.props?.['data-subgroup'] !== undefined),
+  'a subgroup head is rendered with both grouping switches off')
+check(flatBoard.nodes.filter(node => node.props?.className === 'tk-agent-row').length === 3,
+  'the flat fallback lost an agent row')
 
 /* --- Report ----------------------------------------------------------- */
 
