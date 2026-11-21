@@ -514,7 +514,7 @@
      * ------------------------------------------------------------------ */
 
     /** Names that carry no role information; the preset answers for them. */
-    const GENERIC_ROLE_NAME = /^(agent|subagent|assistant|worker|session)\d*$/
+    const GENERIC_ROLE_NAME = /^(agent|subagent|assistant|worker|session)(\d+|[-_][a-z0-9_-]+)?$/i
 
     /**
      * Reduce a name or preset to its role key.

@@ -655,7 +655,7 @@ const genericNameState = (() => {
   next.projectionsBySession.root.values.subagentCatalog
     .find(entry => entry.id === 'session-a').name = 'agent-2'
   next.projectionsBySession.root.values.subagentCatalog
-    .find(entry => entry.id === 'session-b').name = 'agent-3'
+    .find(entry => entry.id === 'session-b').name = 'session-b'
   return next
 })()
 resetHooks()
@@ -1466,6 +1466,23 @@ const bulkScroll = within(expandedDone, node => node.props?.className === 'tk-co
 check(bulkScroll !== undefined, 'the expanded task group does not scroll inside its column')
 check(within(bulkScroll, node => node.props?.['data-task-id']?.startsWith?.('task-bulk-')).length === 8,
   'the expanded task group did not reveal the whole pile')
+
+// A task group past the auto-collapse threshold folds itself on first sight.
+// The status column is seeded unfolded, because a bigger status group would
+// otherwise fold first and hide the nested group entirely.
+storage.set(COLLAPSE_STORAGE_KEY, JSON.stringify({
+  boards: { root: { sections: { tasks: false }, groups: { 'tasks:done': false } } },
+}))
+const bigTaskGroupBoard = boardFromFreshBundle(bulkState('completed', 13))
+const bigTaskDone = bigTaskGroupBoard.nodes.find(node => node.props?.['data-column'] === 'done')
+const bigTaskHead = within(bigTaskDone, node => node.props?.['data-target'] === 'tasks:done:custom:bulk')[0]
+check(bigTaskHead?.props?.['aria-expanded'] === 'false',
+  'a task group past the auto-collapse threshold did not start folded')
+check(within(bigTaskDone, node => node.props?.['data-task-id']?.startsWith?.('task-bulk-')).length === 0,
+  'the auto-collapsed task group rendered its cards')
+const bigTaskFold = JSON.parse(storage.get(COLLAPSE_STORAGE_KEY))
+check(bigTaskFold.boards.root.groups['tasks:done:custom:bulk'] === true,
+  'the task group auto-collapse was not stored')
 
 // The seeded fold state above would hide the columns; start from a clean one.
 storage.delete(COLLAPSE_STORAGE_KEY)

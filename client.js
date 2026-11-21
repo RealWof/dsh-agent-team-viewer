@@ -3139,7 +3139,7 @@ window.__ModuleLoader__.load({
      * ------------------------------------------------------------------ */
 
     /** Names that carry no role information; the preset answers for them. */
-    const GENERIC_ROLE_NAME = /^(agent|subagent|assistant|worker|session)\d*$/
+    const GENERIC_ROLE_NAME = /^(agent|subagent|assistant|worker|session)(\d+|[-_][a-z0-9_-]+)?$/i
 
     /**
      * Reduce a name or preset to its role key.
@@ -5255,7 +5255,15 @@ window.__ModuleLoader__.load({
             }
           }
         }
-        for (const column of model.columns) counts[groupIdOf('tasks', column.key)] = column.tasks.length
+        for (const column of model.columns) {
+          counts[groupIdOf('tasks', column.key)] = column.tasks.length
+          // A nested custom task group folds itself like a status group does.
+          for (const unit of column.groups ?? []) {
+            if (unit.head === true) {
+              counts[groupIdOf('tasks', column.key + ':' + unit.key)] = unit.tasks.length
+            }
+          }
+        }
         return counts
       }, [model.agentColumns, model.columns])
 
