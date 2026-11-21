@@ -1814,6 +1814,44 @@ check(scaleRanges.some(node => node.props?.['aria-label'] === 'setScale'),
 check(scaleRanges.some(node => node.props?.['aria-label'] === 'setDialogScale'),
   'the Settings page has no dialog scale slider')
 
+/* The page is a calm row list: muted group headings, one row per preference
+   with its control at the right, and no boxed inspector cards. */
+const settingsRows = settingsView.nodes.filter(node => node.props?.className === 'tk-set-row')
+check(settingsRows.length === 9, 'the Settings page is not a row list, got ' + settingsRows.length + ' rows')
+const settingsRowTitles = settingsRows.map(node => {
+  const copy = within(node, child => child.props?.className === 'tk-set-copy')[0]
+  return within(copy, child => child.props?.className === 'tk-set-title')[0]?.props?.children
+})
+check(settingsRowTitles.includes('setAutoRoleGroups') && settingsRowTitles.includes('setCustomGroups')
+  && settingsRowTitles.includes('setTaskCustomGroups') && settingsRowTitles.includes('setSorting')
+  && settingsRowTitles.includes('setAnimateCards') && settingsRowTitles.includes('setAnimationDuration')
+  && settingsRowTitles.includes('setScale') && settingsRowTitles.includes('setShowAgentModel'),
+'the settings rows lost a title: ' + settingsRowTitles.join(', '))
+check(settingsRows.every(node => within(node, child => child.props?.className === 'tk-set-control').length === 1),
+  'a settings row has no right-aligned control')
+check(settingsRows.filter(node => within(node, child => child.props?.className === 'tk-set-desc').length > 0).length >= 5,
+  'the settings rows lost their short descriptions')
+const settingsGroups = settingsView.nodes.filter(node => node.props?.className === 'tk-set-group')
+check(settingsGroups.length === 6, 'the Settings page lost a section group, got ' + settingsGroups.length)
+check(settingsGroups.every(group => within(group, child => child.props?.className === 'tk-set-group-title').length === 1),
+  'a settings section has no muted heading')
+check(!settingsView.nodes.some(node => node.props?.className === 'tk-sec'),
+  'the Settings page still wraps its sections in inspector boxes')
+check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 5,
+  'the Settings page does not render its five booleans as switches')
+check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch-input')
+  .every(node => node.props?.type === 'checkbox'),
+'the settings switch no longer wraps a real checkbox')
+check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-text-block').length === 2,
+  'the custom-group editors are not full-width blocks below their rows')
+check(artifact.includes('.tk-set{display:flex') && artifact.includes('max-width:760px'),
+  'the Settings page does not use the wide row-list stylesheet')
+check(artifact.includes('.tk-set-row{display:flex;align-items:flex-start')
+  && artifact.includes('border-bottom:1px solid var(--dsw-alias-border-l1)'),
+'the settings row is not a hairline-separated flex row')
+check(artifact.includes('.tk-set-switch-input{appearance:none'),
+  'the settings switch does not reset the native checkbox')
+
 /* --- The sort menu reorders the columns, not only the stored value ----- */
 
 const sortOrderState = JSON.parse(JSON.stringify(listState))

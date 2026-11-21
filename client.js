@@ -466,6 +466,67 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * One titled block of the Settings page: a small muted heading over a calm
+     * list of rows, with no card around it.
+     * @param props - `title`, optional `icon`, and the rows.
+     */
+    function SettingsGroup({ title, icon = undefined, children }) {
+      return h('section', { className: 'tk-set-group' },
+        h('h3', { className: 'tk-set-group-title' },
+          icon === undefined ? null : h(Icon, { name: icon, size: 11 }),
+          h('span', null, title)),
+        children)
+    }
+
+    /**
+     * One row of the Settings page: the title and its short description on the
+     * left, the control on the right, closed by a hairline rule. `stacked`
+     * drops the rule because the full-width editor of the row follows it, and
+     * `disabled` mutes a row whose control only applies under another switch.
+     * @param props - `title`, optional `description`, optional `control`,
+     *   `stacked` and `disabled`.
+     */
+    function SettingsRow({ title, description = undefined, control = undefined, stacked = false, disabled = false }) {
+      return h('div', {
+        className: 'tk-set-row',
+        'data-stacked': stacked === true ? 'true' : undefined,
+        'data-disabled': disabled === true ? 'true' : undefined,
+      },
+      h('div', { className: 'tk-set-copy' },
+        h('span', { className: 'tk-set-title' }, title),
+        description === undefined || description === null ? null : h('span', { className: 'tk-set-desc' }, description)),
+      control === undefined ? null : h('div', { className: 'tk-set-control' }, control))
+    }
+
+    /**
+     * A boolean row control: the real checkbox behind a CSS track and knob, so
+     * `checked` and `onChange` keep the native contract while the row reads as
+     * one of the product's own switches.
+     * @param props - the `label` (also the accessible name), `checked`, an
+     *   optional `disabled`, and `onChange`.
+     */
+    function SettingsSwitch({ label, checked, disabled = false, onChange }) {
+      return h('label', { className: 'tk-set-switch' },
+        h('input', {
+          type: 'checkbox',
+          className: 'tk-set-switch-input',
+          checked: checked === true,
+          'aria-label': label,
+          disabled,
+          onChange,
+        }),
+        h('span', { className: 'tk-set-switch-track', 'aria-hidden': true }))
+    }
+
+    /**
+     * The full-width editor that follows a stacked row.
+     * @param props - the editor and its note.
+     */
+    function SettingsTextBlock({ children }) {
+      return h('div', { className: 'tk-set-text-block' }, children)
+    }
+
+    /**
      * The view settings page of the Settings panel. The preferences are
      * browser-local, so every control writes localStorage directly and the
      * board picks the change up through the shared store.
@@ -474,63 +535,71 @@ window.__ModuleLoader__.load({
     function SettingsSection(props) {
       const { t } = props
       const [settings, update] = useViewSettings()
+
+      /** A boolean row: title and hint on the left, a switch on the right. */
+      const switchRow = (key, title, description, stacked = false, disabled = false) => h(SettingsRow, {
+        title,
+        description,
+        stacked,
+        disabled,
+        control: h(SettingsSwitch, {
+          label: title,
+          checked: settings[key] === true,
+          disabled,
+          onChange: event => { update({ [key]: event.target.checked }) },
+        }),
+      })
+      /** A full-width text editor below its own row. */
+      const textBlock = (label, key, value, placeholder, disabled) => h(SettingsTextBlock, null,
+        h('textarea', {
+          className: 'tk-set-text',
+          rows: 3,
+          value,
+          placeholder,
+          'aria-label': label,
+          disabled,
+          onChange: event => { update({ [key]: event.target.value }) },
+        }),
+        h('span', { className: 'tk-set-desc tk-set-example' }, t('setCustomGroupsNote')))
+      /** A slider row: its value sits at the right of the track. */
+      const sliderRow = (key, title, description, min, max, step, format, disabled = false) => h(SettingsRow, {
+        title,
+        description,
+        disabled,
+        control: h(React.Fragment, null,
+          h('input', {
+            className: 'tk-set-range',
+            type: 'range',
+            min,
+            max,
+            step,
+            value: settings[key],
+            'aria-label': title,
+            disabled,
+            onChange: event => { update({ [key]: Number(event.target.value) }) },
+          }),
+          h('span', { className: 'tk-set-value' }, format(settings[key]))),
+      })
+
       // The stylesheet normally arrives with the board; the Settings page may
       // be the only surface mounted, so it carries its own copy.
       return h('div', { className: 'tk-set', 'data-view-settings': 'true' },
         h(Styles, null),
-        h('p', { className: 'tk-set-hint' }, t('settingsNote')),
+        h('p', { className: 'tk-set-note' }, t('settingsNote')),
 
-        h(Section, { title: t('setGrouping'), icon: 'layers' },
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.autoRoleGroups,
-              onChange: event => { update({ autoRoleGroups: event.target.checked }) },
-            }),
-            h('span', null, t('setAutoRoleGroups'))),
-          h('span', { className: 'tk-set-hint' }, t('setAutoRoleGroupsHint')),
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.customGroups,
-              onChange: event => { update({ customGroups: event.target.checked }) },
-            }),
-            h('span', null, t('setCustomGroups'))),
-          h('span', { className: 'tk-set-hint' }, t('setCustomGroupsHint')),
-          h('textarea', {
-            className: 'tk-set-text',
-            rows: 3,
-            value: settings.customGroupsText,
-            placeholder: t('setCustomGroupsExample'),
-            'aria-label': t('setCustomGroups'),
-            disabled: settings.customGroups !== true,
-            onChange: event => { update({ customGroupsText: event.target.value }) },
-          }),
-          h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote')),
+        h(SettingsGroup, { title: t('setGrouping'), icon: 'layers' },
+          switchRow('autoRoleGroups', t('setAutoRoleGroups'), t('setAutoRoleGroupsHint')),
+          switchRow('customGroups', t('setCustomGroups'), t('setCustomGroupsHint'), true),
+          textBlock(t('setCustomGroups'), 'customGroupsText', settings.customGroupsText,
+            t('setCustomGroupsExample'), settings.customGroups !== true),
+          switchRow('taskCustomGroups', t('setTaskCustomGroups'), t('setTaskCustomGroupsHint'), true),
+          textBlock(t('setTaskCustomGroups'), 'taskCustomGroupsText', settings.taskCustomGroupsText,
+            t('setTaskCustomGroupsExample'), settings.taskCustomGroups !== true)),
 
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.taskCustomGroups,
-              onChange: event => { update({ taskCustomGroups: event.target.checked }) },
-            }),
-            h('span', null, t('setTaskCustomGroups'))),
-          h('span', { className: 'tk-set-hint' }, t('setTaskCustomGroupsHint')),
-          h('textarea', {
-            className: 'tk-set-text',
-            rows: 3,
-            value: settings.taskCustomGroupsText,
-            placeholder: t('setTaskCustomGroupsExample'),
-            'aria-label': t('setTaskCustomGroups'),
-            disabled: settings.taskCustomGroups !== true,
-            onChange: event => { update({ taskCustomGroupsText: event.target.value }) },
-          }),
-          h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote'))),
-
-        h(Section, { title: t('setSorting'), icon: 'hash' },
-          h('div', { className: 'tk-set-field' },
-            h('span', { className: 'tk-set-label' }, t('setSorting')),
-            h('select', {
+        h(SettingsGroup, { title: t('setSorting'), icon: 'hash' },
+          h(SettingsRow, {
+            title: t('setSorting'),
+            control: h('select', {
               className: 'tk-set-select',
               'aria-label': t('setSorting'),
               value: settings.sort,
@@ -538,74 +607,39 @@ window.__ModuleLoader__.load({
             },
             h('option', { value: 'newest' }, t('setSortNewest')),
             h('option', { value: 'oldest' }, t('setSortOldest')),
-            h('option', { value: 'name' }, t('setSortName'))))),
+            h('option', { value: 'name' }, t('setSortName'))),
+          })),
 
-        h(Section, { title: t('setMotion'), icon: 'activity' },
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.animateCards,
-              onChange: event => { update({ animateCards: event.target.checked }) },
-            }),
-            h('span', null, t('setAnimateCards'))),
-          h('span', { className: 'tk-set-hint' }, t('setAnimateCardsHint')),
-          h('div', { className: 'tk-set-field', 'data-disabled': settings.animateCards !== true },
-            h('span', { className: 'tk-set-label' }, t('setAnimationDuration')),
-            h('input', {
-              className: 'tk-set-range',
-              type: 'range',
-              min: 0,
-              max: VIEW_ANIMATION_MAX,
-              step: VIEW_ANIMATION_STEP,
-              value: settings.animationMs,
-              'aria-label': t('setAnimationDuration'),
-              disabled: settings.animateCards !== true,
-              onChange: event => { update({ animationMs: Number(event.target.value) }) },
-            }),
-            h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs')))),
+        h(SettingsGroup, { title: t('setMotion'), icon: 'activity' },
+          switchRow('animateCards', t('setAnimateCards'), t('setAnimateCardsHint')),
+          h(SettingsRow, {
+            title: t('setAnimationDuration'),
+            disabled: settings.animateCards !== true,
+            control: h(React.Fragment, null,
+              h('input', {
+                className: 'tk-set-range',
+                type: 'range',
+                min: 0,
+                max: VIEW_ANIMATION_MAX,
+                step: VIEW_ANIMATION_STEP,
+                value: settings.animationMs,
+                'aria-label': t('setAnimationDuration'),
+                disabled: settings.animateCards !== true,
+                onChange: event => { update({ animationMs: Number(event.target.value) }) },
+              }),
+              h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs'))),
+          })),
 
-        h(Section, { title: t('setScale'), icon: 'gauge' },
-          h('div', { className: 'tk-set-field' },
-            h('span', { className: 'tk-set-label' }, t('setScale')),
-            h('input', {
-              className: 'tk-set-range',
-              type: 'range',
-              min: VIEW_SCALE_MIN,
-              max: VIEW_SCALE_MAX,
-              step: VIEW_SCALE_STEP,
-              value: settings.uiScale,
-              'aria-label': t('setScale'),
-              onChange: event => { update({ uiScale: Number(event.target.value) }) },
-            }),
-            h('span', { className: 'tk-set-value' }, formatScale(settings.uiScale))),
-          h('span', { className: 'tk-set-hint' }, t('setScaleHint')),
-          h('div', { className: 'tk-set-field' },
-            h('span', { className: 'tk-set-label' }, t('setDialogScale')),
-            h('input', {
-              className: 'tk-set-range',
-              type: 'range',
-              min: VIEW_SCALE_MIN,
-              max: VIEW_SCALE_MAX,
-              step: VIEW_SCALE_STEP,
-              value: settings.dialogScale,
-              'aria-label': t('setDialogScale'),
-              onChange: event => { update({ dialogScale: Number(event.target.value) }) },
-            }),
-            h('span', { className: 'tk-set-value' }, formatScale(settings.dialogScale))),
-          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))),
+        h(SettingsGroup, { title: t('setScale'), icon: 'gauge' },
+          sliderRow('uiScale', t('setScale'), t('setScaleHint'),
+            VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale),
+          sliderRow('dialogScale', t('setDialogScale'), t('setDialogScaleHint'),
+            VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale)),
 
-        h(Section, { title: t('agentsHeading'), icon: 'users' },
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.showAgentModel,
-              'aria-label': t('setShowAgentModel'),
-              onChange: event => { update({ showAgentModel: event.target.checked }) },
-            }),
-            h('span', null, t('setShowAgentModel'))),
-          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))),
+        h(SettingsGroup, { title: t('agentsHeading'), icon: 'users' },
+          switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint'))),
 
-        h(Section, { title: t('aboutHeading'), icon: 'link' },
+        h(SettingsGroup, { title: t('aboutHeading'), icon: 'link' },
           h('div', { className: 'tk-set-about' },
             h('a', {
               className: 'tk-btn',
@@ -2105,25 +2139,47 @@ window.__ModuleLoader__.load({
 .tk-job-note{min-width:0;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .tk-mono{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;font-variant-numeric:tabular-nums}
 .tk-warn{display:flex;align-items:flex-start;gap:5px;font-size:10px;line-height:15px;color:var(--dsw-alias-state-warn-primary);overflow-wrap:anywhere}
-.tk-set{display:flex;flex-direction:column;gap:12px;min-width:0;max-width:560px;color:var(--dsw-alias-label-primary);
+.tk-set{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%;max-width:760px;color:var(--dsw-alias-label-primary);
   font-size:12px;line-height:17px}
-.tk-set-hint{display:block;margin:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
-  overflow-wrap:anywhere}
+.tk-set-note{margin:0 0 6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.tk-set-group{display:flex;flex-direction:column;min-width:0;margin-top:10px}
+.tk-set-group-title{display:flex;align-items:center;gap:5px;margin:0 0 2px;font-size:10px;line-height:14px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
+.tk-set-row{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;min-width:0;padding:10px 0;
+  border-bottom:1px solid var(--dsw-alias-border-l1)}
+.tk-set-row[data-stacked="true"]{border-bottom:0;padding-bottom:4px}
+.tk-set-row[data-disabled="true"]{opacity:.55}
+.tk-set-copy{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.tk-set-title{font-size:12px;line-height:17px;font-weight:500;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.tk-set-desc{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.tk-set-control{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:none;min-width:0;padding-top:1px}
+.tk-set-text-block{display:flex;flex-direction:column;gap:5px;min-width:0;padding:0 0 10px;
+  border-bottom:1px solid var(--dsw-alias-border-l1)}
 .tk-set-example{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace)}
 .tk-set-about{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
 .tk-set-about .tk-btn{text-decoration:none}
-.tk-set-check{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;line-height:17px;cursor:pointer}
-.tk-set-check input{flex:none;margin:0;accent-color:var(--dsw-alias-brand-primary)}
-.tk-set-check input:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}
-.tk-set-field{display:flex;align-items:center;gap:8px;min-width:0;padding:1px 0}
-.tk-set-field[data-disabled="true"]{opacity:.55}
-.tk-set-label{flex:none;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary)}
-.tk-set-range{flex:1 1 auto;min-width:96px;margin:0;accent-color:var(--dsw-alias-brand-primary)}
+.tk-set-switch{position:relative;display:inline-flex;align-items:center;flex:none;cursor:pointer}
+.tk-set-switch-input{appearance:none;-webkit-appearance:none;position:absolute;inset:0;width:100%;height:100%;margin:0;
+  opacity:0;cursor:pointer}
+.tk-set-switch-input:disabled{cursor:not-allowed}
+.tk-set-switch-track{position:relative;display:block;flex:none;width:30px;height:17px;box-sizing:border-box;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);
+  transition:background .12s ease,border-color .12s ease}
+.tk-set-switch-track:after{content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;
+  background:var(--dsw-alias-label-secondary);transition:transform .12s ease,background .12s ease}
+.tk-set-switch-input:checked + .tk-set-switch-track{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent);
+  border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 60%,transparent)}
+.tk-set-switch-input:checked + .tk-set-switch-track:after{transform:translateX(13px);background:var(--dsw-alias-brand-primary)}
+.tk-set-switch-input:focus-visible + .tk-set-switch-track{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));
+  outline-offset:2px}
+.tk-set-switch-input:disabled + .tk-set-switch-track{opacity:.5}
+@media (prefers-reduced-motion: reduce){.tk-set-switch-track,.tk-set-switch-track:after{transition:none}}
+.tk-set-range{flex:0 1 200px;min-width:110px;margin:0;accent-color:var(--dsw-alias-brand-primary)}
 .tk-set-range:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}
 .tk-set-range:disabled{cursor:not-allowed}
-.tk-set-value{flex:none;min-width:56px;text-align:right;font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);
+.tk-set-value{flex:none;min-width:52px;text-align:right;font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);
   font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
-.tk-set-text{width:100%;min-height:58px;box-sizing:border-box;resize:vertical;padding:5px 7px;
+.tk-set-text{width:100%;min-height:58px;box-sizing:border-box;resize:vertical;padding:6px 8px;
   border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);
   color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:16px}
 .tk-set-text:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}

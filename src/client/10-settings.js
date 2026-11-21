@@ -211,6 +211,67 @@
     }
 
     /**
+     * One titled block of the Settings page: a small muted heading over a calm
+     * list of rows, with no card around it.
+     * @param props - `title`, optional `icon`, and the rows.
+     */
+    function SettingsGroup({ title, icon = undefined, children }) {
+      return h('section', { className: 'tk-set-group' },
+        h('h3', { className: 'tk-set-group-title' },
+          icon === undefined ? null : h(Icon, { name: icon, size: 11 }),
+          h('span', null, title)),
+        children)
+    }
+
+    /**
+     * One row of the Settings page: the title and its short description on the
+     * left, the control on the right, closed by a hairline rule. `stacked`
+     * drops the rule because the full-width editor of the row follows it, and
+     * `disabled` mutes a row whose control only applies under another switch.
+     * @param props - `title`, optional `description`, optional `control`,
+     *   `stacked` and `disabled`.
+     */
+    function SettingsRow({ title, description = undefined, control = undefined, stacked = false, disabled = false }) {
+      return h('div', {
+        className: 'tk-set-row',
+        'data-stacked': stacked === true ? 'true' : undefined,
+        'data-disabled': disabled === true ? 'true' : undefined,
+      },
+      h('div', { className: 'tk-set-copy' },
+        h('span', { className: 'tk-set-title' }, title),
+        description === undefined || description === null ? null : h('span', { className: 'tk-set-desc' }, description)),
+      control === undefined ? null : h('div', { className: 'tk-set-control' }, control))
+    }
+
+    /**
+     * A boolean row control: the real checkbox behind a CSS track and knob, so
+     * `checked` and `onChange` keep the native contract while the row reads as
+     * one of the product's own switches.
+     * @param props - the `label` (also the accessible name), `checked`, an
+     *   optional `disabled`, and `onChange`.
+     */
+    function SettingsSwitch({ label, checked, disabled = false, onChange }) {
+      return h('label', { className: 'tk-set-switch' },
+        h('input', {
+          type: 'checkbox',
+          className: 'tk-set-switch-input',
+          checked: checked === true,
+          'aria-label': label,
+          disabled,
+          onChange,
+        }),
+        h('span', { className: 'tk-set-switch-track', 'aria-hidden': true }))
+    }
+
+    /**
+     * The full-width editor that follows a stacked row.
+     * @param props - the editor and its note.
+     */
+    function SettingsTextBlock({ children }) {
+      return h('div', { className: 'tk-set-text-block' }, children)
+    }
+
+    /**
      * The view settings page of the Settings panel. The preferences are
      * browser-local, so every control writes localStorage directly and the
      * board picks the change up through the shared store.
@@ -219,63 +280,71 @@
     function SettingsSection(props) {
       const { t } = props
       const [settings, update] = useViewSettings()
+
+      /** A boolean row: title and hint on the left, a switch on the right. */
+      const switchRow = (key, title, description, stacked = false, disabled = false) => h(SettingsRow, {
+        title,
+        description,
+        stacked,
+        disabled,
+        control: h(SettingsSwitch, {
+          label: title,
+          checked: settings[key] === true,
+          disabled,
+          onChange: event => { update({ [key]: event.target.checked }) },
+        }),
+      })
+      /** A full-width text editor below its own row. */
+      const textBlock = (label, key, value, placeholder, disabled) => h(SettingsTextBlock, null,
+        h('textarea', {
+          className: 'tk-set-text',
+          rows: 3,
+          value,
+          placeholder,
+          'aria-label': label,
+          disabled,
+          onChange: event => { update({ [key]: event.target.value }) },
+        }),
+        h('span', { className: 'tk-set-desc tk-set-example' }, t('setCustomGroupsNote')))
+      /** A slider row: its value sits at the right of the track. */
+      const sliderRow = (key, title, description, min, max, step, format, disabled = false) => h(SettingsRow, {
+        title,
+        description,
+        disabled,
+        control: h(React.Fragment, null,
+          h('input', {
+            className: 'tk-set-range',
+            type: 'range',
+            min,
+            max,
+            step,
+            value: settings[key],
+            'aria-label': title,
+            disabled,
+            onChange: event => { update({ [key]: Number(event.target.value) }) },
+          }),
+          h('span', { className: 'tk-set-value' }, format(settings[key]))),
+      })
+
       // The stylesheet normally arrives with the board; the Settings page may
       // be the only surface mounted, so it carries its own copy.
       return h('div', { className: 'tk-set', 'data-view-settings': 'true' },
         h(Styles, null),
-        h('p', { className: 'tk-set-hint' }, t('settingsNote')),
+        h('p', { className: 'tk-set-note' }, t('settingsNote')),
 
-        h(Section, { title: t('setGrouping'), icon: 'layers' },
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.autoRoleGroups,
-              onChange: event => { update({ autoRoleGroups: event.target.checked }) },
-            }),
-            h('span', null, t('setAutoRoleGroups'))),
-          h('span', { className: 'tk-set-hint' }, t('setAutoRoleGroupsHint')),
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.customGroups,
-              onChange: event => { update({ customGroups: event.target.checked }) },
-            }),
-            h('span', null, t('setCustomGroups'))),
-          h('span', { className: 'tk-set-hint' }, t('setCustomGroupsHint')),
-          h('textarea', {
-            className: 'tk-set-text',
-            rows: 3,
-            value: settings.customGroupsText,
-            placeholder: t('setCustomGroupsExample'),
-            'aria-label': t('setCustomGroups'),
-            disabled: settings.customGroups !== true,
-            onChange: event => { update({ customGroupsText: event.target.value }) },
-          }),
-          h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote')),
+        h(SettingsGroup, { title: t('setGrouping'), icon: 'layers' },
+          switchRow('autoRoleGroups', t('setAutoRoleGroups'), t('setAutoRoleGroupsHint')),
+          switchRow('customGroups', t('setCustomGroups'), t('setCustomGroupsHint'), true),
+          textBlock(t('setCustomGroups'), 'customGroupsText', settings.customGroupsText,
+            t('setCustomGroupsExample'), settings.customGroups !== true),
+          switchRow('taskCustomGroups', t('setTaskCustomGroups'), t('setTaskCustomGroupsHint'), true),
+          textBlock(t('setTaskCustomGroups'), 'taskCustomGroupsText', settings.taskCustomGroupsText,
+            t('setTaskCustomGroupsExample'), settings.taskCustomGroups !== true)),
 
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.taskCustomGroups,
-              onChange: event => { update({ taskCustomGroups: event.target.checked }) },
-            }),
-            h('span', null, t('setTaskCustomGroups'))),
-          h('span', { className: 'tk-set-hint' }, t('setTaskCustomGroupsHint')),
-          h('textarea', {
-            className: 'tk-set-text',
-            rows: 3,
-            value: settings.taskCustomGroupsText,
-            placeholder: t('setTaskCustomGroupsExample'),
-            'aria-label': t('setTaskCustomGroups'),
-            disabled: settings.taskCustomGroups !== true,
-            onChange: event => { update({ taskCustomGroupsText: event.target.value }) },
-          }),
-          h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote'))),
-
-        h(Section, { title: t('setSorting'), icon: 'hash' },
-          h('div', { className: 'tk-set-field' },
-            h('span', { className: 'tk-set-label' }, t('setSorting')),
-            h('select', {
+        h(SettingsGroup, { title: t('setSorting'), icon: 'hash' },
+          h(SettingsRow, {
+            title: t('setSorting'),
+            control: h('select', {
               className: 'tk-set-select',
               'aria-label': t('setSorting'),
               value: settings.sort,
@@ -283,74 +352,39 @@
             },
             h('option', { value: 'newest' }, t('setSortNewest')),
             h('option', { value: 'oldest' }, t('setSortOldest')),
-            h('option', { value: 'name' }, t('setSortName'))))),
+            h('option', { value: 'name' }, t('setSortName'))),
+          })),
 
-        h(Section, { title: t('setMotion'), icon: 'activity' },
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.animateCards,
-              onChange: event => { update({ animateCards: event.target.checked }) },
-            }),
-            h('span', null, t('setAnimateCards'))),
-          h('span', { className: 'tk-set-hint' }, t('setAnimateCardsHint')),
-          h('div', { className: 'tk-set-field', 'data-disabled': settings.animateCards !== true },
-            h('span', { className: 'tk-set-label' }, t('setAnimationDuration')),
-            h('input', {
-              className: 'tk-set-range',
-              type: 'range',
-              min: 0,
-              max: VIEW_ANIMATION_MAX,
-              step: VIEW_ANIMATION_STEP,
-              value: settings.animationMs,
-              'aria-label': t('setAnimationDuration'),
-              disabled: settings.animateCards !== true,
-              onChange: event => { update({ animationMs: Number(event.target.value) }) },
-            }),
-            h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs')))),
+        h(SettingsGroup, { title: t('setMotion'), icon: 'activity' },
+          switchRow('animateCards', t('setAnimateCards'), t('setAnimateCardsHint')),
+          h(SettingsRow, {
+            title: t('setAnimationDuration'),
+            disabled: settings.animateCards !== true,
+            control: h(React.Fragment, null,
+              h('input', {
+                className: 'tk-set-range',
+                type: 'range',
+                min: 0,
+                max: VIEW_ANIMATION_MAX,
+                step: VIEW_ANIMATION_STEP,
+                value: settings.animationMs,
+                'aria-label': t('setAnimationDuration'),
+                disabled: settings.animateCards !== true,
+                onChange: event => { update({ animationMs: Number(event.target.value) }) },
+              }),
+              h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs'))),
+          })),
 
-        h(Section, { title: t('setScale'), icon: 'gauge' },
-          h('div', { className: 'tk-set-field' },
-            h('span', { className: 'tk-set-label' }, t('setScale')),
-            h('input', {
-              className: 'tk-set-range',
-              type: 'range',
-              min: VIEW_SCALE_MIN,
-              max: VIEW_SCALE_MAX,
-              step: VIEW_SCALE_STEP,
-              value: settings.uiScale,
-              'aria-label': t('setScale'),
-              onChange: event => { update({ uiScale: Number(event.target.value) }) },
-            }),
-            h('span', { className: 'tk-set-value' }, formatScale(settings.uiScale))),
-          h('span', { className: 'tk-set-hint' }, t('setScaleHint')),
-          h('div', { className: 'tk-set-field' },
-            h('span', { className: 'tk-set-label' }, t('setDialogScale')),
-            h('input', {
-              className: 'tk-set-range',
-              type: 'range',
-              min: VIEW_SCALE_MIN,
-              max: VIEW_SCALE_MAX,
-              step: VIEW_SCALE_STEP,
-              value: settings.dialogScale,
-              'aria-label': t('setDialogScale'),
-              onChange: event => { update({ dialogScale: Number(event.target.value) }) },
-            }),
-            h('span', { className: 'tk-set-value' }, formatScale(settings.dialogScale))),
-          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))),
+        h(SettingsGroup, { title: t('setScale'), icon: 'gauge' },
+          sliderRow('uiScale', t('setScale'), t('setScaleHint'),
+            VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale),
+          sliderRow('dialogScale', t('setDialogScale'), t('setDialogScaleHint'),
+            VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale)),
 
-        h(Section, { title: t('agentsHeading'), icon: 'users' },
-          h('label', { className: 'tk-set-check' },
-            h('input', {
-              type: 'checkbox',
-              checked: settings.showAgentModel,
-              'aria-label': t('setShowAgentModel'),
-              onChange: event => { update({ showAgentModel: event.target.checked }) },
-            }),
-            h('span', null, t('setShowAgentModel'))),
-          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))),
+        h(SettingsGroup, { title: t('agentsHeading'), icon: 'users' },
+          switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint'))),
 
-        h(Section, { title: t('aboutHeading'), icon: 'link' },
+        h(SettingsGroup, { title: t('aboutHeading'), icon: 'link' },
           h('div', { className: 'tk-set-about' },
             h('a', {
               className: 'tk-btn',

@@ -68,6 +68,11 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Changed
 
+- The Settings page reads like a General settings tab: a calm vertical list inside a 760px column,
+  small muted section headings, and one row per preference with its title and a short description on
+  the left and the control on the right, separated by hairline rules. Booleans are now switch-style
+  controls that still drive the native checkbox, sliders keep their value at the right, the two group
+  editors run full width below their row, and no inspector-style cards are drawn.
 - The Settings nav item now reads exactly **Agent Team Viewer** in every language: the plugin name is
   the one literal that never goes through a dictionary, while the page content and its hints stay
   translated.
