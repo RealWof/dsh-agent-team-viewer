@@ -2951,6 +2951,10 @@ check(surface(mdAttachments).texts.includes('attachments'),
 check(surface(mdAttachments).texts.includes('src/client/10-settings.js')
   && surface(mdAttachments).texts.includes('src/client/'),
 'the attachment chips do not list the referenced files')
+const attachChildren = mdAttachments?.props?.children
+check(Array.isArray(attachChildren) && attachChildren[0]?.props?.className === 'tk-attach-label'
+  && attachChildren[1]?.props?.className === 'tk-attach-list',
+'the attachment chips start on the heading line instead of below it')
 
 /* Bare workspace paths in prose become the same file buttons. */
 const barePathFile = withMarkdown.nodes.find(node => node.type === 'button'

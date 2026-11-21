@@ -2366,8 +2366,9 @@ window.__ModuleLoader__.load({
 .tk-md-plain{overflow-wrap:anywhere}
 .tk-md-missing,.tk-file-missing{color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));text-decoration:none}
 .tk-md-file{max-width:100%}
-.tk-attach{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;margin-top:2px}
+.tk-attach{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;width:100%;margin-top:2px}
 .tk-attach-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
+.tk-attach-list{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;width:100%}
 .tk-attach .tk-file-link{max-width:100%}
 `
 
@@ -2935,7 +2936,8 @@ window.__ModuleLoader__.load({
       if (chips.length > 0) {
         blocks.push(h('div', { key: 'attachments', className: 'tk-attach', 'data-attachments': 'true' },
           h('span', { className: 'tk-attach-label' }, translate('attachments')),
-          chips.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex))))
+          h('div', { className: 'tk-attach-list' },
+            chips.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex)))))
       }
       return h('div', { className: 'tk-md', 'data-markdown': 'true' }, blocks)
     }
