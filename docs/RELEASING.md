@@ -83,6 +83,11 @@ npm run release:publish -- --bump patch
 pushes. Add the `CHANGELOG.md` section for the new version **before** `--bump`; the script stops if the
 section is missing.
 
+With protected `main`, the release commit goes through a pull request: prepare it on a
+`release/x.y.z` branch and merge it, then tag the merge commit. The tag route below is the supported
+one; `release:publish` publishes from `main` and commits locally, which is only usable when a
+maintainer temporarily lifts protection.
+
 ```powershell
 npm view dsh-agent-team-viewer version dist.tarball repository.url
 ```
@@ -114,29 +119,36 @@ workflow gets a 403/OIDC error, check the workflow filename and the allowed acti
 
 Future release flow:
 
-1. Add the `## [x.y.z]` CHANGELOG section, bump `package.json` (for example `npm version patch
-   --no-git-tag-version`), and update the version badge in the three READMEs.
-2. Commit, tag `vX.Y.Z`, and push the tag:
+1. On a `release/x.y.z` branch, add the `## [x.y.z]` CHANGELOG section, bump `package.json` (for
+   example `npm version patch --no-git-tag-version`), and update the version badge in the three
+   READMEs.
+2. Open a pull request, let CI pass, and merge with **Squash and merge**.
+3. On an up-to-date `main`, tag the merge commit and push the tag:
    ```sh
    git tag -a vX.Y.Z -m vX.Y.Z
-   git push origin main --follow-tags
+   git push origin vX.Y.Z
    ```
-3. The Release workflow verifies that the tag matches `package.json`, rebuilds and publishes.
+4. The Release workflow verifies that the tag matches `package.json`, rebuilds and publishes.
 
 The manual `npm run release:publish` path remains for a local release or an emergency. Do not publish
 the same version through both paths.
 
-## 5. Push the tag and create the GitHub release
+## 5. Merge the release pull request, then tag it
 
-`release:publish` creates the annotated `vX.Y.Z` tag locally; it does not push. Push both the release
-commit and the tag:
+`main` is protected, so the release reaches it like any other change: prepare `CHANGELOG.md`, the
+version bump and the README badges on a `release/x.y.z` branch, open a pull request, let CI pass, and
+merge with **Squash and merge**. Then tag the merge commit on an up-to-date `main`:
 
 ```powershell
-git push origin main --follow-tags
+git switch main
+git pull --ff-only
+git tag -a vX.Y.Z -m vX.Y.Z
+git push origin vX.Y.Z
 gh release create vX.Y.Z --title "vX.Y.Z" --notes-file CHANGELOG.md
 ```
 
-If you publish manually, create the same annotated tag after `npm publish`.
+Pushing the tag is allowed by branch protection; pushing `main` is not. If you publish manually, create
+the same annotated tag after `npm publish`, from the merged release commit.
 
 Attach nothing to the release: the market accepts either npm or the repository, and a hand-made
 tarball would need to be rebuilt on every version.

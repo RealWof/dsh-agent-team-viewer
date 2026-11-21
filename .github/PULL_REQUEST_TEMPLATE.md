@@ -17,6 +17,7 @@
 ## Checklist
 
 - [ ] `npm run check` passes.
+- [ ] Commits are small and in English, use `type(scope): subject`, and the PR title follows the same rule (CI checks it).
 - [ ] `client.js` was rebuilt from `src/client/**` and is committed (`npm run build`; CI checks the diff).
 - [ ] New UI strings exist in all eight dictionaries; `npm run i18n` is green.
 - [ ] `docs/DETAIL*.md` is still exactly one image line; `meta.description` carries the text.
