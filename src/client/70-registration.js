@@ -348,6 +348,87 @@
           }
         })()
 
+        /**
+         * The final answer inside one Chat snapshot: the last non-empty
+         * Assistant text row, in anchor order. Assistant rows are
+         * `kind: 'assistant-step'` and their prose is the `text` blocks; the
+         * last one is the answer the turn closed with. The navigation preview
+         * is deliberately not used — it is bounded and loses the answer.
+         * @param snapshot - a ChatSnapshot from `uiConversation.target('chat')`.
+         * @returns the trimmed answer text, or undefined when there is none.
+         */
+        const finalAnswerOf = (snapshot) => {
+          const store = snapshot?.nodes
+          if (store === null || store === undefined || typeof store.values !== 'function') return undefined
+          let rows
+          try {
+            rows = Array.from(store.values())
+          } catch {
+            return undefined
+          }
+          const answers = []
+          for (const row of rows) {
+            if (row === null || row === undefined || row.kind !== 'assistant-step') continue
+            const blocks = row.data?.blocks
+            if (!Array.isArray(blocks)) continue
+            const text = blocks
+              .filter(block => block !== null && typeof block === 'object'
+                && block.kind === 'text' && typeof block.text === 'string')
+              .map(block => block.text)
+              .join('')
+              .trim()
+            if (text === '') continue
+            answers.push({ anchor: num(row.anchorSeq), text })
+          }
+          if (answers.length === 0) return undefined
+          answers.sort((left, right) => left.anchor - right.anchor)
+          return answers[answers.length - 1].text
+        }
+
+        /**
+         * Read a subagent's final answer from its chat, without opening a tab.
+         * The task record carries no report, so the answer is read from the
+         * live conversation: retain the session, resolve its Chat target, take
+         * one synchronous snapshot and release the reference. A missing
+         * service, an unopened session or an empty snapshot resolves to
+         * undefined rather than rejecting, so the dialog shows its empty state.
+         * @param agentId - the owner session id.
+         * @returns the final answer text, or undefined.
+         */
+        const loadAgentReport = async (agentId) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            // A Lead owner has no subagent address, but its identity is a
+            // valid retain target too.
+            reference = sessions.retain(address ?? agentId, { source: 'agent-team-viewer' })
+            const binding = reference?.binding
+            if (binding === null || binding === undefined) return undefined
+            const conversation = ctx.get('uiConversation')
+            if (conversation === null || conversation === undefined
+              || typeof conversation.binding !== 'function') return undefined
+            const assembly = conversation.binding(binding)
+            if (assembly === null || assembly === undefined || typeof assembly.target !== 'function') return undefined
+            const chat = assembly.target('chat')
+            if (chat === null || chat === undefined || typeof chat.getSnapshot !== 'function') return undefined
+            return finalAnswerOf(chat.getSnapshot())
+          } catch {
+            // The report is optional context; a failure is an empty tab.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
         /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */
         const services = {
           faceOf,
@@ -361,6 +442,7 @@
           subscribeJobs,
           openAgent,
           openFileLink,
+          loadAgentReport,
           agentLabel,
         }
 

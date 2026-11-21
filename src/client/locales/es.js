@@ -129,4 +129,7 @@
       openFileHint: 'Abrir este archivo en el espacio de trabajo',
       openFolderHint: 'Abrir la página de archivos del espacio de trabajo',
       metricCostApiSpend: 'Gasto de API',
+      taskReport: 'Informe',
+      reportLoading: 'Cargando el informe…',
+      reportEmptyNote: 'Este agente aún no ha producido una respuesta final.',
     }

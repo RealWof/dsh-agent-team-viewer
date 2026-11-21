@@ -650,6 +650,9 @@ window.__ModuleLoader__.load({
       openFileHint: 'Open this file in the workspace',
       openFolderHint: 'Open the workspace files page',
       metricCostApiSpend: 'API spend',
+      taskReport: 'Report',
+      reportLoading: 'Loading the report…',
+      reportEmptyNote: 'This agent has not produced a final answer yet.',
     }
 
 /**
@@ -783,6 +786,9 @@ window.__ModuleLoader__.load({
       openFileHint: 'Открыть файл в рабочей области',
       openFolderHint: 'Открыть страницу файлов рабочей области',
       metricCostApiSpend: 'Расходы по API',
+      taskReport: 'Отчёт',
+      reportLoading: 'Загрузка отчёта…',
+      reportEmptyNote: 'У этого агента пока нет итогового ответа.',
     }
 
 /**
@@ -916,6 +922,9 @@ window.__ModuleLoader__.load({
       openFileHint: '在工作区中打开此文件',
       openFolderHint: '打开工作区文件页面',
       metricCostApiSpend: 'API 花费',
+      taskReport: '报告',
+      reportLoading: '正在加载报告…',
+      reportEmptyNote: '该代理尚未给出最终答复。',
     }
 
 /**
@@ -1049,6 +1058,9 @@ window.__ModuleLoader__.load({
       openFileHint: 'ワークスペースでこのファイルを開く',
       openFolderHint: 'ワークスペースのファイルページを開く',
       metricCostApiSpend: 'API 支出',
+      taskReport: 'レポート',
+      reportLoading: 'レポートを読み込み中…',
+      reportEmptyNote: 'このエージェントはまだ最終回答を出していません。',
     }
 
 /**
@@ -1182,6 +1194,9 @@ window.__ModuleLoader__.load({
       openFileHint: 'Abrir este archivo en el espacio de trabajo',
       openFolderHint: 'Abrir la página de archivos del espacio de trabajo',
       metricCostApiSpend: 'Gasto de API',
+      taskReport: 'Informe',
+      reportLoading: 'Cargando el informe…',
+      reportEmptyNote: 'Este agente aún no ha producido una respuesta final.',
     }
 
 /**
@@ -1315,6 +1330,9 @@ window.__ModuleLoader__.load({
       openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
       openFolderHint: 'Ouvrir la page des fichiers de l’espace de travail',
       metricCostApiSpend: 'Dépense API',
+      taskReport: 'Rapport',
+      reportLoading: 'Chargement du rapport…',
+      reportEmptyNote: 'Cet agent n’a pas encore produit de réponse finale.',
     }
 
 /**
@@ -1448,6 +1466,9 @@ window.__ModuleLoader__.load({
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
       openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
       metricCostApiSpend: 'API-Ausgaben',
+      taskReport: 'Bericht',
+      reportLoading: 'Bericht wird geladen…',
+      reportEmptyNote: 'Dieser Agent hat noch keine endgültige Antwort geliefert.',
     }
 
 /**
@@ -1581,6 +1602,9 @@ window.__ModuleLoader__.load({
       openFileHint: 'Abrir este arquivo no espaço de trabalho',
       openFolderHint: 'Abrir a página de arquivos do espaço de trabalho',
       metricCostApiSpend: 'Gasto de API',
+      taskReport: 'Relatório',
+      reportLoading: 'Carregando o relatório…',
+      reportEmptyNote: 'Este agente ainda não produziu uma resposta final.',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1749,6 +1773,14 @@ window.__ModuleLoader__.load({
 .tk-insp-title{margin:0;font-size:14px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
 .tk-insp-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
 .tk-insp-body{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;padding:12px 14px 16px}
+.tk-tabs{display:flex;align-items:center;gap:2px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
+.tk-tab{position:relative;padding:6px 8px;border:0;border-bottom:2px solid transparent;background:transparent;
+  color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
+.tk-tab:hover{color:var(--dsw-alias-label-primary)}
+.tk-tab[aria-selected="true"]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-brand-primary);
+  font-weight:600}
+.tk-tab:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:-2px;border-radius:3px}
+.tk-report{display:flex;flex-direction:column;gap:6px;min-width:0}
 .tk-sec{display:flex;flex-direction:column;gap:4px;min-width:0}
 .tk-sec-head{display:flex;align-items:center;gap:5px;min-width:0}
 .tk-sec-title{margin:0;font-size:10px;line-height:14px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;
@@ -4088,6 +4120,10 @@ window.__ModuleLoader__.load({
       const model = useTeamModel(props, services)
       const [selected, setSelected] = useState(null)
       const [inspectedAgent, setInspectedAgent] = useState(null)
+      // Reports are read from the owning agent's chat, not from the task
+      // record; they are cached per owner so reopening a task is instant.
+      const [reports, setReports] = useState({})
+      const reportRequests = useRef(new Set())
       // The owner line of a card lights its agent row while the pointer is on
       // it, so "who works on this" and "that row" read as one thing.
       const [hoverOwner, setHoverOwner] = useState(null)
@@ -4209,6 +4245,40 @@ window.__ModuleLoader__.load({
         ? undefined
         : model.tasks.find(task => task.id === selected)
 
+      /** The owner whose final answer the dialog's Report tab reads. */
+      const reportOwnerId = selectedTask !== undefined
+        && typeof selectedTask.ownerId === 'string' && selectedTask.ownerId !== ''
+        ? selectedTask.ownerId
+        : undefined
+
+      // One read per owner per mount: the answer cannot change while the
+      // dialog is open in a way the viewer could follow cheaply, and the read
+      // is a one-shot snapshot rather than a subscription.
+      useEffect(() => {
+        if (reportOwnerId === undefined) return
+        if (reportRequests.current.has(reportOwnerId)) return
+        reportRequests.current.add(reportOwnerId)
+        if (typeof services.loadAgentReport !== 'function') {
+          setReports(current => ({ ...current, [reportOwnerId]: { state: 'empty' } }))
+          return
+        }
+        setReports(current => (current[reportOwnerId] === undefined
+          ? { ...current, [reportOwnerId]: { state: 'loading' } }
+          : current))
+        Promise.resolve()
+          .then(() => services.loadAgentReport(reportOwnerId))
+          .then(text => {
+            const ready = typeof text === 'string' && text.trim() !== ''
+            setReports(current => ({
+              ...current,
+              [reportOwnerId]: ready ? { state: 'ready', text } : { state: 'empty' },
+            }))
+          })
+          .catch(() => {
+            setReports(current => ({ ...current, [reportOwnerId]: { state: 'empty' } }))
+          })
+      }, [reportOwnerId, services])
+
       const countLabel = plural(t, model.tasks.length, ['tasksOne', 'tasksFew', 'tasksMany'])
       // Navigating away must not leave a dialog hanging over the new view.
       const openAgent = (agentId, target) => {
@@ -4308,6 +4378,9 @@ window.__ModuleLoader__.load({
             timeline: model.timelines[selectedTask.id],
             agent: selectedTask.ownerId === undefined ? undefined : model.whoById[selectedTask.ownerId],
             stats: selectedTask.ownerId === undefined ? undefined : model.agentStats[selectedTask.ownerId],
+            report: reportOwnerId === undefined
+              ? undefined
+              : (reports[reportOwnerId] ?? { state: 'loading' }),
             t,
             tAgent,
             costState: model.costState,
@@ -4461,7 +4534,7 @@ window.__ModuleLoader__.load({
      * @param props - `task`, `timeline`, `agent`, `stats`, `t`, `tAgent`,
      *   `costState`, `onOpenAgent`, `onOpenFile`, `onInspect`, `onClose`.
      */
-    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
+    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, report = undefined, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
       useEffect(() => {
         const onKey = event => {
           if (event.key === 'Escape') onClose()
@@ -4469,6 +4542,11 @@ window.__ModuleLoader__.load({
         window.addEventListener('keydown', onKey)
         return () => { window.removeEventListener('keydown', onKey) }
       }, [onClose])
+
+      // The dialog's two pages: the task's own facts (the default) and the
+      // owning subagent's final answer. The report is read by the board and
+      // handed in; this component only picks which page to draw.
+      const [activeTab, setActiveTab] = useState('description')
 
       const state = stateOfTask(task)
       const timelineValue = timeline ?? {}
@@ -4598,6 +4676,54 @@ window.__ModuleLoader__.load({
       })),
       warningBlock)
 
+      const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
+      const reportState = report !== null && typeof report === 'object' && typeof report.state === 'string'
+        ? report.state
+        : 'empty'
+      const reportText = report !== null && typeof report === 'object' && typeof report.text === 'string'
+        ? report.text
+        : ''
+      const reportBlock = reportState === 'loading'
+        ? h('div', { className: 'tk-report', 'data-report': 'loading' },
+          h('span', { className: 'tk-note' }, t('reportLoading')))
+        : reportState === 'ready'
+          ? h('div', { className: 'tk-report', 'data-report': 'ready' },
+            h('p', { className: 'tk-body-text' }, reportText))
+          : h('div', { className: 'tk-report', 'data-report': 'empty' },
+            h('span', { className: 'tk-note' }, t('reportEmptyNote')),
+            onOpenAgent === undefined || ownerId === undefined
+              ? null
+              : h('div', { className: 'tk-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'tk-btn',
+                  title: t('agentOpenHint'),
+                  onClick: () => { onOpenAgent(ownerId, 'main') },
+                }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen'))))
+
+      const tabButton = (key, label) => h('button', {
+        key,
+        type: 'button',
+        role: 'tab',
+        className: 'tk-tab',
+        'data-tab': key,
+        'aria-selected': activeTab === key ? 'true' : 'false',
+        onClick: () => { setActiveTab(key) },
+      }, label)
+      const tabs = h('div', { className: 'tk-tabs', role: 'tablist', 'aria-label': t('inspectorTitle') },
+        tabButton('description', t('description')),
+        tabButton('report', t('taskReport')))
+
+      const body = activeTab === 'report'
+        ? h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'report' },
+          h(Section, { title: t('taskReport'), icon: 'eye' }, reportBlock))
+        : h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'description' },
+          descriptionBlock,
+          timelineBlock,
+          agentBlock,
+          depsBlock,
+          scopesBlock)
+
       const dialog = h('div', {
         className: 'tk-insp',
         role: 'dialog',
@@ -4606,12 +4732,8 @@ window.__ModuleLoader__.load({
         'data-task-id': task.id,
       },
       head,
-      h('div', { className: 'tk-insp-body' },
-        descriptionBlock,
-        timelineBlock,
-        agentBlock,
-        depsBlock,
-        scopesBlock))
+      tabs,
+      body)
 
       return h(Portal, null,
         h('div', {
@@ -5264,6 +5386,87 @@ window.__ModuleLoader__.load({
           }
         })()
 
+        /**
+         * The final answer inside one Chat snapshot: the last non-empty
+         * Assistant text row, in anchor order. Assistant rows are
+         * `kind: 'assistant-step'` and their prose is the `text` blocks; the
+         * last one is the answer the turn closed with. The navigation preview
+         * is deliberately not used — it is bounded and loses the answer.
+         * @param snapshot - a ChatSnapshot from `uiConversation.target('chat')`.
+         * @returns the trimmed answer text, or undefined when there is none.
+         */
+        const finalAnswerOf = (snapshot) => {
+          const store = snapshot?.nodes
+          if (store === null || store === undefined || typeof store.values !== 'function') return undefined
+          let rows
+          try {
+            rows = Array.from(store.values())
+          } catch {
+            return undefined
+          }
+          const answers = []
+          for (const row of rows) {
+            if (row === null || row === undefined || row.kind !== 'assistant-step') continue
+            const blocks = row.data?.blocks
+            if (!Array.isArray(blocks)) continue
+            const text = blocks
+              .filter(block => block !== null && typeof block === 'object'
+                && block.kind === 'text' && typeof block.text === 'string')
+              .map(block => block.text)
+              .join('')
+              .trim()
+            if (text === '') continue
+            answers.push({ anchor: num(row.anchorSeq), text })
+          }
+          if (answers.length === 0) return undefined
+          answers.sort((left, right) => left.anchor - right.anchor)
+          return answers[answers.length - 1].text
+        }
+
+        /**
+         * Read a subagent's final answer from its chat, without opening a tab.
+         * The task record carries no report, so the answer is read from the
+         * live conversation: retain the session, resolve its Chat target, take
+         * one synchronous snapshot and release the reference. A missing
+         * service, an unopened session or an empty snapshot resolves to
+         * undefined rather than rejecting, so the dialog shows its empty state.
+         * @param agentId - the owner session id.
+         * @returns the final answer text, or undefined.
+         */
+        const loadAgentReport = async (agentId) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            // A Lead owner has no subagent address, but its identity is a
+            // valid retain target too.
+            reference = sessions.retain(address ?? agentId, { source: 'agent-team-viewer' })
+            const binding = reference?.binding
+            if (binding === null || binding === undefined) return undefined
+            const conversation = ctx.get('uiConversation')
+            if (conversation === null || conversation === undefined
+              || typeof conversation.binding !== 'function') return undefined
+            const assembly = conversation.binding(binding)
+            if (assembly === null || assembly === undefined || typeof assembly.target !== 'function') return undefined
+            const chat = assembly.target('chat')
+            if (chat === null || chat === undefined || typeof chat.getSnapshot !== 'function') return undefined
+            return finalAnswerOf(chat.getSnapshot())
+          } catch {
+            // The report is optional context; a failure is an empty tab.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
         /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */
         const services = {
           faceOf,
@@ -5277,6 +5480,7 @@ window.__ModuleLoader__.load({
           subscribeJobs,
           openAgent,
           openFileLink,
+          loadAgentReport,
           agentLabel,
         }
 

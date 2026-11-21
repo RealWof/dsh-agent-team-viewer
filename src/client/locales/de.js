@@ -129,4 +129,7 @@
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
       openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
       metricCostApiSpend: 'API-Ausgaben',
+      taskReport: 'Bericht',
+      reportLoading: 'Bericht wird geladen…',
+      reportEmptyNote: 'Dieser Agent hat noch keine endgültige Antwort geliefert.',
     }

@@ -129,4 +129,7 @@
       openFileHint: 'ワークスペースでこのファイルを開く',
       openFolderHint: 'ワークスペースのファイルページを開く',
       metricCostApiSpend: 'API 支出',
+      taskReport: 'レポート',
+      reportLoading: 'レポートを読み込み中…',
+      reportEmptyNote: 'このエージェントはまだ最終回答を出していません。',
     }

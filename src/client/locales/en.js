@@ -128,4 +128,7 @@
       openFileHint: 'Open this file in the workspace',
       openFolderHint: 'Open the workspace files page',
       metricCostApiSpend: 'API spend',
+      taskReport: 'Report',
+      reportLoading: 'Loading the report…',
+      reportEmptyNote: 'This agent has not produced a final answer yet.',
     }

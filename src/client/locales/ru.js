@@ -129,4 +129,7 @@
       openFileHint: 'Открыть файл в рабочей области',
       openFolderHint: 'Открыть страницу файлов рабочей области',
       metricCostApiSpend: 'Расходы по API',
+      taskReport: 'Отчёт',
+      reportLoading: 'Загрузка отчёта…',
+      reportEmptyNote: 'У этого агента пока нет итогового ответа.',
     }

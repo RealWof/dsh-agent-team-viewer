@@ -620,6 +620,10 @@
       const model = useTeamModel(props, services)
       const [selected, setSelected] = useState(null)
       const [inspectedAgent, setInspectedAgent] = useState(null)
+      // Reports are read from the owning agent's chat, not from the task
+      // record; they are cached per owner so reopening a task is instant.
+      const [reports, setReports] = useState({})
+      const reportRequests = useRef(new Set())
       // The owner line of a card lights its agent row while the pointer is on
       // it, so "who works on this" and "that row" read as one thing.
       const [hoverOwner, setHoverOwner] = useState(null)
@@ -741,6 +745,40 @@
         ? undefined
         : model.tasks.find(task => task.id === selected)
 
+      /** The owner whose final answer the dialog's Report tab reads. */
+      const reportOwnerId = selectedTask !== undefined
+        && typeof selectedTask.ownerId === 'string' && selectedTask.ownerId !== ''
+        ? selectedTask.ownerId
+        : undefined
+
+      // One read per owner per mount: the answer cannot change while the
+      // dialog is open in a way the viewer could follow cheaply, and the read
+      // is a one-shot snapshot rather than a subscription.
+      useEffect(() => {
+        if (reportOwnerId === undefined) return
+        if (reportRequests.current.has(reportOwnerId)) return
+        reportRequests.current.add(reportOwnerId)
+        if (typeof services.loadAgentReport !== 'function') {
+          setReports(current => ({ ...current, [reportOwnerId]: { state: 'empty' } }))
+          return
+        }
+        setReports(current => (current[reportOwnerId] === undefined
+          ? { ...current, [reportOwnerId]: { state: 'loading' } }
+          : current))
+        Promise.resolve()
+          .then(() => services.loadAgentReport(reportOwnerId))
+          .then(text => {
+            const ready = typeof text === 'string' && text.trim() !== ''
+            setReports(current => ({
+              ...current,
+              [reportOwnerId]: ready ? { state: 'ready', text } : { state: 'empty' },
+            }))
+          })
+          .catch(() => {
+            setReports(current => ({ ...current, [reportOwnerId]: { state: 'empty' } }))
+          })
+      }, [reportOwnerId, services])
+
       const countLabel = plural(t, model.tasks.length, ['tasksOne', 'tasksFew', 'tasksMany'])
       // Navigating away must not leave a dialog hanging over the new view.
       const openAgent = (agentId, target) => {
@@ -840,6 +878,9 @@
             timeline: model.timelines[selectedTask.id],
             agent: selectedTask.ownerId === undefined ? undefined : model.whoById[selectedTask.ownerId],
             stats: selectedTask.ownerId === undefined ? undefined : model.agentStats[selectedTask.ownerId],
+            report: reportOwnerId === undefined
+              ? undefined
+              : (reports[reportOwnerId] ?? { state: 'loading' }),
             t,
             tAgent,
             costState: model.costState,

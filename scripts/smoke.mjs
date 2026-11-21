@@ -335,6 +335,7 @@ const fakeJobs = {
 
 const opened = []
 const openedFiles = []
+const reportCalls = []
 const props = {
   t: key => key,
   sessionId: 'session-a',
@@ -352,6 +353,10 @@ const props = {
     subscribeJobs: listener => fakeJobs.subscribe(listener),
     openAgent: (agentId, target) => { opened.push([agentId, target]) },
     openFileLink: (sessionId, path) => { openedFiles.push([sessionId, path]) },
+    loadAgentReport: async (agentId) => {
+      reportCalls.push(agentId)
+      return agentId === 'session-a' ? 'Final answer from builder.' : undefined
+    },
     agentLabel: (key, fallback) => fallback,
   },
 }
@@ -627,7 +632,7 @@ check(withTask.texts.includes('agentOpen') && withTask.texts.includes('agentOpen
 check(withTask.nodes.some(node => node.props?.className === 'tk-stats'), 'the task dialog shows no compact agent metrics')
 
 /* Every write scope is a real link; a folder asks for the Files page instead. */
-const scopeLinks = within(taskTree, node => node.props?.className === 'tk-file-link')
+const scopeLinks = withTask.nodes.filter(node => node.props?.className === 'tk-file-link')
 check(scopeLinks.length === 2, 'the write scopes are not rendered as links, got ' + scopeLinks.length)
 const fileLink = scopeLinks.find(node => node.props?.['data-scope'] === 'src/client')
 const folderLink = scopeLinks.find(node => node.props?.['data-scope'] === 'src/client/')
@@ -639,6 +644,31 @@ check(openedFiles.length === 1 && openedFiles[0][0] === 'root' && openedFiles[0]
 folderLink?.props?.onClick?.()
 check(openedFiles.length === 2 && openedFiles[1][0] === 'root' && openedFiles[1][1] === 'src/client/',
   'clicking a folder scope did not ask for the files page')
+
+/* The dialog has a Description and a Report tab; Report holds the final answer. */
+const taskTabs = withTask.nodes.filter(node => node.props?.className === 'tk-tab')
+check(taskTabs.length === 2, 'the task dialog does not have two tabs, got ' + taskTabs.length)
+const descriptionTab = taskTabs.find(node => node.props?.['data-tab'] === 'description')
+const reportTab = taskTabs.find(node => node.props?.['data-tab'] === 'report')
+check(descriptionTab?.props?.role === 'tab' && descriptionTab.props['aria-selected'] === 'true',
+  'the Description tab is not the selected tab')
+check(reportTab?.props?.['aria-selected'] === 'false', 'the Report tab does not start unselected')
+reportTab?.props?.onClick?.()
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+check(reportCalls.includes('session-a'), 'opening an owned task did not request its report')
+resetHooks()
+const reportTree = tabBody(props)
+const reportView = surface(reportTree)
+const selectedReport = reportView.nodes.find(node => node.props?.['data-tab'] === 'report')
+check(selectedReport?.props?.['aria-selected'] === 'true', 'the Report tab did not become selected')
+check(reportView.nodes.some(node => node.props?.['data-tabpanel'] === 'report' && node.props?.role === 'tabpanel'),
+  'the Report tab has no panel')
+check(reportView.joined.includes('Final answer from builder.'),
+  'the Report tab lost the agent final answer, got: ' + reportView.joined.slice(0, 240))
+check(!reportView.texts.includes('Draw the columns.'), 'the Report tab still renders the description blocks')
+reportView.nodes.find(node => node.props?.['data-tab'] === 'description')?.props?.onClick?.()
+resetHooks()
+surface(tabBody(props))
 
 /* Navigating from the task dialog must also close it. */
 const openFromTask = within(taskTree, node => node.type === 'button'
@@ -653,8 +683,17 @@ check(opened.length === 4 && opened[3][1] === 'main', 'the task dialog did not n
 
 /* --- Agent dialog ------------------------------------------------------ */
 
-within(rows.length > 0 ? board : board, node => false)
-const infoButton = within(rowOf('session-a'), node => node.props?.className === 'tk-icon-btn tk-agent-info')[0]
+// A fresh mount keeps the dialog's own fold state from colliding with the
+// task dialog's hook slots in this minimal renderer.
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetSlots()
+surface(tabBody(props))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const freshBoard = surface(tabBody(props))
+const freshRow = freshBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')
+const infoButton = within(freshRow, node => node.props?.className === 'tk-icon-btn tk-agent-info')[0]
 check(infoButton !== undefined, 'the agent row has no details control')
 infoButton?.props?.onClick?.()
 resetHooks()

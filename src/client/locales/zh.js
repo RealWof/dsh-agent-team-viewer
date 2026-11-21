@@ -129,4 +129,7 @@
       openFileHint: '在工作区中打开此文件',
       openFolderHint: '打开工作区文件页面',
       metricCostApiSpend: 'API 花费',
+      taskReport: '报告',
+      reportLoading: '正在加载报告…',
+      reportEmptyNote: '该代理尚未给出最终答复。',
     }

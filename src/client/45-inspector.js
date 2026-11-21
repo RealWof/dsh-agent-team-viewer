@@ -49,7 +49,7 @@
      * @param props - `task`, `timeline`, `agent`, `stats`, `t`, `tAgent`,
      *   `costState`, `onOpenAgent`, `onOpenFile`, `onInspect`, `onClose`.
      */
-    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
+    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, report = undefined, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
       useEffect(() => {
         const onKey = event => {
           if (event.key === 'Escape') onClose()
@@ -57,6 +57,11 @@
         window.addEventListener('keydown', onKey)
         return () => { window.removeEventListener('keydown', onKey) }
       }, [onClose])
+
+      // The dialog's two pages: the task's own facts (the default) and the
+      // owning subagent's final answer. The report is read by the board and
+      // handed in; this component only picks which page to draw.
+      const [activeTab, setActiveTab] = useState('description')
 
       const state = stateOfTask(task)
       const timelineValue = timeline ?? {}
@@ -186,6 +191,54 @@
       })),
       warningBlock)
 
+      const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
+      const reportState = report !== null && typeof report === 'object' && typeof report.state === 'string'
+        ? report.state
+        : 'empty'
+      const reportText = report !== null && typeof report === 'object' && typeof report.text === 'string'
+        ? report.text
+        : ''
+      const reportBlock = reportState === 'loading'
+        ? h('div', { className: 'tk-report', 'data-report': 'loading' },
+          h('span', { className: 'tk-note' }, t('reportLoading')))
+        : reportState === 'ready'
+          ? h('div', { className: 'tk-report', 'data-report': 'ready' },
+            h('p', { className: 'tk-body-text' }, reportText))
+          : h('div', { className: 'tk-report', 'data-report': 'empty' },
+            h('span', { className: 'tk-note' }, t('reportEmptyNote')),
+            onOpenAgent === undefined || ownerId === undefined
+              ? null
+              : h('div', { className: 'tk-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'tk-btn',
+                  title: t('agentOpenHint'),
+                  onClick: () => { onOpenAgent(ownerId, 'main') },
+                }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen'))))
+
+      const tabButton = (key, label) => h('button', {
+        key,
+        type: 'button',
+        role: 'tab',
+        className: 'tk-tab',
+        'data-tab': key,
+        'aria-selected': activeTab === key ? 'true' : 'false',
+        onClick: () => { setActiveTab(key) },
+      }, label)
+      const tabs = h('div', { className: 'tk-tabs', role: 'tablist', 'aria-label': t('inspectorTitle') },
+        tabButton('description', t('description')),
+        tabButton('report', t('taskReport')))
+
+      const body = activeTab === 'report'
+        ? h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'report' },
+          h(Section, { title: t('taskReport'), icon: 'eye' }, reportBlock))
+        : h('div', { className: 'tk-insp-body', role: 'tabpanel', 'data-tabpanel': 'description' },
+          descriptionBlock,
+          timelineBlock,
+          agentBlock,
+          depsBlock,
+          scopesBlock)
+
       const dialog = h('div', {
         className: 'tk-insp',
         role: 'dialog',
@@ -194,12 +247,8 @@
         'data-task-id': task.id,
       },
       head,
-      h('div', { className: 'tk-insp-body' },
-        descriptionBlock,
-        timelineBlock,
-        agentBlock,
-        depsBlock,
-        scopesBlock))
+      tabs,
+      body)
 
       return h(Portal, null,
         h('div', {
