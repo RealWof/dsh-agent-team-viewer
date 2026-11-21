@@ -134,7 +134,7 @@
 @keyframes tk-text-in{from{opacity:.35;transform:translateY(1px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.tk-text-anim{animation:none}}
 .tk-agents{display:flex;flex-direction:column;gap:4px;min-width:0}
-.tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;min-width:0}
+.tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;row-gap:3px;min-width:0}
 .tk-totals-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
 .tk-divider{border-top:1px solid var(--dsw-alias-border-l1);margin:1px 0 0}
 .tk-totals{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}

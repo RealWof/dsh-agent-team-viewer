@@ -838,10 +838,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Changelog',
       ungrouped: 'Ungrouped',
-      groupingToggle: 'Groups',
-      groupingOn: 'Grouping is on',
-      groupingOff: 'Grouping is off',
-      groupingToggleHint: 'Toggle grouping in this section',
+      groupRoles: 'Roles',
+      groupCustom: 'Custom',
       setShowModelProvider: 'Show the provider',
       setShowModelProviderHint: 'Puts the provider before the model in the agent model line; the tooltip always keeps it.',
       setShowModelName: 'Show the model name',
@@ -1000,10 +998,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Журнал изменений',
       ungrouped: 'Без группы',
-      groupingToggle: 'Группы',
-      groupingOn: 'Группировка включена',
-      groupingOff: 'Группировка выключена',
-      groupingToggleHint: 'Переключить группировку в этом разделе',
+      groupRoles: 'Роли',
+      groupCustom: 'Свои',
       setShowModelProvider: 'Показывать провайдера',
       setShowModelProviderHint: 'Ставит провайдера перед моделью в строке модели агента; в подсказке он есть всегда.',
       setShowModelName: 'Показывать название модели',
@@ -1162,10 +1158,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: '更新日志',
       ungrouped: '未分组',
-      groupingToggle: '分组',
-      groupingOn: '分组已开启',
-      groupingOff: '分组已关闭',
-      groupingToggleHint: '切换此分区的分组',
+      groupRoles: '角色',
+      groupCustom: '自定义',
       setShowModelProvider: '显示提供商',
       setShowModelProviderHint: '在代理模型行中把提供商放在模型之前；提示中始终保留提供商。',
       setShowModelName: '显示模型名称',
@@ -1324,10 +1318,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: '変更履歴',
       ungrouped: '未分類',
-      groupingToggle: 'グループ',
-      groupingOn: 'グループ化オン',
-      groupingOff: 'グループ化オフ',
-      groupingToggleHint: 'このセクションのグループ化を切り替えます',
+      groupRoles: 'ロール',
+      groupCustom: 'カスタム',
       setShowModelProvider: 'プロバイダーを表示',
       setShowModelProviderHint: 'エージェントのモデル行でプロバイダーをモデルの前に表示します。ツールチップには常に含まれます。',
       setShowModelName: 'モデル名を表示',
@@ -1486,10 +1478,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Registro de cambios',
       ungrouped: 'Sin grupo',
-      groupingToggle: 'Grupos',
-      groupingOn: 'Agrupación activada',
-      groupingOff: 'Agrupación desactivada',
-      groupingToggleHint: 'Alternar la agrupación en esta sección',
+      groupRoles: 'Roles',
+      groupCustom: 'Propios',
       setShowModelProvider: 'Mostrar el proveedor',
       setShowModelProviderHint: 'Muestra el proveedor antes del modelo en la línea del agente; la información lo conserva siempre.',
       setShowModelName: 'Mostrar el nombre del modelo',
@@ -1648,10 +1638,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Journal des modifications',
       ungrouped: 'Sans groupe',
-      groupingToggle: 'Groupes',
-      groupingOn: 'Regroupement activé',
-      groupingOff: 'Regroupement désactivé',
-      groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
+      groupRoles: 'Rôles',
+      groupCustom: 'Perso',
       setShowModelProvider: 'Afficher le fournisseur',
       setShowModelProviderHint: 'Place le fournisseur avant le modèle dans la ligne de l\u2019agent ; l\u2019infobulle le garde toujours.',
       setShowModelName: 'Afficher le nom du modèle',
@@ -1810,10 +1798,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Änderungsprotokoll',
       ungrouped: 'Ohne Gruppe',
-      groupingToggle: 'Gruppen',
-      groupingOn: 'Gruppierung an',
-      groupingOff: 'Gruppierung aus',
-      groupingToggleHint: 'Gruppierung in diesem Bereich umschalten',
+      groupRoles: 'Rollen',
+      groupCustom: 'Eigene',
       setShowModelProvider: 'Anbieter anzeigen',
       setShowModelProviderHint: 'Setzt den Anbieter vor das Modell in der Modellzeile des Agenten; der Tooltip enthält ihn immer.',
       setShowModelName: 'Modellnamen anzeigen',
@@ -1972,10 +1958,8 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Registro de alterações',
       ungrouped: 'Sem grupo',
-      groupingToggle: 'Grupos',
-      groupingOn: 'Agrupamento ativado',
-      groupingOff: 'Agrupamento desativado',
-      groupingToggleHint: 'Alternar o agrupamento nesta seção',
+      groupRoles: 'Papéis',
+      groupCustom: 'Próprios',
       setShowModelProvider: 'Mostrar o provedor',
       setShowModelProviderHint: 'Coloca o provedor antes do modelo na linha do agente; a dica sempre o inclui.',
       setShowModelName: 'Mostrar o nome do modelo',
@@ -2121,7 +2105,7 @@ window.__ModuleLoader__.load({
 @keyframes tk-text-in{from{opacity:.35;transform:translateY(1px)}to{opacity:1;transform:none}}
 @media (prefers-reduced-motion: reduce){.tk-text-anim{animation:none}}
 .tk-agents{display:flex;flex-direction:column;gap:4px;min-width:0}
-.tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;min-width:0}
+.tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;row-gap:3px;min-width:0}
 .tk-totals-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
 .tk-divider{border-top:1px solid var(--dsw-alias-border-l1);margin:1px 0 0}
 .tk-totals{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
@@ -5350,53 +5334,12 @@ window.__ModuleLoader__.load({
     ]
 
     /**
-     * The grouping flags each section header's switch turned off, so switching
-     * it back on restores exactly what the reader had. Page-lifetime, like the
-     * fold state; a fresh page starts from the shipped fallbacks.
-     */
-    const GROUPING_MEMORY = { agents: null, tasks: null }
-
-    /**
-     * The view-settings patch that flips one section's grouping switch.
-     *
-     * Switching off remembers the flags it replaced; switching on restores
-     * them, or the shipped fallback (`autoRoleGroups: true`,
-     * `customGroups: false` for agents, `taskCustomGroups: false` for tasks)
-     * when the reader has not switched the section off in this page.
-     * @param section - `agents` or `tasks`.
-     * @param settings - the current view settings.
-     * @returns the patch to write through the shared store.
-     */
-    function groupingPatch(section, settings) {
-      if (section === 'agents') {
-        const on = settings.autoRoleGroups === true || settings.customGroups === true
-        if (on) {
-          GROUPING_MEMORY.agents = {
-            autoRoleGroups: settings.autoRoleGroups === true,
-            customGroups: settings.customGroups === true,
-          }
-          return { autoRoleGroups: false, customGroups: false }
-        }
-        const remembered = GROUPING_MEMORY.agents
-        GROUPING_MEMORY.agents = null
-        return remembered === null
-          ? { autoRoleGroups: true, customGroups: false }
-          : { autoRoleGroups: remembered.autoRoleGroups, customGroups: remembered.customGroups }
-      }
-      if (settings.taskCustomGroups === true) {
-        GROUPING_MEMORY.tasks = true
-        return { taskCustomGroups: false }
-      }
-      const remembered = GROUPING_MEMORY.tasks
-      GROUPING_MEMORY.tasks = null
-      return { taskCustomGroups: remembered === true }
-    }
-
-    /**
      * The compact grouping switch a section header carries next to its sort
-     * control. It writes the same view settings the Settings page edits, so a
-     * checkbox and a header switch always agree.
-     * @param props - `on`, the visible `label`, the state `hint`, and `onToggle`.
+     * control. Every switch owns exactly one of the view settings the Settings
+     * page edits — `autoRoleGroups`, `customGroups` or `taskCustomGroups` — so
+     * a header switch and its Settings checkbox always agree, and no switch
+     * writes or remembers a combined state.
+     * @param props - `on`, the visible `label`, the setting `hint`, and `onToggle`.
      */
     function GroupingToggle({ on, label, hint, onToggle }) {
       return h('button', {
@@ -5589,13 +5532,13 @@ window.__ModuleLoader__.load({
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
      *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `showModelProvider`,
-     *   `agentGroupingOn` and `onToggleAgentGrouping`.
+     *   `agentGroups` (`roles` and `custom` flags) and `onToggleAgentGroup`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
       showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true,
-      agentGroupingOn = false, onToggleAgentGrouping = undefined,
+      agentGroups = { roles: false, custom: false }, onToggleAgentGroup = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -5667,10 +5610,20 @@ window.__ModuleLoader__.load({
             ? h('span', { className: 'tk-note', title: t('costMissingHint') }, t('costMissing'))
             : null,
           h(GroupingToggle, {
-            on: agentGroupingOn,
-            label: t('groupingToggle'),
-            hint: (agentGroupingOn ? t('groupingOn') : t('groupingOff')) + ' · ' + t('groupingToggleHint'),
-            onToggle: onToggleAgentGrouping,
+            on: agentGroups.roles === true,
+            label: t('groupRoles'),
+            hint: t('setAutoRoleGroups'),
+            onToggle: () => {
+              if (typeof onToggleAgentGroup === 'function') onToggleAgentGroup('autoRoleGroups')
+            },
+          }),
+          h(GroupingToggle, {
+            on: agentGroups.custom === true,
+            label: t('groupCustom'),
+            hint: t('setCustomGroups'),
+            onToggle: () => {
+              if (typeof onToggleAgentGroup === 'function') onToggleAgentGroup('customGroups')
+            },
           }),
           h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
@@ -6000,8 +5953,11 @@ window.__ModuleLoader__.load({
               showModelProvider: settings.showModelProvider === true,
               showModelName: settings.showModelName === true,
               showModelEffort: settings.showModelEffort === true,
-              agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
-              onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
+              agentGroups: {
+                roles: settings.autoRoleGroups === true,
+                custom: settings.customGroups === true,
+              },
+              onToggleAgentGroup: key => { updateSettings({ [key]: settings[key] !== true }) },
             })
             : null,
 
@@ -6020,10 +5976,9 @@ window.__ModuleLoader__.load({
             h('span', { className: 'tk-head-spacer' }),
             h(GroupingToggle, {
               on: settings.taskCustomGroups === true,
-              label: t('groupingToggle'),
-              hint: (settings.taskCustomGroups === true ? t('groupingOn') : t('groupingOff'))
-                + ' · ' + t('groupingToggleHint'),
-              onToggle: () => { updateSettings(groupingPatch('tasks', settings)) },
+              label: t('groupCustom'),
+              hint: t('setTaskCustomGroups'),
+              onToggle: () => { updateSettings({ taskCustomGroups: settings.taskCustomGroups !== true }) },
             }),
             h(SortSelect, {
               sort: settings.sort,

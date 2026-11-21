@@ -518,53 +518,12 @@
     ]
 
     /**
-     * The grouping flags each section header's switch turned off, so switching
-     * it back on restores exactly what the reader had. Page-lifetime, like the
-     * fold state; a fresh page starts from the shipped fallbacks.
-     */
-    const GROUPING_MEMORY = { agents: null, tasks: null }
-
-    /**
-     * The view-settings patch that flips one section's grouping switch.
-     *
-     * Switching off remembers the flags it replaced; switching on restores
-     * them, or the shipped fallback (`autoRoleGroups: true`,
-     * `customGroups: false` for agents, `taskCustomGroups: false` for tasks)
-     * when the reader has not switched the section off in this page.
-     * @param section - `agents` or `tasks`.
-     * @param settings - the current view settings.
-     * @returns the patch to write through the shared store.
-     */
-    function groupingPatch(section, settings) {
-      if (section === 'agents') {
-        const on = settings.autoRoleGroups === true || settings.customGroups === true
-        if (on) {
-          GROUPING_MEMORY.agents = {
-            autoRoleGroups: settings.autoRoleGroups === true,
-            customGroups: settings.customGroups === true,
-          }
-          return { autoRoleGroups: false, customGroups: false }
-        }
-        const remembered = GROUPING_MEMORY.agents
-        GROUPING_MEMORY.agents = null
-        return remembered === null
-          ? { autoRoleGroups: true, customGroups: false }
-          : { autoRoleGroups: remembered.autoRoleGroups, customGroups: remembered.customGroups }
-      }
-      if (settings.taskCustomGroups === true) {
-        GROUPING_MEMORY.tasks = true
-        return { taskCustomGroups: false }
-      }
-      const remembered = GROUPING_MEMORY.tasks
-      GROUPING_MEMORY.tasks = null
-      return { taskCustomGroups: remembered === true }
-    }
-
-    /**
      * The compact grouping switch a section header carries next to its sort
-     * control. It writes the same view settings the Settings page edits, so a
-     * checkbox and a header switch always agree.
-     * @param props - `on`, the visible `label`, the state `hint`, and `onToggle`.
+     * control. Every switch owns exactly one of the view settings the Settings
+     * page edits — `autoRoleGroups`, `customGroups` or `taskCustomGroups` — so
+     * a header switch and its Settings checkbox always agree, and no switch
+     * writes or remembers a combined state.
+     * @param props - `on`, the visible `label`, the setting `hint`, and `onToggle`.
      */
     function GroupingToggle({ on, label, hint, onToggle }) {
       return h('button', {
@@ -757,13 +716,13 @@
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
      *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `showModelProvider`,
-     *   `agentGroupingOn` and `onToggleAgentGrouping`.
+     *   `agentGroups` (`roles` and `custom` flags) and `onToggleAgentGroup`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
       showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true,
-      agentGroupingOn = false, onToggleAgentGrouping = undefined,
+      agentGroups = { roles: false, custom: false }, onToggleAgentGroup = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -835,10 +794,20 @@
             ? h('span', { className: 'tk-note', title: t('costMissingHint') }, t('costMissing'))
             : null,
           h(GroupingToggle, {
-            on: agentGroupingOn,
-            label: t('groupingToggle'),
-            hint: (agentGroupingOn ? t('groupingOn') : t('groupingOff')) + ' · ' + t('groupingToggleHint'),
-            onToggle: onToggleAgentGrouping,
+            on: agentGroups.roles === true,
+            label: t('groupRoles'),
+            hint: t('setAutoRoleGroups'),
+            onToggle: () => {
+              if (typeof onToggleAgentGroup === 'function') onToggleAgentGroup('autoRoleGroups')
+            },
+          }),
+          h(GroupingToggle, {
+            on: agentGroups.custom === true,
+            label: t('groupCustom'),
+            hint: t('setCustomGroups'),
+            onToggle: () => {
+              if (typeof onToggleAgentGroup === 'function') onToggleAgentGroup('customGroups')
+            },
           }),
           h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
@@ -1168,8 +1137,11 @@
               showModelProvider: settings.showModelProvider === true,
               showModelName: settings.showModelName === true,
               showModelEffort: settings.showModelEffort === true,
-              agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
-              onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
+              agentGroups: {
+                roles: settings.autoRoleGroups === true,
+                custom: settings.customGroups === true,
+              },
+              onToggleAgentGroup: key => { updateSettings({ [key]: settings[key] !== true }) },
             })
             : null,
 
@@ -1188,10 +1160,9 @@
             h('span', { className: 'tk-head-spacer' }),
             h(GroupingToggle, {
               on: settings.taskCustomGroups === true,
-              label: t('groupingToggle'),
-              hint: (settings.taskCustomGroups === true ? t('groupingOn') : t('groupingOff'))
-                + ' · ' + t('groupingToggleHint'),
-              onToggle: () => { updateSettings(groupingPatch('tasks', settings)) },
+              label: t('groupCustom'),
+              hint: t('setTaskCustomGroups'),
+              onToggle: () => { updateSettings({ taskCustomGroups: settings.taskCustomGroups !== true }) },
             }),
             h(SortSelect, {
               sort: settings.sort,
