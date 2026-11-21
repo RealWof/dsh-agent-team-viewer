@@ -512,7 +512,9 @@
 
     /**
      * Render one link target, allowing only http(s), mailto and workspace
-     * paths; anything else keeps its text and drops the target.
+     * paths; anything else keeps its text and drops the target. The label is
+     * rendered without autolinks: an anchor cannot contain a nested link or
+     * file button.
      * @param label - the link label Markdown.
      * @param rawHref - the link target.
      * @param context - the render context.
@@ -528,13 +530,13 @@
           href: target.href,
           target: '_blank',
           rel: 'noreferrer noopener',
-        }, markdownInline(label, context))
+        }, markdownInline(label, { ...context, noAutoLinks: true }))
       }
       if (target.kind === 'file') {
         markdownRemember(context, target.path)
         return markdownFileNode(target.path, label, context, key)
       }
-      return h('span', { key, className: 'tk-md-plain' }, markdownInline(label, context))
+      return h('span', { key, className: 'tk-md-plain' }, markdownInline(label, { ...context, noAutoLinks: true }))
     }
 
     /**
@@ -566,7 +568,8 @@
      * The returned children are strings or React elements, so React escapes
      * every piece of text and no HTML is ever injected.
      * @param text - the inline source.
-     * @param context - the render context.
+     * @param context - the render context; `noAutoLinks` keeps a link label
+     *   free of nested links and file buttons.
      * @returns the child nodes.
      */
     function markdownInline(text, context) {
@@ -643,27 +646,32 @@
             continue
           }
         }
-        const autolink = MD_AUTOLINK.exec(text.slice(index))
-        if (autolink !== null) {
-          const href = autolink[0].replace(/[.,;:!?]+$/, '')
-          if (href.length > 8) {
-            push(h('a', {
-              key: 'auto-' + key,
-              className: 'tk-md-a',
-              href,
-              target: '_blank',
-              rel: 'noreferrer noopener',
-            }, href))
-            index += href.length
+        // A link label must stay plain text: an autolink inside an anchor
+        // would nest an <a> or a <button> in an <a>, which the HTML parser
+        // cannot represent.
+        if (context.noAutoLinks !== true) {
+          const autolink = MD_AUTOLINK.exec(text.slice(index))
+          if (autolink !== null) {
+            const href = autolink[0].replace(/[.,;:!?]+$/, '')
+            if (href.length > 8) {
+              push(h('a', {
+                key: 'auto-' + key,
+                className: 'tk-md-a',
+                href,
+                target: '_blank',
+                rel: 'noreferrer noopener',
+              }, href))
+              index += href.length
+              continue
+            }
+          }
+          const workspacePath = markdownWorkspacePathAt(text, index)
+          if (workspacePath !== undefined) {
+            markdownRemember(context, workspacePath.path)
+            push(markdownFileNode(workspacePath.path, workspacePath.label, context, 'path-' + key))
+            index += workspacePath.label.length
             continue
           }
-        }
-        const workspacePath = markdownWorkspacePathAt(text, index)
-        if (workspacePath !== undefined) {
-          markdownRemember(context, workspacePath.path)
-          push(markdownFileNode(workspacePath.path, workspacePath.label, context, 'path-' + key))
-          index += workspacePath.label.length
-          continue
         }
         plain += char
         index += 1
