@@ -12,9 +12,10 @@ All notable changes to this plugin are documented here. The format follows
   sorting, motion, panel and dialog zoom, and agent model display. The page ends with an About block
   linking the repository, the README and this changelog.
 - **Grouping**
-  - Agents group by derived role or by user-defined groups; tasks group by user rules.
-  - Group headers fold with a count, long groups cap and scroll, and unmatched cards collect under a
-    localized **Ungrouped** group when other groups exist.
+  - Agents group by a repeated name base (the part before the first `-`, trailing digits dropped) or by
+    user-defined groups; tasks group by user rules.
+  - Group headers fold with a count, long groups cap and scroll, and agents with a unique base collect
+    under a localized **Ungrouped** group whenever Roles is on.
   - The Agents and Tasks headers carry the same individual grouping switches as Settings.
 - **Sorting**: newest first by default, oldest first or by name, from either section header or Settings;
   tasks follow their first-seen time and agents their creation time.

@@ -3560,46 +3560,35 @@ window.__ModuleLoader__.load({
     }
 
     /* ------------------------------------------------------------------ *
-     * Agent grouping: there is no role API in the Host, so a role is derived
-     * from the agent's name, else from the preset the session reported. A name
-     * is what a person actually sees ("builder", "integrator"); the preset is
-     * the harness default ("standard"), so preferring it would fold every
+     * Agent grouping: a role is the first part of the agent's name, before the
+     * first `-`, without trailing digits and lower-cased (`builder-b2` ->
+     * builder, `round1` -> round). A single agent's prefix is not a group: only
+     * a base two or more agents of the same status column share becomes a role
+     * group, and every other agent joins Ungrouped. There is no preset
+     * fallback: the harness default `standard` would otherwise fold every
      * default agent into one meaningless group. Custom groups come from the
-     * Settings editor and match substrings of the role, name, preset or id.
-     * The Lead is pinned before every group.
+     * Settings editor and match substrings of the role base, name, preset or
+     * id. The Lead is pinned before every group.
      * ------------------------------------------------------------------ */
 
-    /** Names that carry no role information; the preset answers for them. */
-    const GENERIC_ROLE_NAME = /^(agent|subagent|assistant|worker|session)(\d+|[-_][a-z0-9_-]+)?$/i
-
     /**
-     * Reduce a name or preset to its role key.
-     * @param value - the raw name or preset.
-     * @returns the lower-case role, without a trailing ordinal (`builder-2` -> builder).
+     * Bases that describe no role at all; they never form a group, even when
+     * every agent carries the same one (`agent-1`, `agent-2`).
      */
-    function normalizeRoleKey(value) {
-      return typeof value === 'string'
-        ? value.trim().toLowerCase().replace(/[-_\s]?\d+$/, '').trim()
-        : ''
-    }
+    const GENERIC_ROLE_BASE = /^(agent|subagent|assistant|worker|session)$/
 
     /**
-     * The role key of an agent: its name first (lower-cased and without a
-     * trailing ordinal, `builder-2` -> builder), falling back to the preset
-     * when the name is empty or generic (`agent-2`, `session-…`). A raw name
-     * stays the last resort even when generic, so an unnamed agent is never
-     * filed under the harness's `standard` preset.
+     * The role base of an agent: the first name part before the first `-`,
+     * with trailing digits removed and lower-cased (`builder-b2` -> builder,
+     * `scribe-r9` -> scribe, `round1` -> round).
      * @param agent - one agent entry.
-     * @returns the lower-case role key, or `other` when nothing is left.
+     * @returns the lower-case base, or '' when the name carries none.
      */
-    function roleKeyOf(agent) {
+    function roleBaseOf(agent) {
       const name = typeof agent?.name === 'string' ? agent.name.trim() : ''
-      const preset = typeof agent?.preset === 'string' ? agent.preset.trim() : ''
-      const fromName = normalizeRoleKey(name)
-      if (fromName !== '' && !GENERIC_ROLE_NAME.test(fromName)) return fromName
-      const fromPreset = normalizeRoleKey(preset)
-      if (fromPreset !== '') return fromPreset
-      return fromName !== '' ? fromName : 'other'
+      if (name === '') return ''
+      const base = name.split('-')[0].replace(/\d+$/, '').trim().toLowerCase()
+      return GENERIC_ROLE_BASE.test(base) ? '' : base
     }
 
     /**
@@ -3612,7 +3601,7 @@ window.__ModuleLoader__.load({
      */
     function customGroupOf(agent, groups) {
       if (!Array.isArray(groups) || groups.length === 0) return undefined
-      const values = [roleKeyOf(agent), agent?.name, agent?.preset, agent?.id]
+      const values = [roleBaseOf(agent), agent?.name, agent?.preset, agent?.id]
         .filter(value => typeof value === 'string' && value !== '')
         .map(value => value.toLowerCase())
       for (const group of groups) {
@@ -3638,11 +3627,11 @@ window.__ModuleLoader__.load({
 
     /**
      * Build the rows of one agent status column after its Lead: custom groups
-     * in editor order (each with a head, even for a single member), then role
-     * groups when `autoRoleGroups` is on (a role with two or more members gets
-     * a head; a singleton role is a plain row). When any group head exists in
-     * the column, the leftover rows (unmatched agents and singleton roles) are
-     * collected under one Ungrouped head; when no head exists they stay flat.
+     * in editor order (each with a head, even for a single member), then the
+     * role groups when `autoRoleGroups` is on — only a base two or more
+     * remaining agents share gets a head. Every other remaining agent collects
+     * under one Ungrouped head, so a column whose bases are all unique is still
+     * a single Ungrouped group rather than a flat list.
      * @param agents - the column's agents, the Lead already removed.
      * @param settings - the view settings.
      * @returns the row units; `null` when both grouping switches are off.
@@ -3690,35 +3679,40 @@ window.__ModuleLoader__.load({
         }
         return units
       }
-      const byRole = new Map()
-      for (const agent of leftover) {
-        const role = roleKeyOf(agent)
-        if (!byRole.has(role)) byRole.set(role, [])
-        byRole.get(role).push(agent)
+      // A role group is a repeated base, not one agent's prefix: count the
+      // bases in this column and keep only those two or more agents share. The
+      // rest — a unique base or no meaningful base — joins Ungrouped.
+      const counts = new Map()
+      const bases = leftover.map(agent => roleBaseOf(agent))
+      for (const base of bases) {
+        if (base !== '') counts.set(base, (counts.get(base) ?? 0) + 1)
+      }
+      const byBase = new Map()
+      const ungrouped = []
+      for (let index = 0; index < leftover.length; index += 1) {
+        const base = bases[index]
+        if (base === '' || counts.get(base) < 2) {
+          ungrouped.push(leftover[index])
+          continue
+        }
+        if (!byBase.has(base)) byBase.set(base, [])
+        byBase.get(base).push(leftover[index])
       }
       const groups = []
-      const singles = []
-      for (const [role, members] of byRole) {
-        const ordered = sortAgents(members, settings.sort)
-        const unit = { key: 'role:' + role, title: role, agents: ordered, head: ordered.length >= 2 }
-        if (unit.head === true) groups.push(unit)
-        else singles.push(unit)
+      for (const [base, members] of byBase) {
+        groups.push({ key: 'role:' + base, title: base, agents: sortAgents(members, settings.sort), head: true })
       }
       groups.sort((left, right) => groupRecencyOf(right) - groupRecencyOf(left)
         || String(left.title).localeCompare(String(right.title)))
-      // A singleton role is a plain row, ordered like every other agent; when
-      // the column already has a group head, it joins the Ungrouped group.
-      const singleAgents = sortAgents(singles.map(unit => unit.agents[0]), settings.sort)
-      if (units.length + groups.length > 0 && singleAgents.length > 0) {
-        return units.concat(groups, [{
+      if (ungrouped.length > 0) {
+        groups.push({
           key: 'ungrouped',
           titleKey: 'ungrouped',
-          agents: singleAgents,
+          agents: sortAgents(ungrouped, settings.sort),
           head: true,
-        }])
+        })
       }
-      const singleUnits = singleAgents.map(agent => singles.find(unit => unit.agents[0] === agent))
-      return units.concat(groups, singleUnits)
+      return units.concat(groups)
     }
 
     /**

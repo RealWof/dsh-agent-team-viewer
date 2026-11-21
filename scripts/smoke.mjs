@@ -750,9 +750,12 @@ const sharedRoleState = (() => {
   const next = JSON.parse(JSON.stringify(listState))
   next.byId['session-b'].running = true
   next.projectionsBySession['session-b'].values.agentPreset = 'standard'
-  // The role now comes from the name first; `builder-2` shares `builder`.
+  // The base is the part before the first `-`, so both builders share
+  // `builder` while the ordinal-like suffix differs.
   next.projectionsBySession.root.values.subagentCatalog
-    .find(entry => entry.id === 'session-b').name = 'builder-2'
+    .find(entry => entry.id === 'session-a').name = 'builder-b1'
+  next.projectionsBySession.root.values.subagentCatalog
+    .find(entry => entry.id === 'session-b').name = 'builder-b2'
   return next
 })()
 for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
@@ -785,26 +788,53 @@ check(within(roleFolded.nodes.find(node => node.props?.['data-agent-column'] ===
 'the folded nested group left its rows rendered')
 foldedRoleHead?.props?.onClick?.()
 
-// The harness default preset is still named `standard`; the role key must not
-// turn it into one group when the agents have real names.
+// The harness default preset is still named `standard`; the role base never
+// falls back to it, so no `standard` group appears.
 check(!sharedRole.nodes.some(node => String(node.props?.['data-target'] ?? '').includes('role:standard')),
   'the harness default preset still names an agent group')
-// A generic name falls back to the preset, so two unnamed agents still group.
-const genericNameState = (() => {
+
+// All names unique: no base repeats, so the whole column becomes one Ungrouped
+// head when Roles is on, and the two `standard` presets still do not group.
+const uniqueNameState = (() => {
   const next = JSON.parse(JSON.stringify(listState))
   next.byId['session-b'].running = true
   next.projectionsBySession['session-b'].values.agentPreset = 'standard'
-  next.projectionsBySession.root.values.subagentCatalog
-    .find(entry => entry.id === 'session-a').name = 'agent-2'
-  next.projectionsBySession.root.values.subagentCatalog
-    .find(entry => entry.id === 'session-b').name = 'session-b'
   return next
 })()
 resetHooks()
-const genericNameBoard = surface(tabBody({ ...props, useSessions: selector => selector(genericNameState) }))
-const genericActive = genericNameBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
-check(within(genericActive, node => node.props?.['data-target'] === 'agents:active:role:standard').length === 1,
-  'a generic agent name did not fall back to the preset role')
+const uniqueNameBoard = surface(tabBody({ ...props, useSessions: selector => selector(uniqueNameState) }))
+const uniqueActive = uniqueNameBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+check(within(uniqueActive, node => String(node.props?.['data-target'] ?? '').includes(':role:')).length === 0,
+  'a unique name base still produced a role group')
+const uniqueUngrouped = within(uniqueActive, node => node.props?.['data-target'] === 'agents:active:ungrouped')
+check(uniqueUngrouped.length === 1, 'all-unique agent names did not produce exactly one Ungrouped head')
+check(within(uniqueUngrouped[0], node => node.props?.className === 'tk-col-count')[0]?.props?.children === '2',
+  'the all-unique Ungrouped head does not count both agents')
+check(within(uniqueActive, node => String(node.props?.['data-target'] ?? '').includes('role:standard')).length === 0,
+  'the harness default preset still names an agent group')
+
+// round1/round2/round3 share the base `round` even without a separator.
+const roundState = (() => {
+  const next = JSON.parse(JSON.stringify(listState))
+  next.byId['session-b'].running = true
+  next.ids.push('session-c')
+  next.byId['session-c'] = { id: 'session-c', parentId: 'root', running: true, updatedAt: 0 }
+  next.projectionsBySession['session-c'] = { values: {} }
+  const catalog = next.projectionsBySession.root.values.subagentCatalog
+  catalog.find(entry => entry.id === 'session-a').name = 'round1'
+  catalog.find(entry => entry.id === 'session-b').name = 'round2'
+  catalog.push({ id: 'session-c', mode: 'continuable', name: 'round3', createdAt: 3 })
+  return next
+})()
+resetHooks()
+const roundBoard = surface(tabBody({ ...props, useSessions: selector => selector(roundState) }))
+const roundActive = roundBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+const roundHead = within(roundActive, node => node.props?.['data-target'] === 'agents:active:role:round')[0]
+check(roundHead !== undefined, 'round1/round2/round3 did not share the round group')
+check(within(roundHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '3',
+  'the round group does not count its three agents')
+check(within(roundActive, node => node.props?.['data-target'] === 'agents:active:ungrouped').length === 0,
+  'a column with only a repeated base got an Ungrouped head')
 
 /* Navigation: name -> main view, panel icon -> beside, owner -> main view. */
 within(rowOf('session-a'), node => node.props?.className === 'tk-agent-name')[0]?.props?.onClick?.()
@@ -1856,32 +1886,39 @@ check(within(customHead, node => node.props?.className === 'tk-col-count')[0]?.p
   'the custom group head does not count its single member')
 check(within(customActive, node => node.props?.className === 'tk-agent-row').length === 2,
   'the custom group did not keep the lead and its one member')
-// The other agent sits in a column with no group head, so it stays flat.
+// The other agent missed the custom group; its unique base still puts it in
+// one Ungrouped head, because the Roles switch is on.
 const customDone = customBoard.nodes.find(node => node.props?.['data-agent-column'] === 'done')
 check(within(customDone, node => node.props?.className === 'tk-agent-row').length === 1,
   'the ungrouped agent left its column')
-check(within(customDone, node => node.props?.['data-target'] === 'agents:done:ungrouped').length === 0,
-  'an Ungrouped head was drawn for a column with no other group')
+const customDoneUngrouped = within(customDone, node => node.props?.['data-target'] === 'agents:done:ungrouped')[0]
+check(customDoneUngrouped !== undefined,
+  'an unmatched agent with a unique base did not get an Ungrouped head')
+check(within(customDoneUngrouped, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '1',
+  'the unmatched agent\'s Ungrouped head does not count it')
 
-// A singleton role beside a real role group joins an Ungrouped head.
+// A unique base beside a repeated one joins an Ungrouped head.
 const leftoverRoleState = JSON.parse(JSON.stringify(sharedRoleState))
 leftoverRoleState.byId['session-c'] = { id: 'session-c', parentId: 'root', running: true, updatedAt: 0 }
 leftoverRoleState.projectionsBySession['session-c'] = { values: {} }
 leftoverRoleState.projectionsBySession.root.values.subagentCatalog.push(
-  { id: 'session-c', mode: 'continuable', name: 'tester', createdAt: 3 },
+  { id: 'session-c', mode: 'continuable', name: 'reviewer-x1', createdAt: 3 },
 )
 storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: true, customGroups: false }))
 const leftoverRoleBoard = boardFromFreshBundle(leftoverRoleState)
 const leftoverActive = leftoverRoleBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+const leftoverBuilder = within(leftoverActive,
+  node => node.props?.['data-target'] === 'agents:active:role:builder')[0]
+check(leftoverBuilder !== undefined, 'the repeated builder base lost its role group')
 const leftoverUngrouped = within(leftoverActive,
   node => node.props?.['data-target'] === 'agents:active:ungrouped')[0]
-check(leftoverUngrouped !== undefined, 'a singleton role was left flat beside a role group')
+check(leftoverUngrouped !== undefined, 'a unique base was left flat beside a role group')
 check(within(leftoverUngrouped, node => node.props?.className === 'tk-col-title')[0]?.props?.children === 'ungrouped',
-  'the singleton-role Ungrouped head is not titled by the dictionary key')
+  'the unique-base Ungrouped head is not titled by the dictionary key')
 check(within(leftoverUngrouped, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '1',
-  'the singleton-role Ungrouped head does not count its agent')
+  'the unique-base Ungrouped head does not count its agent')
 check(within(leftoverActive, node => node.props?.className === 'tk-agent-row').length === 4,
-  'the singleton-role Ungrouped group lost a row')
+  'the unique-base Ungrouped group lost a row')
 
 // With both grouping switches off the column goes back to a flat list.
 storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: false, customGroups: false }))
@@ -1891,11 +1928,18 @@ check(!flatBoard.nodes.some(node => node.props?.['data-subgroup'] !== undefined)
 check(flatBoard.nodes.filter(node => node.props?.className === 'tk-agent-row').length === 3,
   'the flat fallback lost an agent row')
 
-// Automatic grouping with only singleton roles keeps the flat list too.
+// With Roles on and no repeated base in a column, the whole column is one
+// Ungrouped group, not a flat list.
 storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: true, customGroups: false }))
 const singletonBoard = boardFromFreshBundle()
-check(!singletonBoard.nodes.some(node => String(node.props?.['data-target'] ?? '').endsWith(':ungrouped')),
-  'an Ungrouped head was drawn for a column with no other group')
+const singletonActive = singletonBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+const singletonDone = singletonBoard.nodes.find(node => node.props?.['data-agent-column'] === 'done')
+check(!singletonBoard.nodes.some(node => String(node.props?.['data-target'] ?? '').includes(':role:')),
+  'a unique base still produced a role group')
+check(within(singletonActive, node => node.props?.['data-target'] === 'agents:active:ungrouped').length === 1,
+  'the all-unique active column is not one Ungrouped group')
+check(within(singletonDone, node => node.props?.['data-target'] === 'agents:done:ungrouped').length === 1,
+  'the all-unique done column is not one Ungrouped group')
 
 /* --- Grouping switches in the two section headers ---------------------- */
 
