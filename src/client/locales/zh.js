@@ -144,4 +144,8 @@
       aboutReadme: 'README',
       aboutChangelog: '更新日志',
       ungrouped: '未分组',
+      groupingToggle: '分组',
+      groupingOn: '分组已开启',
+      groupingOff: '分组已关闭',
+      groupingToggleHint: '切换此分区的分组',
     }

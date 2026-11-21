@@ -144,4 +144,8 @@
       aboutReadme: 'README',
       aboutChangelog: 'Журнал изменений',
       ungrouped: 'Без группы',
+      groupingToggle: 'Группы',
+      groupingOn: 'Группировка включена',
+      groupingOff: 'Группировка выключена',
+      groupingToggleHint: 'Переключить группировку в этом разделе',
     }

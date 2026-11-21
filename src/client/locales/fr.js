@@ -144,4 +144,8 @@
       aboutReadme: 'README',
       aboutChangelog: 'Journal des modifications',
       ungrouped: 'Sans groupe',
+      groupingToggle: 'Groupes',
+      groupingOn: 'Regroupement activé',
+      groupingOff: 'Regroupement désactivé',
+      groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
     }

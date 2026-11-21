@@ -144,4 +144,8 @@
       aboutReadme: 'README',
       aboutChangelog: 'Änderungsprotokoll',
       ungrouped: 'Ohne Gruppe',
+      groupingToggle: 'Gruppen',
+      groupingOn: 'Gruppierung an',
+      groupingOff: 'Gruppierung aus',
+      groupingToggleHint: 'Gruppierung in diesem Bereich umschalten',
     }

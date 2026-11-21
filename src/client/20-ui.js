@@ -38,6 +38,15 @@
 .tk-sort-option[aria-checked="true"] .tk-sort-check{visibility:visible}
 .tk-readonly{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
   border-radius:999px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
+.tk-group-toggle{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
+  border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;
+  font-size:10px;line-height:14px;white-space:nowrap;cursor:pointer}
+.tk-group-toggle:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
+.tk-group-toggle[data-on="true"]{color:var(--dsw-alias-brand-primary);
+  border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent)}
+.tk-group-toggle:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-group-toggle[data-on="false"]{opacity:.8}
 .tk-icon-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;
   border:1px solid transparent;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .tk-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent));

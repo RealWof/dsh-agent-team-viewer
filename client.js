@@ -772,6 +772,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Changelog',
       ungrouped: 'Ungrouped',
+      groupingToggle: 'Groups',
+      groupingOn: 'Grouping is on',
+      groupingOff: 'Grouping is off',
+      groupingToggleHint: 'Toggle grouping in this section',
     }
 
 /**
@@ -920,6 +924,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Журнал изменений',
       ungrouped: 'Без группы',
+      groupingToggle: 'Группы',
+      groupingOn: 'Группировка включена',
+      groupingOff: 'Группировка выключена',
+      groupingToggleHint: 'Переключить группировку в этом разделе',
     }
 
 /**
@@ -1068,6 +1076,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: '更新日志',
       ungrouped: '未分组',
+      groupingToggle: '分组',
+      groupingOn: '分组已开启',
+      groupingOff: '分组已关闭',
+      groupingToggleHint: '切换此分区的分组',
     }
 
 /**
@@ -1216,6 +1228,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: '変更履歴',
       ungrouped: '未分類',
+      groupingToggle: 'グループ',
+      groupingOn: 'グループ化オン',
+      groupingOff: 'グループ化オフ',
+      groupingToggleHint: 'このセクションのグループ化を切り替えます',
     }
 
 /**
@@ -1364,6 +1380,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Registro de cambios',
       ungrouped: 'Sin grupo',
+      groupingToggle: 'Grupos',
+      groupingOn: 'Agrupación activada',
+      groupingOff: 'Agrupación desactivada',
+      groupingToggleHint: 'Alternar la agrupación en esta sección',
     }
 
 /**
@@ -1512,6 +1532,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Journal des modifications',
       ungrouped: 'Sans groupe',
+      groupingToggle: 'Groupes',
+      groupingOn: 'Regroupement activé',
+      groupingOff: 'Regroupement désactivé',
+      groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
     }
 
 /**
@@ -1660,6 +1684,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Änderungsprotokoll',
       ungrouped: 'Ohne Gruppe',
+      groupingToggle: 'Gruppen',
+      groupingOn: 'Gruppierung an',
+      groupingOff: 'Gruppierung aus',
+      groupingToggleHint: 'Gruppierung in diesem Bereich umschalten',
     }
 
 /**
@@ -1808,6 +1836,10 @@ window.__ModuleLoader__.load({
       aboutReadme: 'README',
       aboutChangelog: 'Registro de alterações',
       ungrouped: 'Sem grupo',
+      groupingToggle: 'Grupos',
+      groupingOn: 'Agrupamento ativado',
+      groupingOff: 'Agrupamento desativado',
+      groupingToggleHint: 'Alternar o agrupamento nesta seção',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1850,6 +1882,15 @@ window.__ModuleLoader__.load({
 .tk-sort-option[aria-checked="true"] .tk-sort-check{visibility:visible}
 .tk-readonly{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
   border-radius:999px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
+.tk-group-toggle{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
+  border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;
+  font-size:10px;line-height:14px;white-space:nowrap;cursor:pointer}
+.tk-group-toggle:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
+.tk-group-toggle[data-on="true"]{color:var(--dsw-alias-brand-primary);
+  border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent)}
+.tk-group-toggle:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-group-toggle[data-on="false"]{opacity:.8}
 .tk-icon-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;
   border:1px solid transparent;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .tk-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent));
@@ -5030,6 +5071,67 @@ window.__ModuleLoader__.load({
     ]
 
     /**
+     * The grouping flags each section header's switch turned off, so switching
+     * it back on restores exactly what the reader had. Page-lifetime, like the
+     * fold state; a fresh page starts from the shipped fallbacks.
+     */
+    const GROUPING_MEMORY = { agents: null, tasks: null }
+
+    /**
+     * The view-settings patch that flips one section's grouping switch.
+     *
+     * Switching off remembers the flags it replaced; switching on restores
+     * them, or the shipped fallback (`autoRoleGroups: true`,
+     * `customGroups: false` for agents, `taskCustomGroups: false` for tasks)
+     * when the reader has not switched the section off in this page.
+     * @param section - `agents` or `tasks`.
+     * @param settings - the current view settings.
+     * @returns the patch to write through the shared store.
+     */
+    function groupingPatch(section, settings) {
+      if (section === 'agents') {
+        const on = settings.autoRoleGroups === true || settings.customGroups === true
+        if (on) {
+          GROUPING_MEMORY.agents = {
+            autoRoleGroups: settings.autoRoleGroups === true,
+            customGroups: settings.customGroups === true,
+          }
+          return { autoRoleGroups: false, customGroups: false }
+        }
+        const remembered = GROUPING_MEMORY.agents
+        GROUPING_MEMORY.agents = null
+        return remembered === null
+          ? { autoRoleGroups: true, customGroups: false }
+          : { autoRoleGroups: remembered.autoRoleGroups, customGroups: remembered.customGroups }
+      }
+      if (settings.taskCustomGroups === true) {
+        GROUPING_MEMORY.tasks = true
+        return { taskCustomGroups: false }
+      }
+      const remembered = GROUPING_MEMORY.tasks
+      GROUPING_MEMORY.tasks = null
+      return { taskCustomGroups: remembered === true }
+    }
+
+    /**
+     * The compact grouping switch a section header carries next to its sort
+     * control. It writes the same view settings the Settings page edits, so a
+     * checkbox and a header switch always agree.
+     * @param props - `on`, the visible `label`, the state `hint`, and `onToggle`.
+     */
+    function GroupingToggle({ on, label, hint, onToggle }) {
+      return h('button', {
+        type: 'button',
+        className: 'tk-group-toggle',
+        'data-on': on === true ? 'true' : 'false',
+        'aria-pressed': on === true ? 'true' : 'false',
+        'aria-label': hint,
+        title: hint,
+        onClick: () => { onToggle() },
+      }, h(Icon, { name: 'layers', size: 10 }), h('span', null, label))
+    }
+
+    /**
      * The compact sort menu both section headers carry. It writes the same
      * `sort` view setting the Settings page edits, so the board reorders in
      * place without leaving the tab. A native `<select>` renders its popup in
@@ -5204,12 +5306,13 @@ window.__ModuleLoader__.load({
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`.
+     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `agentGroupingOn`
+     *   and `onToggleAgentGrouping`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
-      showAgentModel = false,
+      showAgentModel = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -5278,6 +5381,12 @@ window.__ModuleLoader__.load({
           costState === 'missing'
             ? h('span', { className: 'tk-note', title: t('costMissingHint') }, t('costMissing'))
             : null,
+          h(GroupingToggle, {
+            on: agentGroupingOn,
+            label: t('groupingToggle'),
+            hint: (agentGroupingOn ? t('groupingOn') : t('groupingOff')) + ' · ' + t('groupingToggleHint'),
+            onToggle: onToggleAgentGrouping,
+          }),
           h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
           ? null
@@ -5603,6 +5712,8 @@ window.__ModuleLoader__.load({
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
               showAgentModel: settings.showAgentModel === true,
+              agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
+              onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
             })
             : null,
 
@@ -5619,6 +5730,13 @@ window.__ModuleLoader__.load({
             h('h3', { className: 'tk-sec-title' }, t('tasksHeading')),
             h('span', { className: 'tk-sec-note' }, String(model.tasks.length) + ' ' + countLabel),
             h('span', { className: 'tk-head-spacer' }),
+            h(GroupingToggle, {
+              on: settings.taskCustomGroups === true,
+              label: t('groupingToggle'),
+              hint: (settings.taskCustomGroups === true ? t('groupingOn') : t('groupingOff'))
+                + ' · ' + t('groupingToggleHint'),
+              onToggle: () => { updateSettings(groupingPatch('tasks', settings)) },
+            }),
             h(SortSelect, {
               sort: settings.sort,
               onChange: value => { updateSettings({ sort: value }) },

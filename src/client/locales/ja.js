@@ -144,4 +144,8 @@
       aboutReadme: 'README',
       aboutChangelog: '変更履歴',
       ungrouped: '未分類',
+      groupingToggle: 'グループ',
+      groupingOn: 'グループ化オン',
+      groupingOff: 'グループ化オフ',
+      groupingToggleHint: 'このセクションのグループ化を切り替えます',
     }

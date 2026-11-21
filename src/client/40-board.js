@@ -491,6 +491,67 @@
     ]
 
     /**
+     * The grouping flags each section header's switch turned off, so switching
+     * it back on restores exactly what the reader had. Page-lifetime, like the
+     * fold state; a fresh page starts from the shipped fallbacks.
+     */
+    const GROUPING_MEMORY = { agents: null, tasks: null }
+
+    /**
+     * The view-settings patch that flips one section's grouping switch.
+     *
+     * Switching off remembers the flags it replaced; switching on restores
+     * them, or the shipped fallback (`autoRoleGroups: true`,
+     * `customGroups: false` for agents, `taskCustomGroups: false` for tasks)
+     * when the reader has not switched the section off in this page.
+     * @param section - `agents` or `tasks`.
+     * @param settings - the current view settings.
+     * @returns the patch to write through the shared store.
+     */
+    function groupingPatch(section, settings) {
+      if (section === 'agents') {
+        const on = settings.autoRoleGroups === true || settings.customGroups === true
+        if (on) {
+          GROUPING_MEMORY.agents = {
+            autoRoleGroups: settings.autoRoleGroups === true,
+            customGroups: settings.customGroups === true,
+          }
+          return { autoRoleGroups: false, customGroups: false }
+        }
+        const remembered = GROUPING_MEMORY.agents
+        GROUPING_MEMORY.agents = null
+        return remembered === null
+          ? { autoRoleGroups: true, customGroups: false }
+          : { autoRoleGroups: remembered.autoRoleGroups, customGroups: remembered.customGroups }
+      }
+      if (settings.taskCustomGroups === true) {
+        GROUPING_MEMORY.tasks = true
+        return { taskCustomGroups: false }
+      }
+      const remembered = GROUPING_MEMORY.tasks
+      GROUPING_MEMORY.tasks = null
+      return { taskCustomGroups: remembered === true }
+    }
+
+    /**
+     * The compact grouping switch a section header carries next to its sort
+     * control. It writes the same view settings the Settings page edits, so a
+     * checkbox and a header switch always agree.
+     * @param props - `on`, the visible `label`, the state `hint`, and `onToggle`.
+     */
+    function GroupingToggle({ on, label, hint, onToggle }) {
+      return h('button', {
+        type: 'button',
+        className: 'tk-group-toggle',
+        'data-on': on === true ? 'true' : 'false',
+        'aria-pressed': on === true ? 'true' : 'false',
+        'aria-label': hint,
+        title: hint,
+        onClick: () => { onToggle() },
+      }, h(Icon, { name: 'layers', size: 10 }), h('span', null, label))
+    }
+
+    /**
      * The compact sort menu both section headers carry. It writes the same
      * `sort` view setting the Settings page edits, so the board reorders in
      * place without leaving the tab. A native `<select>` renders its popup in
@@ -665,12 +726,13 @@
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
-     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`.
+     *   `onExpandGroup`, `onCollapseGroup`, `showAgentModel`, `agentGroupingOn`
+     *   and `onToggleAgentGrouping`.
      */
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
-      showAgentModel = false,
+      showAgentModel = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -739,6 +801,12 @@
           costState === 'missing'
             ? h('span', { className: 'tk-note', title: t('costMissingHint') }, t('costMissing'))
             : null,
+          h(GroupingToggle, {
+            on: agentGroupingOn,
+            label: t('groupingToggle'),
+            hint: (agentGroupingOn ? t('groupingOn') : t('groupingOff')) + ' · ' + t('groupingToggleHint'),
+            onToggle: onToggleAgentGrouping,
+          }),
           h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
           ? null
@@ -1064,6 +1132,8 @@
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
               showAgentModel: settings.showAgentModel === true,
+              agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
+              onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
             })
             : null,
 
@@ -1080,6 +1150,13 @@
             h('h3', { className: 'tk-sec-title' }, t('tasksHeading')),
             h('span', { className: 'tk-sec-note' }, String(model.tasks.length) + ' ' + countLabel),
             h('span', { className: 'tk-head-spacer' }),
+            h(GroupingToggle, {
+              on: settings.taskCustomGroups === true,
+              label: t('groupingToggle'),
+              hint: (settings.taskCustomGroups === true ? t('groupingOn') : t('groupingOff'))
+                + ' · ' + t('groupingToggleHint'),
+              onToggle: () => { updateSettings(groupingPatch('tasks', settings)) },
+            }),
             h(SortSelect, {
               sort: settings.sort,
               onChange: value => { updateSettings({ sort: value }) },

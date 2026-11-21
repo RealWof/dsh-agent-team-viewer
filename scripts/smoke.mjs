@@ -1614,6 +1614,111 @@ const singletonBoard = boardFromFreshBundle()
 check(!singletonBoard.nodes.some(node => String(node.props?.['data-target'] ?? '').endsWith(':ungrouped')),
   'an Ungrouped head was drawn for a column with no other group')
 
+/* --- Grouping switches in the two section headers ---------------------- */
+
+storage.delete(COLLAPSE_STORAGE_KEY)
+const groupingToggleOf = (rendered, headClass) => {
+  const head = rendered.nodes.find(node => node.props?.className === headClass)
+  return within(head, node => node.props?.className === 'tk-group-toggle')[0]
+}
+const headerChildren = head => (Array.isArray(head?.props?.children) ? head.props.children : [])
+/** Whether a header's grouping switch comes before its sort control. */
+const toggleBeforeSort = head => {
+  const kids = headerChildren(head)
+  const toggleIndex = kids.findIndex(child => typeof child?.type === 'function'
+    && child.type.name === 'GroupingToggle')
+  const sortIndex = kids.findIndex(child => typeof child?.type === 'function' && child.type.name === 'SortSelect')
+  return toggleIndex >= 0 && sortIndex >= 0 && toggleIndex < sortIndex
+}
+
+// Agents: switching off flattens the strip and remembers the exact flags.
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  autoRoleGroups: true,
+  customGroups: true,
+  customGroupsText: 'crew: standard',
+  taskCustomGroups: false,
+}))
+const agentToggleBoard = boardFromFreshBundle(sharedRoleState)
+const agentToggleHead = agentToggleBoard.nodes.find(node => node.props?.className === 'tk-agents-head')
+const agentToggle = within(agentToggleHead, node => node.props?.className === 'tk-group-toggle')[0]
+const tasksHeaderNode = agentToggleBoard.nodes.find(node => node.props?.className === 'tk-section-head')
+const tasksToggle = within(tasksHeaderNode, node => node.props?.className === 'tk-group-toggle')[0]
+check(agentToggle !== undefined && tasksToggle !== undefined, 'a section header has no grouping switch')
+check(agentToggle?.props?.['aria-pressed'] === 'true', 'the agents switch does not report its on state')
+check(tasksToggle?.props?.['aria-pressed'] === 'false', 'the tasks switch does not report its off state')
+check(surface(agentToggle).texts.includes('groupingToggle'), 'the agents switch has no localized label')
+check(surface(tasksToggle).texts.includes('groupingToggle'), 'the tasks switch has no localized label')
+check(String(agentToggle?.props?.title).includes('groupingOn'), 'the agents switch has no on hint')
+check(String(tasksToggle?.props?.title).includes('groupingOff'), 'the tasks switch has no off hint')
+check(toggleBeforeSort(agentToggleHead), 'the agents grouping switch is not before the sort menu')
+check(toggleBeforeSort(tasksHeaderNode), 'the tasks grouping switch is not before the sort menu')
+agentToggle?.props?.onClick?.()
+let groupingWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
+check(groupingWrite.autoRoleGroups === false && groupingWrite.customGroups === false,
+  'the agents switch did not flatten the grouping settings: ' + JSON.stringify(groupingWrite))
+resetSlots()
+resetHooks()
+const flatToggleBoard = surface(tabBody({ ...props, useSessions: selector => selector(sharedRoleState) }))
+check(flatToggleBoard.nodes.filter(node => node.props?.className === 'tk-agent-row').length === 3,
+  'the agents switch did not flatten the strip')
+check(!flatToggleBoard.nodes.some(node => node.props?.['data-subgroup'] !== undefined),
+  'the agents switch left a group head behind')
+const flatAgentToggle = groupingToggleOf(flatToggleBoard, 'tk-agents-head')
+check(flatAgentToggle?.props?.['aria-pressed'] === 'false', 'the agents switch did not report its off state')
+resetSlots()
+const syncedSettings = surface(settingsSection({ t: key => key }))
+const syncedBoxes = syncedSettings.nodes.filter(node => node.props?.type === 'checkbox')
+check(syncedBoxes[0]?.props?.checked === false && syncedBoxes[1]?.props?.checked === false,
+  'the Settings page did not follow the agents switch')
+flatAgentToggle?.props?.onClick?.()
+groupingWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
+check(groupingWrite.autoRoleGroups === true && groupingWrite.customGroups === true,
+  'the agents switch did not restore the exact flags: ' + JSON.stringify(groupingWrite))
+resetSlots()
+resetHooks()
+const restoredGroupingBoard = surface(tabBody({ ...props, useSessions: selector => selector(sharedRoleState) }))
+check(restoredGroupingBoard.nodes.some(node => node.props?.['data-target'] === 'agents:active:custom:crew'),
+  'the restored agent grouping did not come back')
+
+// A section that was never grouped falls back to automatic roles.
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: false, customGroups: false }))
+const fallbackToggleBoard = boardFromFreshBundle(sharedRoleState)
+groupingToggleOf(fallbackToggleBoard, 'tk-agents-head')?.props?.onClick?.()
+groupingWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
+check(groupingWrite.autoRoleGroups === true && groupingWrite.customGroups === false,
+  'turning an ungrouped section on did not use the automatic-role fallback')
+
+// Tasks: the switch hides and restores the custom task groups.
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  autoRoleGroups: false,
+  customGroups: false,
+  taskCustomGroups: true,
+  taskCustomGroupsText: 'review: Review',
+}))
+const taskSwitchBoard = boardFromFreshBundle(taskGroupState)
+const taskSwitch = groupingToggleOf(taskSwitchBoard, 'tk-section-head')
+check(taskSwitch?.props?.['aria-pressed'] === 'true', 'the tasks switch does not report its on state')
+taskSwitch?.props?.onClick?.()
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).taskCustomGroups === false,
+  'the tasks switch did not turn task grouping off')
+resetSlots()
+resetHooks()
+const tasksOffBoard = surface(tabBody({ ...props, useSessions: selector => selector(taskGroupState) }))
+check(!tasksOffBoard.nodes.some(node => String(node.props?.['data-target'] ?? '').includes(':custom:')),
+  'the tasks switch left a custom task group head behind')
+const tasksOffToggle = groupingToggleOf(tasksOffBoard, 'tk-section-head')
+check(tasksOffToggle?.props?.['aria-pressed'] === 'false', 'the tasks switch did not report its off state')
+check(surface(tasksOffToggle).texts.includes('groupingToggle'), 'the off tasks switch lost its label')
+tasksOffToggle?.props?.onClick?.()
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).taskCustomGroups === true,
+  'the tasks switch did not restore task grouping')
+resetSlots()
+resetHooks()
+const tasksBackBoard = surface(tabBody({ ...props, useSessions: selector => selector(taskGroupState) }))
+check(tasksBackBoard.nodes.some(node => String(node.props?.['data-target'] ?? '')
+  .includes('tasks:queued:custom:review')),
+'the restored task grouping did not come back')
+
 // ...and the flat rows still follow the view sort, with the Lead pinned first.
 const flatSortState = JSON.parse(JSON.stringify(listState))
 flatSortState.byId['session-a'].running = false

@@ -143,4 +143,8 @@
       aboutReadme: 'README',
       aboutChangelog: 'Changelog',
       ungrouped: 'Ungrouped',
+      groupingToggle: 'Groups',
+      groupingOn: 'Grouping is on',
+      groupingOff: 'Grouping is off',
+      groupingToggleHint: 'Toggle grouping in this section',
     }
