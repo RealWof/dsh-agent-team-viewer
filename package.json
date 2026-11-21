@@ -37,6 +37,14 @@
     "CHANGELOG.md",
     "LICENSE"
   ],
+  "peerDependencies": {
+    "@deepseek-ai/schemastery": ">=3.18.4 <4"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/schemastery": {
+      "optional": true
+    }
+  },
   "engines": {
     "node": ">=20",
     "dsh": ">=0.2.1-rc.5 <0.3.0"

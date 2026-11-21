@@ -15,6 +15,7 @@
       faceOf: () => undefined,
       refreshProjections: () => {},
       loadCosts: async () => null,
+      pluginLimit: async () => undefined,
       listState: () => undefined,
       subscribeList: () => () => {},
       jobsSnapshot: () => undefined,

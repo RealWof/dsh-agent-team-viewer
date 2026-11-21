@@ -41,8 +41,18 @@ window.__ModuleLoader__.load({
     const AGENT_PRESET = 'agentPreset'
     /** The shipped subagent plugin's locale namespace, reused for its labels. */
     const AGENT_NS = 'subagent'
-    /** Hard cap on the agent tree walk, so a huge tree cannot stall the board. */
-    const AGENTS_CAP = 64
+    /**
+     * How many subagents the tree walk keeps when the row's config names no
+     * limit. `-1` — the shipped default — means no limit, because a session
+     * appends each new agent to the end of its catalog: a cap always hides the
+     * newest agents, which are the ones most likely to be working. The field
+     * exists for a profile that needs to bound the walk of a huge tree.
+     */
+    const AGENTS_LIMIT_DEFAULT = -1
+    /** Profile entry id of this plugin's Host row: the settings namespace and its config key. */
+    const SETTINGS_NAMESPACE = 'agent-team-viewer'
+    /** The row's Config field carrying the agent limit; `-1` means no limit. */
+    const AGENTS_LIMIT_FIELD = 'agentsLimit'
     /** Per-session token counters published for every listed session. */
     const TOKENS_PROJECTION = 'tokenUsage'
     /** Per-session wall-clock agent stats; summary-excluded, so it needs a refresh. */
@@ -1925,19 +1935,6 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Walk the subagent tree below one session, breadth first.
-     *
-     * `subagentCatalog` lists only a session's DIRECT children, so the tree is
-     * walked level by level; each child's own catalog is read from the same
-     * sessions list once the host has loaded it. Activity is derived the way
-     * the Subagents menu derives it: `running` comes from the child session's
-     * own run state, and "completed" needs the closed-turn marker.
-     *
-     * @param state - the sessions list state.
-     * @param rootId - the Lead session of the tree.
-     * @returns `{ agents, childIds }` — flat entries plus the ids whose catalogs are still needed.
-     */
-    /**
      * The model this session runs, with its provider and reasoning effort.
      * `modelSelection.next` is the pending-or-last-used choice, so it is the
      * effective one; effort names live in the model catalog, so the raw id is
@@ -1970,14 +1967,40 @@ window.__ModuleLoader__.load({
       return typeof value === 'string' && value !== '' ? value : undefined
     }
 
-    function collectAgents(state, rootId) {
+    /**
+     * Walk the subagent tree below one session, breadth first.
+     *
+     * `subagentCatalog` lists only a session's DIRECT children, so the tree is
+     * walked level by level; each child's own catalog is read from the same
+     * sessions list once the host has loaded it.
+     *
+     * Activity is derived the way the Subagents menu derives it: `running` comes
+     * from the live Session status store, falling back to the list summary only
+     * while that store has no answer. The summary alone is not enough: a row the
+     * client synthesizes from a parent's catalog carries the run state of an
+     * already-open session, or `false`, and never the Host's current answer — so
+     * a running agent would sit in "idle" (the product's own `useSessionStatus`
+     * comment: catalog rows "do not establish Host running state"). The
+     * "completed" word still needs the closed-turn marker.
+     *
+     * @param state - the sessions list state.
+     * @param rootId - the Lead session of the tree.
+     * @param statuses - the live `useSessionStatus` map, when the host supplies it.
+     * @param limit - how many agents to keep, from the row's Config; a negative value keeps every one.
+     * @returns `{ agents, childIds }` — flat entries plus the ids whose catalogs are still needed.
+     */
+    function collectAgents(state, rootId, statuses, limit) {
       const agents = []
       const childIds = []
       const seen = new Set()
       if (typeof rootId !== 'string' || rootId === '') return { agents, childIds }
+      // A negative limit (the shipped default is -1) means "no limit": the board
+      // follows the catalogs to the end and counts the whole tree for the totals.
+      const configured = num(limit, AGENTS_LIMIT_DEFAULT)
+      const cap = configured < 0 ? Number.POSITIVE_INFINITY : Math.floor(configured)
       seen.add(rootId)
       const queue = [{ id: rootId, depth: 0 }]
-      while (queue.length > 0 && agents.length < AGENTS_CAP) {
+      while (queue.length > 0 && agents.length < cap) {
         const node = queue.shift()
         const catalog = listProjection(state, node.id, AGENT_CATALOG)
         if (!Array.isArray(catalog)) {
@@ -1991,7 +2014,7 @@ window.__ModuleLoader__.load({
           const summary = state?.byId?.[entry.id]
           const timing = listProjection(state, entry.id, AGENT_TIMING)
           const mode = typeof entry.mode === 'string' ? entry.mode : 'unknown'
-          const running = summary?.running === true
+          const running = (statuses?.get(entry.id)?.running ?? summary?.running) === true
           const completed = mode !== 'external' && !running && timing?.lastTurnCompleted === true
           agents.push({
             id: entry.id,
@@ -2015,7 +2038,7 @@ window.__ModuleLoader__.load({
             model: selectionOf(state, entry.id),
             preset: presetOf(state, entry.id),
           })
-          if (agents.length >= AGENTS_CAP) break
+          if (agents.length >= cap) break
           queue.push({ id: entry.id, depth: node.depth + 1 })
         }
       }
@@ -2309,22 +2332,27 @@ window.__ModuleLoader__.load({
      * The board model: the Team projection, the subagent tree with its session
      * metrics, the observed ledger and a ticking clock.
      *
-     * @param props - the slot's framework props (`useProjection`, `useSessions`, `sessionId`).
+     * @param props - the slot's framework props (`useProjection`, `useSessions`,
+     *   `useSessionStatus`, `sessionId`).
      * @param services - the injected face: `faceOf`, `refreshProjections`, `loadCosts`, `listState`, `subscribeList`.
      * @returns the model the board renders.
      */
     function useTeamModel(props, services) {
       const { t } = props
-      // The seat supplies these two hooks for session-scoped slots. Fall back to
+      // The seat supplies these hooks for session-scoped slots. Fall back to
       // the injected session-list face when a host build does not, so the board
       // still renders instead of failing on an absent prop.
       const useProjectionProp = typeof props.useProjection === 'function' ? props.useProjection : null
       const useSessionsProp = typeof props.useSessions === 'function' ? props.useSessions : null
+      // `useSessionStatus` is a global standard prop, so every slot gets it; the
+      // fallback keeps an older host rendering with the list summary alone.
+      const useStatusProp = typeof props.useSessionStatus === 'function' ? props.useSessionStatus : null
       const own = useProjectionProp === null ? undefined : useProjectionProp(TEAM_PROJECTION)
       const [, setVersion] = useState(0)
       const state = useSessionsProp === null
         ? services.listState()
         : useSessionsProp(snapshot => snapshot)
+      const statuses = useStatusProp === null ? undefined : useStatusProp(value => value)
       useEffect(() => {
         if (useSessionsProp !== null) return undefined
         return services.subscribeList(() => { setVersion(value => value + 1) })
@@ -2334,7 +2362,8 @@ window.__ModuleLoader__.load({
       const resolved = useMemo(() => resolveTeam(state, props.sessionId, own), [state, props.sessionId, own])
       const team = resolved.team
       const rootId = resolved.rootId
-      const tree = useMemo(() => collectAgents(state, rootId), [state, rootId])
+      const [limit, setLimit] = useState(AGENTS_LIMIT_DEFAULT)
+      const tree = useMemo(() => collectAgents(state, rootId, statuses, limit), [state, rootId, statuses, limit])
       const agents = tree.agents
       const agentIds = tree.childIds
       const ledger = useLedger()
@@ -2342,6 +2371,27 @@ window.__ModuleLoader__.load({
       const [now, setNow] = useState(() => Date.now())
       const [costState, setCostState] = useState('idle')
       const refreshed = useRef({})
+      /** Whether the row's limit has been read; a late settings surface retries until it has. */
+      const limitKnown = useRef(false)
+
+      /**
+       * Read the row's `agentsLimit` from the settings document. The board
+       * renders before the answer arrives and after a failed read, so the
+       * built-in default covers both.
+       */
+      const readLimit = useCallback(async () => {
+        let value
+        try {
+          value = await services.pluginLimit()
+        } catch {
+          value = undefined
+        }
+        if (typeof value !== 'number' || !Number.isFinite(value)) return
+        limitKnown.current = true
+        setLimit(current => (current === value ? current : value))
+      }, [services])
+
+      useEffect(() => { readLimit() }, [readLimit])
 
       const tasks = useMemo(() => {
         const list = Array.isArray(team?.tasks) ? team.tasks : []
@@ -2361,7 +2411,7 @@ window.__ModuleLoader__.load({
       const lead = useMemo(() => {
         if (typeof rootId !== 'string' || rootId === '') return undefined
         const summary = state?.byId?.[rootId]
-        const running = summary?.running === true
+        const running = (statuses?.get(rootId)?.running ?? summary?.running) === true
         const name = typeof summary?.title === 'string' && summary.title !== ''
           ? summary.title
           : (typeof summary?.displayTitle === 'string' && summary.displayTitle !== ''
@@ -2384,7 +2434,7 @@ window.__ModuleLoader__.load({
           model: selectionOf(state, rootId),
           preset: presetOf(state, rootId),
         }
-      }, [state, rootId, t])
+      }, [state, rootId, statuses, t])
 
       const taskCounts = useMemo(() => {
         const counts = {}
@@ -2554,6 +2604,10 @@ window.__ModuleLoader__.load({
           }
         }
         for (const id of targets) services.refreshProjections(id)
+        // A configuration edit reaches the board on an explicit refresh; a
+        // settings surface that mounted late is retried by the periodic pass
+        // until it has answered once.
+        if (force === true || limitKnown.current !== true) readLimit()
         if (costIds.length === 0) return
         const result = await services.loadCosts(costIds)
         if (result === null) {
@@ -2564,7 +2618,7 @@ window.__ModuleLoader__.load({
         setCostState('ready')
         setNow(Date.now())
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [costIds.join(','), agentIds.join(','), rootId, props.sessionId, services])
+      }, [costIds.join(','), agentIds.join(','), rootId, props.sessionId, services, readLimit])
 
       useEffect(() => {
         pull(false)
@@ -2633,6 +2687,7 @@ window.__ModuleLoader__.load({
       faceOf: () => undefined,
       refreshProjections: () => {},
       loadCosts: async () => null,
+      pluginLimit: async () => undefined,
       listState: () => undefined,
       subscribeList: () => () => {},
       jobsSnapshot: () => undefined,
@@ -3942,6 +3997,35 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * The agent limit the profile row's Config asks for, read from the
+         * settings document the Host serves. `agentsLimit` is declared volatile,
+         * so the Host projects the live value into that document; the settings
+         * surface is optional for a viewer, and an unanswered read keeps the
+         * built-in default.
+         * @returns the configured limit, or undefined when the profile supplies none.
+         */
+        const pluginLimit = async () => {
+          try {
+            const remote = ctx.get('remote')
+            const settings = remote?.settings ?? ctx.get('remote.settings')
+            if (settings === null || settings === undefined || typeof settings.describe !== 'function') return undefined
+            const answer = await settings.describe()
+            if (answer === null || typeof answer !== 'object' || answer.ok !== true) return undefined
+            const namespaces = answer.value?.namespaces
+            if (!Array.isArray(namespaces)) return undefined
+            // The namespace is this bundle's own row id; a profile that renames
+            // the row is still found by the field the row declares.
+            const row = namespaces.find(entry => entry?.ns === SETTINGS_NAMESPACE)
+              ?? namespaces.find(entry => typeof entry?.value?.[AGENTS_LIMIT_FIELD] === 'number')
+            const value = row?.value?.[AGENTS_LIMIT_FIELD]
+            return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+          } catch {
+            // Without the settings surface the board keeps its built-in limit.
+            return undefined
+          }
+        }
+
+        /**
          * The client jobs service installed by the job controller, when the
          * profile has it. The board only attributes jobs — it never kills one
          * and never opens an output observation — so the service is a soft
@@ -4077,6 +4161,7 @@ window.__ModuleLoader__.load({
           faceOf,
           refreshProjections,
           loadCosts,
+          pluginLimit,
           listState,
           subscribeList,
           jobsSnapshot,

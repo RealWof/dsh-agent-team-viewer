@@ -4,6 +4,26 @@ All notable changes to this plugin are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `agentsLimit` — how many subagents the board walks and draws — is now the profile row's Config field:
+  the default is `-1` (no limit), because a session appends every new agent to the end of its catalog and
+  a cap therefore hides the newest, busiest agents; a positive number is available for a profile that must
+  bound a huge tree. The field is volatile, so the browser half reads the live value from the settings
+  document, the Plugins page offers it as a form, and the profile patch still sets it
+  (`config: { agentsLimit: 128 }`). Without the settings surface the built-in default stands.
+
+### Fixed
+
+- The agents section filed working subagents under **idle**. `running` was read from the sessions-list
+  summary, but a row the client synthesizes from a parent's `subagentCatalog` carries only an
+  already-open session's run state — or `false` — and never the Host's current answer, so a busy agent
+  looked stopped. The board now reads the live `useSessionStatus` map first, exactly as the shipped
+  Subagents menu does, and falls back to the list summary only when the host supplies no status; the
+  agent's run timer and the running-group order follow the same truth.
+
 ## [0.1.0] - 2026-11-20
 
 ### Added

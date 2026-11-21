@@ -130,6 +130,35 @@
         }
 
         /**
+         * The agent limit the profile row's Config asks for, read from the
+         * settings document the Host serves. `agentsLimit` is declared volatile,
+         * so the Host projects the live value into that document; the settings
+         * surface is optional for a viewer, and an unanswered read keeps the
+         * built-in default.
+         * @returns the configured limit, or undefined when the profile supplies none.
+         */
+        const pluginLimit = async () => {
+          try {
+            const remote = ctx.get('remote')
+            const settings = remote?.settings ?? ctx.get('remote.settings')
+            if (settings === null || settings === undefined || typeof settings.describe !== 'function') return undefined
+            const answer = await settings.describe()
+            if (answer === null || typeof answer !== 'object' || answer.ok !== true) return undefined
+            const namespaces = answer.value?.namespaces
+            if (!Array.isArray(namespaces)) return undefined
+            // The namespace is this bundle's own row id; a profile that renames
+            // the row is still found by the field the row declares.
+            const row = namespaces.find(entry => entry?.ns === SETTINGS_NAMESPACE)
+              ?? namespaces.find(entry => typeof entry?.value?.[AGENTS_LIMIT_FIELD] === 'number')
+            const value = row?.value?.[AGENTS_LIMIT_FIELD]
+            return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+          } catch {
+            // Without the settings surface the board keeps its built-in limit.
+            return undefined
+          }
+        }
+
+        /**
          * The client jobs service installed by the job controller, when the
          * profile has it. The board only attributes jobs — it never kills one
          * and never opens an output observation — so the service is a soft
@@ -265,6 +294,7 @@
           faceOf,
           refreshProjections,
           loadCosts,
+          pluginLimit,
           listState,
           subscribeList,
           jobsSnapshot,

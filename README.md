@@ -43,6 +43,23 @@ Then open a session and click the board button immediately left of **Subagents**
 or the board card on the right panel's start page, or the **Board** tab. Team mode is only needed for
 task changes; retained tasks and the subagent tree stay visible without it.
 
+## Configuration
+
+One optional setting, either in the profile row's `config` or in **Settings → Plugins**:
+
+```yaml
+- id: agent-team-viewer
+  name: dsh-agent-team-viewer
+  config:
+    agentsLimit: 128
+```
+
+`agentsLimit` caps how many subagents the board walks and draws. The default is `-1` — no limit, so the
+board follows the tree to the end. A session appends every new agent to the end of its catalog, so a cap
+always hides the newest agents, which are the ones most likely to be working; set a positive number only
+when a very large tree must bound the walk. The field is volatile, so the board reads the live value from
+the settings document and an edit applies on the next board refresh.
+
 ## What you get
 
 - **Task columns.** Queued, blocked, in progress and done, live from the Lead session's board. Status

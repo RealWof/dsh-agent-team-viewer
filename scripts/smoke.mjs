@@ -339,6 +339,7 @@ const props = {
     loadCosts: async () => ({ 'session-a': { equivalentUsd: 1.234, realUsd: 0, equivalentCny: 9.1, realCny: 0, found: true } }),
     listState: () => listState,
     subscribeList: () => () => {},
+    pluginLimit: async () => undefined,
     jobsSnapshot: () => fakeJobs.snapshot(),
     watchJobs: sessionId => fakeJobs.watch(sessionId),
     subscribeJobs: listener => fakeJobs.subscribe(listener),
@@ -837,6 +838,110 @@ const noJobsDialog = surface(tabBody(propsNoJobs))
 check(noJobsDialog.nodes.some(node => node.props?.['data-agent-dialog'] === 'session-a'),
   'the agent dialog did not open without the jobs service')
 check(!noJobsDialog.texts.includes('jobsHeading'), 'the agent dialog shows a jobs block without the jobs service')
+
+/* --- Live Session status, not the list summary, decides "running" ------ */
+
+// The client synthesizes a list row for every catalog child, and that row's
+// `running` is the state of an already-open session, or `false` — never the
+// Host's current answer. The product's own Subagents menu reads
+// `useSessionStatus` first for exactly this reason; the board must too, or a
+// working agent is filed under "idle".
+const summaryWith = running => {
+  const next = JSON.parse(JSON.stringify(listState))
+  next.byId['session-a'].running = running
+  return next
+}
+const statusMap = running => new Map([
+  ['root', { running: false }],
+  ['session-a', { running }],
+  ['session-b', { running: false }],
+])
+const rowsOf = rendered => rendered.nodes.filter(node => node.props?.['data-agent-id'] !== undefined
+  && node.props?.className === 'tk-agent-row')
+const rowIn = (rendered, id) => rowsOf(rendered).find(node => node.props['data-agent-id'] === id)
+const propsWithStatus = (state, statuses) => ({
+  ...props,
+  useSessions: selector => selector(state),
+  useSessionStatus: selector => selector(statuses),
+})
+
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetSlots()
+const liveStatus = surface(tabBody(propsWithStatus(summaryWith(false), statusMap(true))))
+check(rowIn(liveStatus, 'session-a')?.props['data-activity'] === 'running',
+  'a subagent the list summary calls stopped is not shown as running from the live status')
+const liveActive = liveStatus.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+check(within(liveActive, node => node.props?.['data-agent-id'] === 'session-a').length === 1,
+  'the live-status running agent is missing from the running group')
+
+resetSlots()
+const stoppedStatus = surface(tabBody(propsWithStatus(summaryWith(true), statusMap(false))))
+check(rowIn(stoppedStatus, 'session-a')?.props['data-activity'] === 'inactive',
+  'a stopped session still marked running in a stale summary is shown as running')
+
+// A host without the global standard prop keeps working from the summary alone.
+resetSlots()
+const summaryOnly = surface(tabBody({ ...props, useSessions: selector => selector(summaryWith(true)) }))
+check(rowIn(summaryOnly, 'session-a')?.props['data-activity'] === 'running',
+  'without the live status map the board does not fall back to the list summary')
+
+/* --- The agent limit is the row's Config; the default is no limit -------- */
+
+// `agentsLimit` is a volatile field of the row's Config and the board reads its
+// live value from the settings document. The shipped default is -1: a session
+// appends every new agent to the end of its catalog, so a cap would hide the
+// newest agents — the ones most likely to be working.
+const manyAgentsState = (() => {
+  const next = JSON.parse(JSON.stringify(listState))
+  const catalog = next.projectionsBySession.root.values.subagentCatalog
+  for (let index = 3; index <= 70; index += 1) {
+    const id = 'session-' + String(index)
+    catalog.push({ id, mode: 'one-shot', name: 'agent-' + String(index), createdAt: index })
+    next.byId[id] = { id, parentId: 'root', running: false, updatedAt: 0 }
+  }
+  return next
+})()
+const propsWithLimit = limit => ({
+  ...props,
+  useSessions: selector => selector(manyAgentsState),
+  services: { ...props.services, pluginLimit: async () => limit },
+})
+/** The subagent count written beside the agents heading. */
+const agentCountNote = rendered => rendered.texts.find(text => /^\d+ agents/.test(text))
+
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+const defaultLimitProps = propsWithLimit(undefined)
+resetSlots()
+surface(tabBody(defaultLimitProps))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const unlimitedByDefault = surface(tabBody(defaultLimitProps))
+check(agentCountNote(unlimitedByDefault) === '70 agentsMany',
+  'the default is not "no limit", got: ' + String(agentCountNote(unlimitedByDefault)))
+
+const cappedProps = propsWithLimit(64)
+resetSlots()
+surface(tabBody(cappedProps))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const capped = surface(tabBody(cappedProps))
+check(agentCountNote(capped) === '64 agentsFew', 'the configured limit was not applied, got: ' + String(agentCountNote(capped)))
+
+const oneLimitProps = propsWithLimit(1)
+resetSlots()
+surface(tabBody(oneLimitProps))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const limited = surface(tabBody(oneLimitProps))
+check(agentCountNote(limited) === '1 agentsOne', 'a limit of one kept more than one agent, got: ' + String(agentCountNote(limited)))
+
+const noLimitProps = propsWithLimit(-1)
+resetSlots()
+surface(tabBody(noLimitProps))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const unlimited = surface(tabBody(noLimitProps))
+check(agentCountNote(unlimited) === '70 agentsMany', '-1 did not remove the limit, got: ' + String(agentCountNote(unlimited)))
 
 /* --- Team mode gates mutations, not the read-only view ----------------- */
 

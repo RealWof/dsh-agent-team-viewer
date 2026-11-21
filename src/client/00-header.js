@@ -30,8 +30,18 @@
     const AGENT_PRESET = 'agentPreset'
     /** The shipped subagent plugin's locale namespace, reused for its labels. */
     const AGENT_NS = 'subagent'
-    /** Hard cap on the agent tree walk, so a huge tree cannot stall the board. */
-    const AGENTS_CAP = 64
+    /**
+     * How many subagents the tree walk keeps when the row's config names no
+     * limit. `-1` — the shipped default — means no limit, because a session
+     * appends each new agent to the end of its catalog: a cap always hides the
+     * newest agents, which are the ones most likely to be working. The field
+     * exists for a profile that needs to bound the walk of a huge tree.
+     */
+    const AGENTS_LIMIT_DEFAULT = -1
+    /** Profile entry id of this plugin's Host row: the settings namespace and its config key. */
+    const SETTINGS_NAMESPACE = 'agent-team-viewer'
+    /** The row's Config field carrying the agent limit; `-1` means no limit. */
+    const AGENTS_LIMIT_FIELD = 'agentsLimit'
     /** Per-session token counters published for every listed session. */
     const TOKENS_PROJECTION = 'tokenUsage'
     /** Per-session wall-clock agent stats; summary-excluded, so it needs a refresh. */
