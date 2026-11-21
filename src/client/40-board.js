@@ -177,9 +177,9 @@
     /**
      * The task card. A button so keyboard users reach the inspector too. It
      * carries task facts only: the agent's numbers are in the strip.
-     * @param props - `task`, `whoById`, `t`, `onOpen`, `onOpenAgent`, `onHoverOwner`.
+     * @param props - `task`, `flipGroup`, `whoById`, `t`, `onOpen`, `onOpenAgent`, `onHoverOwner`.
      */
-    function TaskCard({ task, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined }) {
+    function TaskCard({ task, flipGroup, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined }) {
       const state = stateOfTask(task)
       const broken = Array.isArray(task.blockedBy) ? task.blockedBy.length : 0
       const scopes = Array.isArray(task.writeScopes) ? task.writeScopes.length : 0
@@ -191,6 +191,7 @@
         'data-blocked': state === 'warning' ? 'true' : 'false',
         'data-task-id': task.id,
         'data-flip-id': 'task:' + task.id,
+        'data-flip-group': flipGroup,
         onClick: () => { onOpen(task.id) },
         'aria-label': task.subject,
       },
@@ -311,7 +312,7 @@
             renderItem: index => {
               const task = column.tasks[index]
               return h(TaskCard, {
-                key: task.id, task, whoById, t, onOpen, onOpenAgent, onHoverOwner,
+                key: task.id, task, flipGroup: column.key, whoById, t, onOpen, onOpenAgent, onHoverOwner,
               })
             },
             onExpand: onExpandGroup,
@@ -325,10 +326,10 @@
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row.
-     * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`,
+     * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
      *   `onOpenAgent`, `onInspect`, and `hovered` when a card owner is hovered.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, onOpenAgent, onInspect, hovered = false }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
       const items = agentMetricLine(stats, t)
@@ -365,6 +366,7 @@
         'data-lead': agent.isLead === true ? 'true' : 'false',
         'data-hover': hovered === true ? 'true' : 'false',
         'data-flip-id': 'agent:' + agent.id,
+        'data-flip-group': flipGroup,
         onClick: () => { onInspect(agent.id) },
         onKeyDown: event => {
           if (event === null || typeof event !== 'object') return
@@ -387,16 +389,6 @@
         }, agent.name),
         mode === undefined ? null : h('span', { className: 'tk-agent-mode' }, mode),
         h('span', { className: 'tk-head-spacer' }),
-        h('button', {
-          type: 'button',
-          className: 'tk-icon-btn tk-agent-info',
-          title: t('agentDetails'),
-          'aria-label': t('agentDetails'),
-          onClick: event => {
-            stopEvent(event)
-            onInspect(agent.id)
-          },
-        }, h(Icon, { name: 'gauge', size: 11 })),
         h('button', {
           type: 'button',
           className: 'tk-icon-btn tk-agent-jump',
@@ -491,7 +483,7 @@
       const countLabel = plural(t, subagents, ['agentsOne', 'agentsFew', 'agentsMany'])
       const seenCols = columnCount >= 4 ? 3 : columnCount
       const collapsed = isSectionCollapsed('agents')
-      const renderRow = agent => h(AgentRow, {
+      const renderRow = (agent, flipGroup) => h(AgentRow, {
         key: agent.id,
         agent,
         stats: agentStats[agent.id],
@@ -499,6 +491,7 @@
         now,
         t,
         tAgent,
+        flipGroup,
         onOpenAgent,
         onInspect,
         hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
@@ -506,7 +499,7 @@
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
         if (unit.head !== true) {
-          return h(React.Fragment, { key: unit.key }, unit.agents.map(renderRow))
+          return h(React.Fragment, { key: unit.key }, unit.agents.map(agent => renderRow(agent, column.key)))
         }
         const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
         const folded = isGroupCollapsed(subgroupId, unit.agents.length)
@@ -529,7 +522,7 @@
               count: unit.agents.length,
               t,
               renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-              renderItem: index => renderRow(unit.agents[index]),
+              renderItem: index => renderRow(unit.agents[index], column.key),
               onExpand: onExpandGroup,
               onCollapse: onCollapseGroup,
             }))
@@ -582,7 +575,7 @@
                       count,
                       t,
                       renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-                      renderItem: index => renderRow(column.agents[index]),
+                      renderItem: index => renderRow(column.agents[index], column.key),
                       onExpand: onExpandGroup,
                       onCollapse: onCollapseGroup,
                     })
@@ -590,7 +583,7 @@
                       count === 0
                         ? h('span', { className: 'tk-col-empty' }, t('emptyColumn'))
                         : [
-                          column.lead === undefined ? null : renderRow(column.lead),
+                          column.lead === undefined ? null : renderRow(column.lead, column.key),
                           ...column.groups.map(unit => renderUnit(column, unit)),
                         ])))
               }))))
@@ -650,9 +643,11 @@
         return () => { observer.disconnect() }
       }, [])
 
-      // FLIP: a card that moved between the previous render and this one glides
-      // from where it was to where it is. The pass only reads the DOM — no
-      // state — and no-ops when the harness has no real DOM, when the setting
+      // FLIP: a card that moved to another column or group glides from where
+      // it was to where it is. A card that only shifted because a sibling
+      // resized did not change its logical place, so it stays put — animating
+      // every layout shift made the cards twitch. The pass only reads the DOM;
+      // no state. It no-ops when the harness has no real DOM, when the setting
       // is off or when the reader asked for reduced motion.
       useEffect(() => {
         const root = rootRef.current
@@ -665,10 +660,25 @@
         for (const node of nodes) {
           const id = typeof node.getAttribute === 'function' ? node.getAttribute('data-flip-id') : null
           if (id === null || id === '') continue
-          const box = node.getBoundingClientRect()
-          next.set(id, { left: box.left, top: box.top })
+          const group = typeof node.getAttribute === 'function'
+            ? (node.getAttribute('data-flip-group') ?? '')
+            : ''
           const before = previous.get(id)
-          if (before === undefined) continue
+          const changedGroup = before !== undefined && before.group !== group
+          // A transform feeds back into getBoundingClientRect; cancel the old
+          // animation before measuring so a repeat pass reads the layout.
+          if (changedGroup && typeof node.getAnimations === 'function') {
+            for (const animation of node.getAnimations()) {
+              try {
+                animation.cancel()
+              } catch {
+                // An animation that already finished is nothing to cancel.
+              }
+            }
+          }
+          const box = node.getBoundingClientRect()
+          next.set(id, { left: box.left, top: box.top, group })
+          if (!changedGroup) continue
           const dx = before.left - box.left
           const dy = before.top - box.top
           if (dx === 0 && dy === 0) continue

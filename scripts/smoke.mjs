@@ -371,7 +371,10 @@ check(board.texts.some(text => text === 'Shipped task'), 'the completed card is 
 check(board.classes.has('tk-board'), 'the board container is missing')
 check(board.classes.has('tk-card'), 'no card rendered')
 check(board.nodes.some(node => node.props?.['data-flip-id'] === 'task:task-1'), 'the task card has no FLIP id')
+check(board.nodes.find(node => node.props?.['data-task-id'] === 'task-1')?.props?.['data-flip-group'] === 'active',
+  'the task card does not carry its logical column for the FLIP pass')
 check(artifact.includes('cubic-bezier(0.2,0,0,1)'), 'the FLIP move easing is missing from the bundle')
+check(artifact.includes('getAnimations'), 'the FLIP pass does not cancel an in-flight animation')
 check(board.joined.includes('unitMin') || board.joined.includes('unitSec') || board.joined.includes('unitHour'), 'no duration text rendered')
 check(board.joined.includes('#1'), 'task ids are not shortened')
 
@@ -407,6 +410,7 @@ check(rowOf('root')?.props['data-lead'] === 'true', 'the lead is not marked as t
 check(rowOf('session-a')?.props?.role === 'button', 'the agent row is not a clickable card surface')
 check(rowOf('session-a')?.props?.tabIndex === 0, 'the agent row is not keyboard reachable')
 check(rowOf('session-a')?.props?.['data-flip-id'] === 'agent:session-a', 'the agent row has no FLIP id')
+check(rowOf('session-a')?.props?.['data-flip-group'] === 'active', 'the agent row does not carry its logical group for the FLIP pass')
 
 /** Find one descendant of a node. */
 const within = (node, predicate) => {
@@ -702,9 +706,8 @@ resetHooks()
 const freshBoard = surface(tabBody(props))
 const freshRow = freshBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
   && node.props?.className === 'tk-agent-row')
-const infoButton = within(freshRow, node => node.props?.className === 'tk-icon-btn tk-agent-info')[0]
-check(infoButton !== undefined, 'the agent row has no details control')
-infoButton?.props?.onClick?.()
+check(freshRow?.props?.role === 'button', 'the agent row is not the dialog trigger')
+freshRow?.props?.onClick?.()
 resetHooks()
 const withAgent = surface(tabBody(props))
 check(withAgent.nodes.some(node => node.props?.['data-agent-dialog'] === 'session-a'), 'the agent dialog did not open')
@@ -791,7 +794,9 @@ check(dialogTasksFolded.texts.includes('agentTasksHeading'), 'the folded tasks b
 check(foldBlockNote(dialogTasksFolded, 'agent-tasks') === '2', 'the folded tasks block lost its count')
 
 /* A settled agent has no roster, so it must not get an empty jobs block. */
-within(rowOf('session-b'), node => node.props?.className === 'tk-icon-btn tk-agent-info')[0]?.props?.onClick?.()
+const settledAgentRow = withAgent.nodes.find(node => node.props?.['data-agent-id'] === 'session-b'
+  && node.props?.className === 'tk-agent-row')
+settledAgentRow?.props?.onClick?.()
 resetHooks()
 const withSettledAgent = surface(tabBody(props))
 check(withSettledAgent.nodes.some(node => node.props?.['data-agent-dialog'] === 'session-b'),
@@ -1008,9 +1013,8 @@ check(!noJobs.nodes.some(node => node.props?.className === 'tk-chip tk-agent-job
   'a jobs chip is shown even though the jobs service is absent')
 const noJobsRow = noJobs.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
   && node.props?.className === 'tk-agent-row')
-const noJobsInfo = within(noJobsRow, node => node.props?.className === 'tk-icon-btn tk-agent-info')[0]
-check(noJobsInfo !== undefined, 'the agent row lost its details control without the jobs service')
-noJobsInfo?.props?.onClick?.()
+check(noJobsRow?.props?.role === 'button', 'the agent row is not clickable without the jobs service')
+noJobsRow?.props?.onClick?.()
 resetHooks()
 const noJobsDialog = surface(tabBody(propsNoJobs))
 check(noJobsDialog.nodes.some(node => node.props?.['data-agent-dialog'] === 'session-a'),
