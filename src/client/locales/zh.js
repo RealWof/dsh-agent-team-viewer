@@ -126,4 +126,6 @@
       setMs: '毫秒',
       setScale: '面板缩放',
       setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
+      openFileHint: '在工作区中打开此文件',
+      openFolderHint: '打开工作区文件页面',
     }

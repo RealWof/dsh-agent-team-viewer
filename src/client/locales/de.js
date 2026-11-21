@@ -126,4 +126,6 @@
       setMs: 'ms',
       setScale: 'Panel-Skalierung',
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
+      openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
+      openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
     }

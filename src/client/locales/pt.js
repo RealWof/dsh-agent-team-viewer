@@ -126,4 +126,6 @@
       setMs: 'ms',
       setScale: 'Escala do painel',
       setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
+      openFileHint: 'Abrir este arquivo no espaço de trabalho',
+      openFolderHint: 'Abrir a página de arquivos do espaço de trabalho',
     }

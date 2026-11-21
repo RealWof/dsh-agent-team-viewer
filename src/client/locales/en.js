@@ -125,4 +125,6 @@
       setMs: 'ms',
       setScale: 'Panel scale',
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
+      openFileHint: 'Open this file in the workspace',
+      openFolderHint: 'Open the workspace files page',
     }

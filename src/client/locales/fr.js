@@ -126,4 +126,6 @@
       setMs: 'ms',
       setScale: 'Échelle du panneau',
       setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
+      openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
+      openFolderHint: 'Ouvrir la page des fichiers de l’espace de travail',
     }

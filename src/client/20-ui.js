@@ -130,6 +130,11 @@
   background:transparent;color:inherit;font:inherit;font-size:11px;line-height:15px;text-align:left;cursor:pointer}
 .tk-task-link:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent))}
 .tk-task-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-file-link{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;padding:0;border:0;
+  background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:3px}
+.tk-file-link:hover{color:var(--dsw-alias-brand-primary);text-decoration:underline}
+.tk-file-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-file-link>.tk-mono{min-width:0;overflow-wrap:anywhere}
 .tk-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--dsw-alias-border-l2);
   border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
   font:inherit;font-size:11px;line-height:15px;cursor:pointer}

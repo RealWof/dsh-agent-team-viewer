@@ -647,6 +647,8 @@ window.__ModuleLoader__.load({
       setMs: 'ms',
       setScale: 'Panel scale',
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
+      openFileHint: 'Open this file in the workspace',
+      openFolderHint: 'Open the workspace files page',
     }
 
 /**
@@ -777,6 +779,8 @@ window.__ModuleLoader__.load({
       setMs: 'мс',
       setScale: 'Масштаб панели',
       setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
+      openFileHint: 'Открыть файл в рабочей области',
+      openFolderHint: 'Открыть страницу файлов рабочей области',
     }
 
 /**
@@ -907,6 +911,8 @@ window.__ModuleLoader__.load({
       setMs: '毫秒',
       setScale: '面板缩放',
       setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
+      openFileHint: '在工作区中打开此文件',
+      openFolderHint: '打开工作区文件页面',
     }
 
 /**
@@ -1037,6 +1043,8 @@ window.__ModuleLoader__.load({
       setMs: 'ms',
       setScale: 'パネルの拡大率',
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
+      openFileHint: 'ワークスペースでこのファイルを開く',
+      openFolderHint: 'ワークスペースのファイルページを開く',
     }
 
 /**
@@ -1167,6 +1175,8 @@ window.__ModuleLoader__.load({
       setMs: 'ms',
       setScale: 'Escala del panel',
       setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
+      openFileHint: 'Abrir este archivo en el espacio de trabajo',
+      openFolderHint: 'Abrir la página de archivos del espacio de trabajo',
     }
 
 /**
@@ -1297,6 +1307,8 @@ window.__ModuleLoader__.load({
       setMs: 'ms',
       setScale: 'Échelle du panneau',
       setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
+      openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
+      openFolderHint: 'Ouvrir la page des fichiers de l’espace de travail',
     }
 
 /**
@@ -1427,6 +1439,8 @@ window.__ModuleLoader__.load({
       setMs: 'ms',
       setScale: 'Panel-Skalierung',
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
+      openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
+      openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
     }
 
 /**
@@ -1557,6 +1571,8 @@ window.__ModuleLoader__.load({
       setMs: 'ms',
       setScale: 'Escala do painel',
       setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
+      openFileHint: 'Abrir este arquivo no espaço de trabalho',
+      openFolderHint: 'Abrir a página de arquivos do espaço de trabalho',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1691,6 +1707,11 @@ window.__ModuleLoader__.load({
   background:transparent;color:inherit;font:inherit;font-size:11px;line-height:15px;text-align:left;cursor:pointer}
 .tk-task-link:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent))}
 .tk-task-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-file-link{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;padding:0;border:0;
+  background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:3px}
+.tk-file-link:hover{color:var(--dsw-alias-brand-primary);text-decoration:underline}
+.tk-file-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-file-link>.tk-mono{min-width:0;overflow-wrap:anywhere}
 .tk-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--dsw-alias-border-l2);
   border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
   font:inherit;font-size:11px;line-height:15px;cursor:pointer}
@@ -3458,6 +3479,7 @@ window.__ModuleLoader__.load({
       watchJobs: () => undefined,
       subscribeJobs: () => () => {},
       openAgent: () => {},
+      openFileLink: () => {},
       agentLabel: (key, fallback) => fallback,
     }
 
@@ -4235,6 +4257,7 @@ window.__ModuleLoader__.load({
             tAgent,
             costState: model.costState,
             onOpenAgent: openAgent,
+            onOpenFile: path => { services.openFileLink(model.rootId, path) },
             onInspect: inspectAgent,
             onClose: () => { setSelected(null) },
           }),
@@ -4369,11 +4392,21 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Whether a write scope names a folder rather than a file. A trailing slash
+     * is the one convention the task record offers, in either separator.
+     * @param path - the scope string.
+     * @returns whether the workspace should open the Files page for it.
+     */
+    function isFolderScope(path) {
+      return typeof path === 'string' && (path.endsWith('/') || path.endsWith('\\'))
+    }
+
+    /**
      * The task dialog.
      * @param props - `task`, `timeline`, `agent`, `stats`, `t`, `tAgent`,
-     *   `costState`, `onOpenAgent`, `onInspect`, `onClose`.
+     *   `costState`, `onOpenAgent`, `onOpenFile`, `onInspect`, `onClose`.
      */
-    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, onOpenAgent = undefined, onInspect = undefined, onClose }) {
+    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
       useEffect(() => {
         const onKey = event => {
           if (event.key === 'Escape') onClose()
@@ -4493,9 +4526,21 @@ window.__ModuleLoader__.load({
       const scopesBlock = h(Section, {
         title: t('writeScopes'), icon: 'folder', note: scopes.length === 0 ? t('noWriteScopes') : undefined,
       },
-      scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => h('li', { key: scope },
-        h(Icon, { name: 'pen', size: 10 }),
-        h('span', { className: 'tk-mono' }, scope)))),
+      scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => {
+        const folder = isFolderScope(scope)
+        const hint = folder ? t('openFolderHint') : t('openFileHint')
+        return h('li', { key: scope },
+          h('button', {
+            type: 'button',
+            className: 'tk-file-link',
+            'data-scope': scope,
+            title: hint,
+            'aria-label': hint + ': ' + scope,
+            onClick: () => { if (typeof onOpenFile === 'function') onOpenFile(scope) },
+          },
+          h(Icon, { name: folder ? 'folder' : 'pen', size: 10 }),
+          h('span', { className: 'tk-mono' }, scope)))
+      })),
       warningBlock)
 
       const dialog = h('div', {
@@ -5039,6 +5084,65 @@ window.__ModuleLoader__.load({
           + '&mode=' + encodeURIComponent(address.mode)
 
         /**
+         * The file resource address the workspace file provider parses. The
+         * shipped builder exports no client helper, so the format is spelled
+         * here: `dsh-resource://file/session/<sessionId>/<path>`, every id and
+         * path segment component-encoded, `:` literal for a Windows drive.
+         * @param sessionId - the session whose workspace root resolves the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @returns the resource address string.
+         */
+        const fileAddress = (sessionId, path) => 'dsh-resource://file/session/'
+          + encodeURIComponent(sessionId)
+          + '/'
+          + String(path)
+            .replace(/\\/g, '/')
+            .replace(/^(?:\.\/)+/, '')
+            .split('/')
+            .map(segment => encodeURIComponent(segment).replace(/%3A/gi, ':'))
+            .join('/')
+
+        /**
+         * Open one write scope of a task in the workspace. A file opens the
+         * shipped file resource; a folder opens the Files page, because that
+         * page accepts no path. Navigation is best-effort: a missing sidebar
+         * or a resource the installed types cannot open falls back to the
+         * Files page and never throws into the read-only board.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - the task's write scope.
+         * @returns nothing.
+         */
+        const openFileLink = (sessionId, path) => {
+          if (typeof sessionId !== 'string' || sessionId === '') return
+          if (typeof path !== 'string' || path === '') return
+          const folder = path.endsWith('/') || path.endsWith('\\')
+          const openFilesTab = () => {
+            try {
+              const sidebar = ctx.get('sidebarRight')
+              if (sidebar !== null && sidebar !== undefined && typeof sidebar.openTab === 'function') {
+                sidebar.openTab('files')
+              }
+            } catch {
+              // The Files page is a convenience; a closed panel is not an error.
+            }
+          }
+          if (folder) {
+            openFilesTab()
+            return
+          }
+          try {
+            const sidebar = ctx.get('sidebarRight')
+            if (sidebar !== null && sidebar !== undefined && typeof sidebar.openResource === 'function') {
+              sidebar.openResource(fileAddress(sessionId, path))
+              return
+            }
+          } catch {
+            // An unopenable address falls back to the workspace page below.
+          }
+          openFilesTab()
+        }
+
+        /**
          * Go to a subagent: open its chat beside the board, or switch the main
          * column to it. This only navigates — the board is still a viewer.
          * @param agentId - the subagent's Session id.
@@ -5110,6 +5214,7 @@ window.__ModuleLoader__.load({
           watchJobs,
           subscribeJobs,
           openAgent,
+          openFileLink,
           agentLabel,
         }
 

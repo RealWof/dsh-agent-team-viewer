@@ -126,4 +126,6 @@
       setMs: 'ms',
       setScale: 'パネルの拡大率',
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
+      openFileHint: 'ワークスペースでこのファイルを開く',
+      openFolderHint: 'ワークスペースのファイルページを開く',
     }

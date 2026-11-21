@@ -230,6 +230,65 @@
           + '&mode=' + encodeURIComponent(address.mode)
 
         /**
+         * The file resource address the workspace file provider parses. The
+         * shipped builder exports no client helper, so the format is spelled
+         * here: `dsh-resource://file/session/<sessionId>/<path>`, every id and
+         * path segment component-encoded, `:` literal for a Windows drive.
+         * @param sessionId - the session whose workspace root resolves the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @returns the resource address string.
+         */
+        const fileAddress = (sessionId, path) => 'dsh-resource://file/session/'
+          + encodeURIComponent(sessionId)
+          + '/'
+          + String(path)
+            .replace(/\\/g, '/')
+            .replace(/^(?:\.\/)+/, '')
+            .split('/')
+            .map(segment => encodeURIComponent(segment).replace(/%3A/gi, ':'))
+            .join('/')
+
+        /**
+         * Open one write scope of a task in the workspace. A file opens the
+         * shipped file resource; a folder opens the Files page, because that
+         * page accepts no path. Navigation is best-effort: a missing sidebar
+         * or a resource the installed types cannot open falls back to the
+         * Files page and never throws into the read-only board.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - the task's write scope.
+         * @returns nothing.
+         */
+        const openFileLink = (sessionId, path) => {
+          if (typeof sessionId !== 'string' || sessionId === '') return
+          if (typeof path !== 'string' || path === '') return
+          const folder = path.endsWith('/') || path.endsWith('\\')
+          const openFilesTab = () => {
+            try {
+              const sidebar = ctx.get('sidebarRight')
+              if (sidebar !== null && sidebar !== undefined && typeof sidebar.openTab === 'function') {
+                sidebar.openTab('files')
+              }
+            } catch {
+              // The Files page is a convenience; a closed panel is not an error.
+            }
+          }
+          if (folder) {
+            openFilesTab()
+            return
+          }
+          try {
+            const sidebar = ctx.get('sidebarRight')
+            if (sidebar !== null && sidebar !== undefined && typeof sidebar.openResource === 'function') {
+              sidebar.openResource(fileAddress(sessionId, path))
+              return
+            }
+          } catch {
+            // An unopenable address falls back to the workspace page below.
+          }
+          openFilesTab()
+        }
+
+        /**
          * Go to a subagent: open its chat beside the board, or switch the main
          * column to it. This only navigates — the board is still a viewer.
          * @param agentId - the subagent's Session id.
@@ -301,6 +360,7 @@
           watchJobs,
           subscribeJobs,
           openAgent,
+          openFileLink,
           agentLabel,
         }
 

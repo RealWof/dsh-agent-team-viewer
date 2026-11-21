@@ -131,7 +131,7 @@ const listState = {
           tasks: [
             {
               id: 'task-1', revision: 3, subject: 'Wire the board', description: 'Draw the columns.',
-              status: 'in_progress', blockedBy: [], writeScopes: ['src/client'], ownerId: 'session-a',
+              status: 'in_progress', blockedBy: [], writeScopes: ['src/client', 'src/client/'], ownerId: 'session-a',
               ownerName: 'builder', ready: true, writeScopeWarnings: [],
             },
             {
@@ -334,6 +334,7 @@ const fakeJobs = {
 }
 
 const opened = []
+const openedFiles = []
 const props = {
   t: key => key,
   sessionId: 'session-a',
@@ -350,6 +351,7 @@ const props = {
     watchJobs: sessionId => fakeJobs.watch(sessionId),
     subscribeJobs: listener => fakeJobs.subscribe(listener),
     openAgent: (agentId, target) => { opened.push([agentId, target]) },
+    openFileLink: (sessionId, path) => { openedFiles.push([sessionId, path]) },
     agentLabel: (key, fallback) => fallback,
   },
 }
@@ -587,6 +589,20 @@ check(withTask.texts.includes('builder'), 'the task dialog does not name the own
 check(withTask.texts.includes('agentOpen') && withTask.texts.includes('agentOpenAside') && withTask.texts.includes('agentDetails'),
   'the task dialog lost one of its agent actions')
 check(withTask.nodes.some(node => node.props?.className === 'tk-stats'), 'the task dialog shows no compact agent metrics')
+
+/* Every write scope is a real link; a folder asks for the Files page instead. */
+const scopeLinks = within(taskTree, node => node.props?.className === 'tk-file-link')
+check(scopeLinks.length === 2, 'the write scopes are not rendered as links, got ' + scopeLinks.length)
+const fileLink = scopeLinks.find(node => node.props?.['data-scope'] === 'src/client')
+const folderLink = scopeLinks.find(node => node.props?.['data-scope'] === 'src/client/')
+check(fileLink?.props?.title === 'openFileHint', 'a file scope has no file-link hint')
+check(folderLink?.props?.title === 'openFolderHint', 'a folder scope has no folder-link hint')
+fileLink?.props?.onClick?.()
+check(openedFiles.length === 1 && openedFiles[0][0] === 'root' && openedFiles[0][1] === 'src/client',
+  'clicking a file scope did not open it in the workspace')
+folderLink?.props?.onClick?.()
+check(openedFiles.length === 2 && openedFiles[1][0] === 'root' && openedFiles[1][1] === 'src/client/',
+  'clicking a folder scope did not ask for the files page')
 
 /* Navigating from the task dialog must also close it. */
 const openFromTask = within(taskTree, node => node.type === 'button'

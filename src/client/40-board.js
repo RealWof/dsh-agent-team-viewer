@@ -22,6 +22,7 @@
       watchJobs: () => undefined,
       subscribeJobs: () => () => {},
       openAgent: () => {},
+      openFileLink: () => {},
       agentLabel: (key, fallback) => fallback,
     }
 
@@ -799,6 +800,7 @@
             tAgent,
             costState: model.costState,
             onOpenAgent: openAgent,
+            onOpenFile: path => { services.openFileLink(model.rootId, path) },
             onInspect: inspectAgent,
             onClose: () => { setSelected(null) },
           }),

@@ -35,11 +35,21 @@
     }
 
     /**
+     * Whether a write scope names a folder rather than a file. A trailing slash
+     * is the one convention the task record offers, in either separator.
+     * @param path - the scope string.
+     * @returns whether the workspace should open the Files page for it.
+     */
+    function isFolderScope(path) {
+      return typeof path === 'string' && (path.endsWith('/') || path.endsWith('\\'))
+    }
+
+    /**
      * The task dialog.
      * @param props - `task`, `timeline`, `agent`, `stats`, `t`, `tAgent`,
-     *   `costState`, `onOpenAgent`, `onInspect`, `onClose`.
+     *   `costState`, `onOpenAgent`, `onOpenFile`, `onInspect`, `onClose`.
      */
-    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, onOpenAgent = undefined, onInspect = undefined, onClose }) {
+    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
       useEffect(() => {
         const onKey = event => {
           if (event.key === 'Escape') onClose()
@@ -159,9 +169,21 @@
       const scopesBlock = h(Section, {
         title: t('writeScopes'), icon: 'folder', note: scopes.length === 0 ? t('noWriteScopes') : undefined,
       },
-      scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => h('li', { key: scope },
-        h(Icon, { name: 'pen', size: 10 }),
-        h('span', { className: 'tk-mono' }, scope)))),
+      scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => {
+        const folder = isFolderScope(scope)
+        const hint = folder ? t('openFolderHint') : t('openFileHint')
+        return h('li', { key: scope },
+          h('button', {
+            type: 'button',
+            className: 'tk-file-link',
+            'data-scope': scope,
+            title: hint,
+            'aria-label': hint + ': ' + scope,
+            onClick: () => { if (typeof onOpenFile === 'function') onOpenFile(scope) },
+          },
+          h(Icon, { name: folder ? 'folder' : 'pen', size: 10 }),
+          h('span', { className: 'tk-mono' }, scope)))
+      })),
       warningBlock)
 
       const dialog = h('div', {
