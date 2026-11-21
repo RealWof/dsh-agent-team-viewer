@@ -446,12 +446,29 @@ const within = (node, predicate) => {
   return hits
 }
 
-/* Group headers are chevron + title + count only: no state dot. Cards and
-   agent rows keep theirs. */
+/* Only the outer status group headers repeat the column's state dot; a nested
+   role/custom head stays chevron + title + count. Cards and agent rows keep
+   their own dot. */
 const groupHeadNodes = board.nodes.filter(node => node.props?.['data-fold'] === 'group')
 check(groupHeadNodes.length > 0, 'the board has no group header')
-check(groupHeadNodes.every(head => within(head, node => node.props?.className === 'tk-state').length === 0),
-  'a group header still carries a state dot')
+const outerHeads = groupHeadNodes.filter(head => head.props?.['data-subgroup'] === undefined)
+const outerTargets = outerHeads.map(head => head.props?.['data-target'])
+check(['tasks:queued', 'tasks:blocked', 'tasks:active', 'tasks:done', 'agents:active', 'agents:done', 'agents:idle']
+  .every(target => outerTargets.includes(target)),
+'not every status column has an outer group header: ' + outerTargets.join(','))
+check(outerHeads.every(head => within(head, node => node.props?.className === 'tk-state').length === 1),
+  'an outer status group header lost its state dot')
+const nestedHeads = groupHeadNodes.filter(head => head.props?.['data-subgroup'] === 'true')
+check(nestedHeads.every(head => within(head, node => node.props?.className === 'tk-state').length === 0),
+  'a nested group header still carries a state dot')
+const headDotState = target => within(groupHeadNodes.find(node => node.props?.['data-target'] === target),
+  node => node.props?.className === 'tk-state')[0]?.props?.['data-state']
+check(headDotState('tasks:queued') === 'idle' && headDotState('tasks:blocked') === 'warning'
+  && headDotState('tasks:active') === 'ongoing' && headDotState('tasks:done') === 'done'
+  && headDotState('agents:active') === 'ongoing' && headDotState('agents:idle') === 'idle',
+'the outer group dots do not follow the column state: '
+  + ['tasks:queued', 'tasks:blocked', 'tasks:active', 'tasks:done', 'agents:active', 'agents:idle']
+    .map(target => target + '@' + headDotState(target)).join(', '))
 check(board.nodes.some(node => node.props?.className === 'tk-state'), 'the task cards lost their state dot')
 check(within(rowOf('session-a'), node => node.props?.className === 'tk-state').length > 0,
   'the agent row lost its state dot')
@@ -642,6 +659,9 @@ check(within(roleHead, node => node.props?.className === 'tk-col-count')[0]?.pro
   'the nested group head does not count its members')
 check(within(roleHead, node => node.props?.className === 'tk-state').length === 0,
   'a nested group head still carries a state dot')
+const sharedOuterHead = within(sharedActive, node => node.props?.['data-target'] === 'agents:active')[0]
+check(within(sharedOuterHead, node => node.props?.className === 'tk-state').length === 1,
+  'the outer agent status header lost its state dot beside nested groups')
 check(within(sharedActive, node => node.props?.className === 'tk-agent-row').length === 3,
   'the nested role group did not render its two members under the lead')
 const sharedRows = within(sharedActive, node => node.props?.className === 'tk-agent-row')
@@ -1473,6 +1493,8 @@ const groupedActive = taskGroupBoard.nodes.find(node => node.props?.['data-colum
 const boardTaskHead = within(groupedActive, node => node.props?.['data-target'] === 'tasks:active:custom:board')[0]
 check(boardTaskHead !== undefined, 'a task matching a custom group got no group head')
 check(boardTaskHead?.props?.['data-subgroup'] === 'true', 'the task group head is not marked as a subgroup')
+check(within(boardTaskHead, node => node.props?.className === 'tk-state').length === 0,
+  'a nested custom task group head carries a state dot')
 check(within(boardTaskHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '1',
   'the task group head does not count its tasks')
 const boardTaskBody = within(groupedActive, node => node.props?.['data-group-body'] === 'tasks:active:custom:board')[0]

@@ -220,15 +220,15 @@
     /**
      * One status group's header. The whole row is the disclosure button, so a
      * click anywhere on it folds the pile; the count sits in the row and
-     * therefore stays visible while the group is folded. The header carries no
-     * state dot: the task card and the agent row own that colour, so a header
-     * reads as chevron + title + count. A nested head (a role or custom group
-     * inside an agent status column) is marked with `data-subgroup` and
-     * painted slightly smaller.
-     * @param props - `groupId`, `title`, `count`, `expanded`, `label`,
-     *   `onToggle`, and `subgroup` for a nested head.
+     * therefore stays visible while the group is folded. Only a status column's
+     * own header carries a state dot: the outer head repeats the column colour,
+     * while a nested head (a role or custom group inside it) stays chevron,
+     * title and count and is marked with `data-subgroup`. Callers pass `state`
+     * for an outer head and leave it undefined for a nested one.
+     * @param props - `groupId`, optional `state`, `title`, `count`, `expanded`,
+     *   `label`, `onToggle`, and `subgroup` for a nested head.
      */
-    function GroupHead({ groupId, title, count, expanded, label, onToggle, subgroup = false }) {
+    function GroupHead({ groupId, state, title, count, expanded, label, onToggle, subgroup = false }) {
       return h('button', {
         type: 'button',
         className: 'tk-col-head tk-col-fold',
@@ -241,6 +241,7 @@
         onClick: () => { onToggle(groupId, count) },
       },
       h(Icon, { name: 'chevron-down', size: 11, className: 'tk-chevron' }),
+      state === undefined ? null : h(StateDot, { state, size: 9 }),
       h('span', { className: 'tk-col-title' }, title),
       h('span', { className: 'tk-col-count' }, String(count)))
     }
@@ -353,6 +354,7 @@
       return h('section', { className: 'tk-col', 'data-column': column.key },
         h(GroupHead, {
           groupId,
+          state: column.state,
           title,
           count,
           expanded: !collapsed,
@@ -823,7 +825,8 @@
                 },
                 h(GroupHead, {
                   groupId,
-                        title,
+                  state: column.state,
+                  title,
                   count,
                   expanded: !folded,
                   label: (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,

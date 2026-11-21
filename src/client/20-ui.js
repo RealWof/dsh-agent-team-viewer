@@ -57,6 +57,7 @@
 .tk-board[data-cols="1"]{grid-template-columns:minmax(0,1fr)}
 .tk-col{display:flex;flex-direction:column;gap:5px;min-width:0}
 .tk-col-head{display:flex;align-items:center;gap:3px;min-width:0;padding:0 1px}
+.tk-col-head>.tk-state{margin-top:0;flex:none}
 .tk-col-title{margin:0;min-width:0;font-size:10px;line-height:14px;font-weight:600;text-transform:uppercase;letter-spacing:.2px;
   color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .tk-col-count{flex:none;padding:0 5px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;

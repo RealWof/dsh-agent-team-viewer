@@ -87,8 +87,9 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Fixed
 
-- Group headers no longer repeat the status dot: a status, role, custom or Ungrouped header is just
-  chevron, title and count, while task cards and agent rows keep their coloured dot.
+- Group headers show the status dot on the outer status columns again — a task column and an agent
+  status group repeat their column colour — while a nested role, custom or Ungrouped header stays
+  chevron, title and count; task cards and agent rows keep their own dot.
 - The agents section filed working subagents under **idle**. `running` was read from the sessions-list
   summary, but a row the client synthesizes from a parent's `subagentCatalog` carries only an
   already-open session's run state — or `false` — and never the Host's current answer, so a busy agent
