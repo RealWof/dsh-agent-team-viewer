@@ -31,6 +31,7 @@
       inspectorTitle: 'Задача',
       description: 'Описание',
       noDescription: 'У задачи нет описания.',
+      attachments: 'Вложения',
       dependencies: 'Зависимости',
       noDependencies: 'Зависимостей нет',
       writeScopes: 'Область записи',

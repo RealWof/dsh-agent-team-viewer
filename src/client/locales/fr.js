@@ -31,6 +31,7 @@
       inspectorTitle: 'Tâche',
       description: 'Description',
       noDescription: 'La tâche n\u2019a pas de description.',
+      attachments: 'Pièces jointes',
       dependencies: 'Dépendances',
       noDependencies: 'Aucune dépendance',
       writeScopes: 'Portées d\u2019écriture',

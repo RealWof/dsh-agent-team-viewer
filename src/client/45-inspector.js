@@ -106,8 +106,9 @@
         }, h(Icon, { name: 'x', size: 14 })))
 
       const descriptionBlock = h(Section, { title: t('description'), icon: 'pen' },
-        h('p', { className: 'tk-body-text', 'data-empty': description === '' ? 'true' : 'false' },
-          description === '' ? t('noDescription') : description))
+        description === ''
+          ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
+          : h(Markdown, { text: description, onOpenFile, t }))
 
       const timelineBlock = h(Section, {
         title: t('taskTimeline'),
@@ -206,7 +207,7 @@
           h('span', { className: 'tk-note' }, t('reportLoading')))
         : reportState === 'ready'
           ? h('div', { className: 'tk-report', 'data-report': 'ready' },
-            h('p', { className: 'tk-body-text' }, reportText))
+            h(Markdown, { text: reportText, onOpenFile, t }))
           : h('div', { className: 'tk-report', 'data-report': 'empty' },
             h('span', { className: 'tk-note' }, t('reportEmptyNote')),
             onOpenAgent === undefined || ownerId === undefined

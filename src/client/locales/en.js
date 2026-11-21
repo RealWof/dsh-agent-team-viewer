@@ -30,6 +30,7 @@
       inspectorTitle: 'Task',
       description: 'Description',
       noDescription: 'The task has no description.',
+      attachments: 'Attachments',
       dependencies: 'Dependencies',
       noDependencies: 'No dependencies',
       writeScopes: 'Write scopes',

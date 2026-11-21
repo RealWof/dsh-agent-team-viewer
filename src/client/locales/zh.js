@@ -31,6 +31,7 @@
       inspectorTitle: '任务',
       description: '描述',
       noDescription: '此任务没有描述。',
+      attachments: '附件',
       dependencies: '依赖',
       noDependencies: '无依赖',
       writeScopes: '写入范围',

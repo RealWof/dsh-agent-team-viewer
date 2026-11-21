@@ -615,6 +615,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Task',
       description: 'Description',
       noDescription: 'The task has no description.',
+      attachments: 'Attachments',
       dependencies: 'Dependencies',
       noDependencies: 'No dependencies',
       writeScopes: 'Write scopes',
@@ -756,6 +757,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Задача',
       description: 'Описание',
       noDescription: 'У задачи нет описания.',
+      attachments: 'Вложения',
       dependencies: 'Зависимости',
       noDependencies: 'Зависимостей нет',
       writeScopes: 'Область записи',
@@ -897,6 +899,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: '任务',
       description: '描述',
       noDescription: '此任务没有描述。',
+      attachments: '附件',
       dependencies: '依赖',
       noDependencies: '无依赖',
       writeScopes: '写入范围',
@@ -1038,6 +1041,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'タスク',
       description: '説明',
       noDescription: 'このタスクには説明がありません。',
+      attachments: '添付ファイル',
       dependencies: '依存関係',
       noDependencies: '依存関係なし',
       writeScopes: '書き込みスコープ',
@@ -1179,6 +1183,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Tarea',
       description: 'Descripción',
       noDescription: 'La tarea no tiene descripción.',
+      attachments: 'Adjuntos',
       dependencies: 'Dependencias',
       noDependencies: 'Sin dependencias',
       writeScopes: 'Ámbitos de escritura',
@@ -1320,6 +1325,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Tâche',
       description: 'Description',
       noDescription: 'La tâche n\u2019a pas de description.',
+      attachments: 'Pièces jointes',
       dependencies: 'Dépendances',
       noDependencies: 'Aucune dépendance',
       writeScopes: 'Portées d\u2019écriture',
@@ -1461,6 +1467,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Aufgabe',
       description: 'Beschreibung',
       noDescription: 'Die Aufgabe hat keine Beschreibung.',
+      attachments: 'Anhänge',
       dependencies: 'Abhängigkeiten',
       noDependencies: 'Keine Abhängigkeiten',
       writeScopes: 'Schreibbereiche',
@@ -1602,6 +1609,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Tarefa',
       description: 'Descrição',
       noDescription: 'A tarefa não tem descrição.',
+      attachments: 'Anexos',
       dependencies: 'Dependências',
       noDependencies: 'Sem dependências',
       writeScopes: 'Escopos de escrita',
@@ -1966,6 +1974,28 @@ window.__ModuleLoader__.load({
   background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
 .tk-set-select option{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
 .tk-set-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-md{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
+.tk-md-p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.tk-md-h1,.tk-md-h2,.tk-md-h3{margin:2px 0 0;font-weight:600;overflow-wrap:anywhere}
+.tk-md-h1{font-size:14px;line-height:20px}
+.tk-md-h2{font-size:13px;line-height:19px}
+.tk-md-h3{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);text-transform:uppercase;letter-spacing:.2px}
+.tk-md-list{margin:0;padding-left:17px;display:flex;flex-direction:column;gap:2px}
+.tk-md-list li{min-width:0;overflow-wrap:anywhere}
+.tk-md-quote{margin:0;padding:1px 8px;border-left:2px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
+.tk-md-hr{align-self:stretch;border:0;border-top:1px solid var(--dsw-alias-border-l1);margin:3px 0}
+.tk-md-pre{margin:0;max-width:100%;overflow:auto;padding:6px 8px;border:1px solid var(--dsw-alias-border-l1);
+  border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1)}
+.tk-md code,.tk-md-code{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;line-height:15px}
+.tk-md-pre code{white-space:pre;display:block}
+.tk-md :not(pre)>code{padding:0 3px;border-radius:3px;background:var(--dsw-alias-bg-layer-1)}
+.tk-md a,.tk-md-a{color:var(--dsw-alias-brand-primary);text-decoration:underline;overflow-wrap:anywhere}
+.tk-md-img{max-width:100%;max-height:320px;border-radius:var(--dsw-radius-sm);object-fit:contain;background:var(--dsw-alias-bg-layer-1)}
+.tk-md-plain{overflow-wrap:anywhere}
+.tk-md-file{max-width:100%}
+.tk-attach{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;margin-top:2px}
+.tk-attach-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
+.tk-attach .tk-file-link{max-width:100%}
 `
 
     /**
@@ -2050,6 +2080,374 @@ window.__ModuleLoader__.load({
         h(Icon, { name: icon, size: 20 }),
         h('span', null, title),
         note === undefined ? null : h('span', { className: 'tk-note' }, note))
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Safe Markdown: a self-contained renderer for task descriptions and
+     * agent reports. It builds React nodes only — raw HTML is never parsed —
+     * and every URL is classified before it becomes an anchor or an image.
+     * ------------------------------------------------------------------ */
+
+    /** A URL scheme prefix, e.g. `javascript:`. */
+    const MD_SCHEME = /^[a-z][a-z0-9+.-]*:/i
+    /** An autolinkable URL inside running text. */
+    const MD_AUTOLINK = /^https?:\/\/[^\s<>"']+/i
+
+    /**
+     * The workspace path inside one `dsh-resource://file/session/<id>/<path>` address.
+     * @param href - the candidate address.
+     * @returns the decoded path, or undefined when it is not a file resource.
+     */
+    function markdownFilePathOf(href) {
+      const prefix = 'dsh-resource://file/session/'
+      if (href.length <= prefix.length || href.slice(0, prefix.length).toLowerCase() !== prefix) return undefined
+      const rest = href.slice(prefix.length)
+      const slash = rest.indexOf('/')
+      if (slash < 0) return undefined
+      try {
+        return rest.slice(slash + 1).split('/').map(segment => decodeURIComponent(segment)).join('/')
+      } catch {
+        return undefined
+      }
+    }
+
+    /**
+     * Classify one link or image target before rendering it.
+     * @param raw - the target text.
+     * @returns `{ kind, href?, path? }` with kind `web`, `mailto`, `file`, `plain` or `unsafe`.
+     */
+    function markdownTargetOf(raw) {
+      const href = typeof raw === 'string' ? raw.trim() : ''
+      if (href === '' || /[\u0000-\u001f]/.test(href)) return { kind: 'unsafe' }
+      const resource = markdownFilePathOf(href)
+      if (resource !== undefined) return { kind: 'file', path: resource, resource: true, href }
+      // A Windows drive (`C:\…`) looks like a scheme but is a path.
+      if (/^[a-z]:[\\/]/i.test(href) || href.startsWith('\\\\')) {
+        return { kind: 'file', path: href.replace(/\\/g, '/') }
+      }
+      if (/^https?:\/\//i.test(href)) return { kind: 'web', href }
+      if (/^mailto:/i.test(href)) return { kind: 'mailto', href }
+      // Protocol-relative URLs are remote, not workspace paths; every other
+      // scheme (javascript:, data:, file:, …) is refused outright.
+      if (MD_SCHEME.test(href) || href.startsWith('//')) return { kind: 'unsafe' }
+      if (/[\\/]/.test(href)) return { kind: 'file', path: href }
+      return { kind: 'plain', href }
+    }
+
+    /**
+     * Remember one file reference for the attachment chips.
+     * @param context - the render context.
+     * @param path - the workspace path.
+     */
+    function markdownRemember(context, path) {
+      if (typeof path !== 'string' || path === '' || context.seen.has(path)) return
+      context.seen.add(path)
+      context.attachments.push(path)
+    }
+
+    /**
+     * One workspace file reference as a button, so a click opens it in the
+     * shipped resource viewer instead of navigating the page.
+     * @param path - the workspace path.
+     * @param label - the visible label.
+     * @param context - the render context.
+     * @param key - the React key.
+     * @returns the button node.
+     */
+    function markdownFileNode(path, label, context, key) {
+      const folder = isFolderScope(path)
+      const hint = folder ? context.t('openFolderHint') : context.t('openFileHint')
+      return h('button', {
+        key,
+        type: 'button',
+        className: 'tk-file-link tk-md-file',
+        'data-scope': path,
+        title: hint,
+        'aria-label': hint + ': ' + path,
+        onClick: () => { if (typeof context.onOpenFile === 'function') context.onOpenFile(path) },
+      }, h(Icon, { name: folder ? 'folder' : 'pen', size: 10 }), h('span', { className: 'tk-mono' }, label))
+    }
+
+    /**
+     * Render one image target. Only `https:` and the workspace file resource
+     * become an `<img>`; every other target degrades to a link or plain text.
+     * @param alt - the alt text.
+     * @param rawSrc - the image source.
+     * @param context - the render context.
+     * @param key - the React key.
+     * @returns the node.
+     */
+    function markdownImageNode(alt, rawSrc, context, key) {
+      const target = markdownTargetOf(rawSrc)
+      if (target.kind === 'web') {
+        return h('img', { key, className: 'tk-md-img', src: target.href, alt, loading: 'lazy' })
+      }
+      if (target.kind === 'file' && target.resource === true) {
+        markdownRemember(context, target.path)
+        return h('img', { key, className: 'tk-md-img', src: target.href, alt, loading: 'lazy' })
+      }
+      if (target.kind === 'file') {
+        markdownRemember(context, target.path)
+        return markdownFileNode(target.path, alt !== '' ? alt : target.path, context, key)
+      }
+      return h('span', { key, className: 'tk-md-plain' }, alt !== '' ? alt : rawSrc)
+    }
+
+    /**
+     * Render one link target, allowing only http(s), mailto and workspace
+     * paths; anything else keeps its text and drops the target.
+     * @param label - the link label Markdown.
+     * @param rawHref - the link target.
+     * @param context - the render context.
+     * @param key - the React key.
+     * @returns the node.
+     */
+    function markdownLinkNode(label, rawHref, context, key) {
+      const target = markdownTargetOf(rawHref)
+      if (target.kind === 'web' || target.kind === 'mailto') {
+        return h('a', {
+          key,
+          className: 'tk-md-a',
+          href: target.href,
+          target: '_blank',
+          rel: 'noreferrer noopener',
+        }, markdownInline(label, context))
+      }
+      if (target.kind === 'file') {
+        markdownRemember(context, target.path)
+        return markdownFileNode(target.path, label, context, key)
+      }
+      return h('span', { key, className: 'tk-md-plain' }, markdownInline(label, context))
+    }
+
+    /**
+     * Render inline Markdown: bold, italic, code, links, images and autolinks.
+     * The returned children are strings or React elements, so React escapes
+     * every piece of text and no HTML is ever injected.
+     * @param text - the inline source.
+     * @param context - the render context.
+     * @returns the child nodes.
+     */
+    function markdownInline(text, context) {
+      const nodes = []
+      let plain = ''
+      let index = 0
+      let key = 0
+      const flush = () => {
+        if (plain === '') return
+        nodes.push(plain)
+        plain = ''
+      }
+      const push = node => {
+        flush()
+        nodes.push(node)
+        key += 1
+      }
+      while (index < text.length) {
+        const char = text[index]
+        if (char === '\\' && index + 1 < text.length) {
+          plain += text[index + 1]
+          index += 2
+          continue
+        }
+        if (char === '\n') {
+          push(h('br', { key: 'br-' + key }))
+          index += 1
+          continue
+        }
+        if (char === '`') {
+          const end = text.indexOf('`', index + 1)
+          if (end > index + 1) {
+            push(h('code', { key: 'code-' + key, className: 'tk-md-code' }, text.slice(index + 1, end)))
+            index = end + 1
+            continue
+          }
+        }
+        if (char === '!' && text[index + 1] === '[') {
+          const close = text.indexOf('](', index + 2)
+          if (close > index + 2) {
+            const end = text.indexOf(')', close + 2)
+            if (end > close + 2) {
+              push(markdownImageNode(text.slice(index + 2, close), text.slice(close + 2, end), context, 'img-' + key))
+              index = end + 1
+              continue
+            }
+          }
+        }
+        if (char === '[') {
+          const close = text.indexOf('](', index + 1)
+          if (close > index + 1) {
+            const end = text.indexOf(')', close + 2)
+            if (end > close + 2) {
+              push(markdownLinkNode(text.slice(index + 1, close), text.slice(close + 2, end), context, 'a-' + key))
+              index = end + 1
+              continue
+            }
+          }
+        }
+        if (char === '*' || char === '_') {
+          const double = text.slice(index, index + 2) === char + char
+          const marker = double ? char + char : char
+          if (char === '_' && !double && index > 0 && /[a-z0-9]/i.test(text[index - 1])) {
+            plain += char
+            index += 1
+            continue
+          }
+          const end = text.indexOf(marker, index + marker.length)
+          if (end > index + marker.length) {
+            const inner = text.slice(index + marker.length, end)
+            push(h(double ? 'strong' : 'em', { key: (double ? 'strong-' : 'em-') + key },
+              markdownInline(inner, context)))
+            index = end + marker.length
+            continue
+          }
+        }
+        const autolink = MD_AUTOLINK.exec(text.slice(index))
+        if (autolink !== null) {
+          const href = autolink[0].replace(/[.,;:!?]+$/, '')
+          if (href.length > 8) {
+            push(h('a', {
+              key: 'auto-' + key,
+              className: 'tk-md-a',
+              href,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, href))
+            index += href.length
+            continue
+          }
+        }
+        plain += char
+        index += 1
+      }
+      flush()
+      return nodes
+    }
+
+    /**
+     * Whether a source line opens a block, so a paragraph must stop before it.
+     * @param line - one source line.
+     * @returns whether the line starts a block.
+     */
+    function markdownStartsBlock(line) {
+      return /^```/.test(line)
+        || /^#{1,3}\s+/.test(line)
+        || /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)
+        || /^\s*>/.test(line)
+        || /^\s*[-*+]\s+/.test(line)
+        || /^\s*\d+[.)]\s+/.test(line)
+    }
+
+    /**
+     * Parse the block subset: fenced code, headings 1–3, rules, quotes, lists
+     * and paragraphs. Everything else stays plain text inside a paragraph.
+     * @param text - the normalized source.
+     * @param context - the render context.
+     * @returns the block nodes.
+     */
+    function markdownBlocks(text, context) {
+      const lines = text.split('\n')
+      const blocks = []
+      let index = 0
+      let key = 0
+      while (index < lines.length) {
+        const line = lines[index]
+        if (/^\s*$/.test(line)) {
+          index += 1
+          continue
+        }
+        const fence = /^```\s*([\w+-]*)\s*$/.exec(line)
+        if (fence !== null) {
+          const code = []
+          index += 1
+          while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+            code.push(lines[index])
+            index += 1
+          }
+          if (index < lines.length) index += 1
+          blocks.push(h('pre', { key: 'pre-' + key, className: 'tk-md-pre' },
+            h('code', { className: 'tk-md-code' }, code.join('\n'))))
+          key += 1
+          continue
+        }
+        const heading = /^(#{1,3})\s+(.+?)\s*$/.exec(line)
+        if (heading !== null) {
+          const level = heading[1].length
+          blocks.push(h('h' + String(level), { key: 'h-' + key, className: 'tk-md-h' + String(level) },
+            markdownInline(heading[2], context)))
+          key += 1
+          index += 1
+          continue
+        }
+        if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+          blocks.push(h('hr', { key: 'hr-' + key, className: 'tk-md-hr' }))
+          key += 1
+          index += 1
+          continue
+        }
+        if (/^\s*>/.test(line)) {
+          const quote = []
+          while (index < lines.length && /^\s*>/.test(lines[index])) {
+            quote.push(lines[index].replace(/^\s*>\s?/, ''))
+            index += 1
+          }
+          blocks.push(h('blockquote', { key: 'quote-' + key, className: 'tk-md-quote' },
+            markdownInline(quote.join('\n'), context)))
+          key += 1
+          continue
+        }
+        if (/^\s*[-*+]\s+/.test(line)) {
+          const items = []
+          while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*[-*+]\s+/, ''))
+            index += 1
+          }
+          blocks.push(h('ul', { key: 'ul-' + key, className: 'tk-md-list' },
+            items.map((item, itemIndex) => h('li', { key: itemIndex }, markdownInline(item, context)))))
+          key += 1
+          continue
+        }
+        if (/^\s*\d+[.)]\s+/.test(line)) {
+          const items = []
+          while (index < lines.length && /^\s*\d+[.)]\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*\d+[.)]\s+/, ''))
+            index += 1
+          }
+          blocks.push(h('ol', { key: 'ol-' + key, className: 'tk-md-list' },
+            items.map((item, itemIndex) => h('li', { key: itemIndex }, markdownInline(item, context)))))
+          key += 1
+          continue
+        }
+        const paragraph = [line]
+        index += 1
+        while (index < lines.length && !/^\s*$/.test(lines[index]) && !markdownStartsBlock(lines[index])) {
+          paragraph.push(lines[index])
+          index += 1
+        }
+        blocks.push(h('p', { key: 'p-' + key, className: 'tk-md-p' },
+          markdownInline(paragraph.join('\n'), context)))
+        key += 1
+      }
+      return blocks
+    }
+
+    /**
+     * Render one description or report as safe Markdown plus attachment chips.
+     * The task record carries no attachment field, so file references in the
+     * text itself are what the chips collect.
+     * @param props - `text`, optional `onOpenFile` and `t`.
+     */
+    function Markdown({ text, onOpenFile = undefined, t = undefined }) {
+      const translate = typeof t === 'function' ? t : key => key
+      const context = { onOpenFile, t: translate, attachments: [], seen: new Set() }
+      const source = typeof text === 'string' ? text.replace(/\r\n?/g, '\n') : ''
+      const blocks = markdownBlocks(source, context)
+      if (context.attachments.length > 0) {
+        blocks.push(h('div', { key: 'attachments', className: 'tk-attach', 'data-attachments': 'true' },
+          h('span', { className: 'tk-attach-label' }, translate('attachments')),
+          context.attachments.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex))))
+      }
+      return h('div', { className: 'tk-md', 'data-markdown': 'true' }, blocks)
     }
 
     /**
@@ -5250,8 +5648,9 @@ window.__ModuleLoader__.load({
         }, h(Icon, { name: 'x', size: 14 })))
 
       const descriptionBlock = h(Section, { title: t('description'), icon: 'pen' },
-        h('p', { className: 'tk-body-text', 'data-empty': description === '' ? 'true' : 'false' },
-          description === '' ? t('noDescription') : description))
+        description === ''
+          ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
+          : h(Markdown, { text: description, onOpenFile, t }))
 
       const timelineBlock = h(Section, {
         title: t('taskTimeline'),
@@ -5350,7 +5749,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'tk-note' }, t('reportLoading')))
         : reportState === 'ready'
           ? h('div', { className: 'tk-report', 'data-report': 'ready' },
-            h('p', { className: 'tk-body-text' }, reportText))
+            h(Markdown, { text: reportText, onOpenFile, t }))
           : h('div', { className: 'tk-report', 'data-report': 'empty' },
             h('span', { className: 'tk-note' }, t('reportEmptyNote')),
             onOpenAgent === undefined || ownerId === undefined

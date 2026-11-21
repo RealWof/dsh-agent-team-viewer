@@ -31,6 +31,7 @@
       inspectorTitle: 'Tarea',
       description: 'Descripción',
       noDescription: 'La tarea no tiene descripción.',
+      attachments: 'Adjuntos',
       dependencies: 'Dependencias',
       noDependencies: 'Sin dependencias',
       writeScopes: 'Ámbitos de escritura',

@@ -31,6 +31,7 @@
       inspectorTitle: 'Aufgabe',
       description: 'Beschreibung',
       noDescription: 'Die Aufgabe hat keine Beschreibung.',
+      attachments: 'Anhänge',
       dependencies: 'Abhängigkeiten',
       noDependencies: 'Keine Abhängigkeiten',
       writeScopes: 'Schreibbereiche',

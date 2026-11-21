@@ -31,6 +31,7 @@
       inspectorTitle: 'タスク',
       description: '説明',
       noDescription: 'このタスクには説明がありません。',
+      attachments: '添付ファイル',
       dependencies: '依存関係',
       noDependencies: '依存関係なし',
       writeScopes: '書き込みスコープ',

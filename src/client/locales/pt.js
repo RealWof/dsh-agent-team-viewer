@@ -31,6 +31,7 @@
       inspectorTitle: 'Tarefa',
       description: 'Descrição',
       noDescription: 'A tarefa não tem descrição.',
+      attachments: 'Anexos',
       dependencies: 'Dependências',
       noDependencies: 'Sem dependências',
       writeScopes: 'Escopos de escrita',

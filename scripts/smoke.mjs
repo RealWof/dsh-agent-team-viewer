@@ -1780,6 +1780,145 @@ check(surface(emptyReportPanel).texts.includes('reportEmptyNote'),
 check(surface(emptyReportPanel).texts.includes('agentOpen'),
   'the empty Report state has no open-chat fallback')
 
+/* --- Safe Markdown in the description and the report ------------------- */
+
+const markdownState = JSON.parse(JSON.stringify(listState))
+const markdownTask = markdownState.projectionsBySession.root.values.agentTeam.tasks
+  .find(task => task.id === 'task-1')
+markdownTask.description = [
+  '## Safety',
+  'A **bold** and *italic* line with `inline code`.',
+  '',
+  '1. first',
+  '2. second',
+  '',
+  '- bullet one',
+  '- bullet two',
+  '',
+  '```js',
+  'const x = 1',
+  '```',
+  '',
+  '> quoted text',
+  '',
+  '---',
+  '',
+  'A [https link](https://example.com/docs), a [file](src/client/10-settings.js), a [folder](src/client/), and a [resource](dsh-resource://file/session/root/src/client/20-ui.js).',
+  'A [bad](javascript:alert) link and ![bad](javascript:alert).',
+  '![diagram](https://example.com/pic.png)',
+  '<script>alert("x")</script>',
+].join('\n')
+markdownState.byId['session-md'] = { id: 'session-md', parentId: 'root', running: true, updatedAt: 0 }
+markdownState.projectionsBySession.root.values.agentTeam.tasks.push({
+  id: 'task-md',
+  revision: 1,
+  subject: 'Markdown report',
+  description: '',
+  status: 'in_progress',
+  blockedBy: [],
+  writeScopes: [],
+  ready: true,
+  ownerId: 'session-md',
+  ownerName: 'writer',
+  writeScopeWarnings: [],
+})
+const markdownReport = '**Bold report** with [board source](src/client/40-board.js).'
+const markdownProps = {
+  ...props,
+  useSessions: selector => selector(markdownState),
+  services: { ...props.services, loadAgentReport: async () => markdownReport },
+}
+resetSlots()
+resetHooks()
+const markdownStart = surface(tabBody(markdownProps))
+markdownStart.nodes.find(node => typeof node.type === 'function' && node.type.name === 'TaskCard'
+  && node.props?.task?.id === 'task-1')?.props?.onOpen?.('task-1')
+resetHooks()
+const withMarkdown = surface(tabBody(markdownProps))
+const mdText = node => surface(node).joined
+check(withMarkdown.nodes.some(node => node.type === 'h2' && mdText(node).includes('Safety')),
+  'a Markdown heading did not render')
+check(withMarkdown.nodes.some(node => node.type === 'strong' && mdText(node).includes('bold')),
+  'Markdown bold did not render')
+check(withMarkdown.nodes.some(node => node.type === 'em' && mdText(node).includes('italic')),
+  'Markdown italic did not render')
+check(withMarkdown.nodes.some(node => node.type === 'code' && mdText(node).includes('inline code')),
+  'Markdown inline code did not render')
+check(withMarkdown.nodes.some(node => node.type === 'pre' && mdText(node).includes('const x = 1')),
+  'a Markdown fenced code block did not render')
+check(withMarkdown.nodes.some(node => node.type === 'ul')
+  && withMarkdown.nodes.some(node => node.type === 'ol'),
+'a Markdown list did not render')
+check(withMarkdown.nodes.some(node => node.type === 'blockquote' && mdText(node).includes('quoted text')),
+  'a Markdown blockquote did not render')
+check(withMarkdown.nodes.some(node => node.type === 'hr'), 'a Markdown horizontal rule did not render')
+const mdWebLink = withMarkdown.nodes.find(node => node.type === 'a'
+  && node.props?.href === 'https://example.com/docs')
+check(mdWebLink?.props?.target === '_blank' && String(mdWebLink?.props?.rel).includes('noreferrer')
+  && String(mdWebLink?.props?.rel).includes('noopener'),
+'a safe https link is missing target/rel')
+check(withMarkdown.nodes.every(node => node.type !== 'a'
+  || !String(node.props?.href).toLowerCase().startsWith('javascript:')),
+'a javascript: link was rendered as an anchor')
+check(withMarkdown.nodes.every(node => node.type !== 'a'
+  || !String(node.props?.href).toLowerCase().startsWith('data:')),
+'a data: link was rendered as an anchor')
+check(!withMarkdown.nodes.some(node => node.type === 'script'),
+  'raw HTML was rendered as an element')
+check(withMarkdown.joined.includes('<script>'),
+  'raw HTML was dropped instead of shown as escaped text')
+const mdFileLink = withMarkdown.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/client/10-settings.js')
+check(mdFileLink !== undefined, 'a file link in the description did not become a file button')
+const filesBefore = openedFiles.length
+mdFileLink?.props?.onClick?.()
+check(openedFiles.length === filesBefore + 1
+  && openedFiles[openedFiles.length - 1][1] === 'src/client/10-settings.js',
+'a file link in the description did not call onOpenFile')
+check(withMarkdown.nodes.some(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/client/'),
+'a folder link in the description did not become a file button')
+check(withMarkdown.nodes.some(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/client/20-ui.js'),
+'a dsh-resource file link did not resolve to its workspace path')
+const mdImage = withMarkdown.nodes.find(node => node.type === 'img' && node.props?.alt === 'diagram')
+check(mdImage?.props?.src === 'https://example.com/pic.png' && mdImage?.props?.loading === 'lazy',
+  'an https image did not render as a lazy image')
+check(!withMarkdown.nodes.some(node => node.type === 'img' && node.props?.alt === 'bad'),
+  'an unsupported image scheme was rendered as an image')
+const mdAttachments = withMarkdown.nodes.find(node => node.props?.['data-attachments'] === 'true')
+check(mdAttachments !== undefined, 'the description file links did not produce attachment chips')
+check(surface(mdAttachments).texts.includes('attachments'),
+  'the attachment chips have no localized label')
+check(surface(mdAttachments).texts.includes('src/client/10-settings.js')
+  && surface(mdAttachments).texts.includes('src/client/'),
+'the attachment chips do not list the referenced files')
+
+// The report text goes through the same renderer.
+resetSlots()
+resetHooks()
+const markdownReportStart = surface(tabBody(markdownProps))
+markdownReportStart.nodes.find(node => typeof node.type === 'function' && node.type.name === 'TaskCard'
+  && node.props?.task?.id === 'task-md')?.props?.onOpen?.('task-md')
+resetHooks()
+const markdownReportOpened = surface(tabBody(markdownProps))
+markdownReportOpened.nodes.find(node => node.props?.['data-tab'] === 'report')?.props?.onClick?.()
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const withMarkdownReport = surface(tabBody(markdownProps))
+const mdReportPanel = withMarkdownReport.nodes.find(node => node.props?.['data-tabpanel'] === 'report')
+check(withMarkdownReport.nodes.some(node => node.type === 'strong'
+  && mdText(node).includes('Bold report')),
+'the report text did not render Markdown')
+const reportFile = within(mdReportPanel, node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/client/40-board.js')[0]
+check(reportFile !== undefined, 'the report file link did not become a file button')
+const reportFilesBefore = openedFiles.length
+reportFile?.props?.onClick?.()
+check(openedFiles.length === reportFilesBefore + 1
+  && openedFiles[openedFiles.length - 1][1] === 'src/client/40-board.js',
+'the report file link did not call onOpenFile')
+
 /* --- loadAgentReport waits for the chat snapshot ----------------------- */
 
 const heldState = { releaseCount: 0, chatClosed: 0 }
