@@ -11,6 +11,7 @@ npm run build      # regenerate client.js from src/client/**
 npm run i18n       # eight-dictionary parity
 npm run smoke      # headless board checks
 npm run check:commits  # PR commit messages (origin/main..HEAD)
+npm run set-version -- x.y.z  # package.json + README badges, no tag, no publish
 npm run release    # dry run only; never publishes without --publish
 ```
 
@@ -31,27 +32,57 @@ npm run release    # dry run only; never publishes without --publish
 
 ## Git workflow
 
-`main` is protected. Never commit to `main` and never push to it — every change, including a one-line
-docs fix, goes through a branch and a pull request.
+`main` is protected and stays at the last released version. Never commit to `main` and never push to it:
+every change reaches `main` through a pull request.
 
-- Branch from an up-to-date `main`:
-  `git switch main && git pull --ff-only && git switch -c agent/<slug>`. Use `agent/` for work you
-  open on the user's behalf; `feat/`, `fix/`, `docs/`, `ci/` and `chore/` belong to the user.
-- Run `npm run check` before the first push. Do not claim CI is green without a real run.
+### Version branches
+
+Each release target lives on one branch, `release/x.y.z`, cut from an up-to-date `main`:
+
+```sh
+git switch main && git pull --ff-only && git switch -c release/0.1.1
+```
+
+- A request such as "fix version 0.1.0" or "prepare 0.2.0" with a list of bugs and features means: open
+  the branch for the target version, or continue the open one, and commit each item there as its own
+  logical commit. A bug-fix batch targets the next patch (`0.1.0` → `0.1.1`); new capabilities may target
+  a minor (`0.2.0`). The user may name the version; when the target is not explicit, state the chosen
+  one in the branch name.
+- Do not change the version in `package.json`, the README badges or the versioned `CHANGELOG.md` heading
+  in those commits; collect the entries under `## [Unreleased]`.
 - Commit in English: `type(scope): subject`, imperative, at most 72 characters, no trailing period.
   Allowed types: `feat`, `fix`, `docs`, `test`, `chore`, `ci`, `refactor`, `perf`, `build`, `revert`.
-  One logical change per commit; split a large feature instead of landing one huge commit. CI enforces
-  the messages (`scripts/check-commits.mjs`), and the PR title — which becomes the squash commit —
-  must follow the same rules.
-- Open a pull request against `main`; describe what changed, why and how it was verified, and link the
-  issue. Fill in the pull request template.
-- Wait for every required check. Fix by adding commits to the same branch. Rebase or
-  `--force-with-lease` only on your own open PR branch, never on `main`.
-- Merge with **Squash and merge** only after CI is green, unless the user asked to review the pull
-  request first. Delete the branch afterwards. Never disable branch protection, use an admin bypass,
-  push a tag or publish a release without an explicit request.
-- Leave unrelated working-tree changes untouched: if the tree already contains someone else's WIP,
-  commit only the files of your task and never `git add -A` over it.
+  One logical change per commit. CI enforces the messages (`scripts/check-commits.mjs`), and the pull
+  request title — which becomes the squash commit — follows the same rules.
+- Run `npm run check`; rebuild and commit `client.js` in every commit that touches `src/client/**`.
+- Do not push the version branch or open a pull request until the user confirms. A merge never publishes
+  a version.
+- A second version target while one branch is still open needs an explicit decision: release the open
+  version first, or base the new branch on it. If the target changes before the release, rename the
+  branch (`release/0.2.0`).
+
+### Release pull request
+
+On the user's push confirmation, finish the same branch:
+
+1. Rename `## [Unreleased]` to `## [x.y.z] - YYYY-MM-DD` in `CHANGELOG.md`.
+2. `npm run set-version -- x.y.z` — sets `package.json` and the `version-x.y.z-` badge in the three
+   READMEs without tagging or publishing.
+3. `npm run check`, then commit `chore(release): x.y.z`.
+4. Push the branch and open the pull request against `main`, filling the template and linking the issue.
+   Wait for every required check; fix by adding commits to the same branch. Merge with
+   **Squash and merge** only after CI is green, unless the user asked to review first. Delete the branch
+   afterwards.
+5. Publishing is a separate request: only then tag the merged commit `vX.Y.Z` and push the tag for
+   `.github/workflows/release.yml`, or run the documented `npm run release:publish` path.
+
+- Rebase or `--force-with-lease` only on your own open branch, never on `main`.
+- Never disable branch protection, use an admin bypass, push a tag or publish a release without the
+  explicit request.
+- Work outside a version target (tooling, CI, docs) still uses its own branch and pull request; name it
+  `agent/<slug>` unless the user names one.
+- Leave unrelated working-tree changes untouched: commit only the files of your task and never
+  `git add -A` over someone else's WIP.
 
 ## Packaging
 
