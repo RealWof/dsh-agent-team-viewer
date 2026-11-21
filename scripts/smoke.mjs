@@ -148,6 +148,8 @@ let actionRegistration
 let titleSeat
 let settingsSection
 let settingsRegistration
+let settingsIcon
+let settingsIconRegistration
 let reg
 
 const listState = {
@@ -232,6 +234,10 @@ const ctx = {
         settingsSection = component
         settingsRegistration = options
       }
+      if (options.name === 'settings.section.icon') {
+        settingsIcon = component
+        settingsIconRegistration = options
+      }
       return () => {}
     },
   },
@@ -304,6 +310,10 @@ check(settingsRegistration?.label?.() === 'Agent Team Viewer',
 check(settingsRegistration?.label?.('ru') === 'Agent Team Viewer',
   'the Settings nav item follows the language instead of the literal plugin name')
 check(settingsRegistration?.locale === 'agent-team-viewer', 'the Settings section lost its locale namespace')
+check(settingsIconRegistration?.name === 'settings.section.icon', 'the Settings nav icon was not registered')
+check(settingsIconRegistration?.id === settingsRegistration?.id,
+  'the Settings nav icon id does not match the section id')
+check(settingsIconRegistration?.locale === 'agent-team-viewer', 'the Settings nav icon lost its locale namespace')
 
 /* The injected service face the body reads. */
 const boardServices = boardRegistration?.inject?.('session-a')?.services
@@ -1921,6 +1931,14 @@ check(scaleRanges.some(node => node.props?.['aria-label'] === 'setScale'),
   'the Settings page lost the panel scale slider')
 check(scaleRanges.some(node => node.props?.['aria-label'] === 'setDialogScale'),
   'the Settings page has no dialog scale slider')
+
+// The Settings nav row draws the board's own kanban mark, at the size the
+// settings shell passes into the icon slot.
+const settingsGlyph = surface(settingsIcon === undefined ? null : settingsIcon({ size: 16, active: true }))
+check(settingsGlyph.nodes.some(node => node.type === 'svg' && node.props?.width === 16),
+  'the Settings nav icon does not honour the slot size')
+check(settingsGlyph.nodes.some(node => node.props?.d === 'M8 7v9'),
+  'the Settings nav icon does not draw the board kanban glyph')
 
 /* The page is a calm row list: muted group headings, one row per preference
    with its control at the right, and no boxed inspector cards. */

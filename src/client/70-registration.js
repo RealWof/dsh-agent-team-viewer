@@ -661,6 +661,16 @@
           inject: () => ({}),
         }, SettingsSection))
 
+        // The Settings navigation row carries the same mark as the board tab
+        // instead of the settings shell's generic gear; the shared id pairs
+        // this icon with the section above.
+        ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+          name: 'settings.section.icon',
+          id: 'agent-team-viewer',
+          locale: NS,
+          inject: () => ({}),
+        }, KanbanArtwork))
+
         // The task record keeps no timestamps, so the elapsed labels come from
         // watching the board. This watcher runs for as long as the page does,
         // which is what lets a task that started before the panel was opened
