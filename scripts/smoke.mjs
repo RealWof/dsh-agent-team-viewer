@@ -107,9 +107,11 @@ const injected = []
 const effects = []
 let tabDefinition
 let tabBody
+let boardRegistration
 let actionRegistration
 let titleSeat
 let settingsSection
+let settingsRegistration
 let reg
 
 const listState = {
@@ -182,10 +184,16 @@ const ctx = {
     inject: (slot, factory) => factory(),
     register: (options, component) => {
       registrations.push(options)
-      if (options.name === 'sidebar.right.pane.tab') tabBody = component
+      if (options.name === 'sidebar.right.pane.tab') {
+        tabBody = component
+        boardRegistration = options
+      }
       if (options.name === 'sidebar.right.pane.tab.title') titleSeat = options
       if (options.name === 'conversation.session.header.actions') actionRegistration = options
-      if (options.name === 'settings.section') settingsSection = component
+      if (options.name === 'settings.section') {
+        settingsSection = component
+        settingsRegistration = options
+      }
       return () => {}
     },
   },
@@ -249,6 +257,18 @@ check(actionRegistration !== undefined, 'the header action was not registered')
 check(actionRegistration?.order === 8, 'the header action must sit left of Subagents (order 10)')
 check(injected.includes('sidebarRight,sidebarRightTabs'), 'the sidebar services were not injected')
 check(injected.includes('sessions'), 'the sessions service was not injected')
+check(settingsRegistration !== undefined, 'the Settings section was not registered')
+check(settingsRegistration?.id === 'agent-team-viewer', 'the Settings section id is wrong')
+check(settingsRegistration?.order === 80, 'the Settings section is not in the expected order')
+check(typeof settingsRegistration?.label === 'function', 'the Settings section label must be a thunk')
+check(settingsRegistration?.label?.() === 'settingsTitle', 'the Settings section label lost its title')
+check(settingsRegistration?.locale === 'agent-team-viewer', 'the Settings section lost its locale namespace')
+
+/* The injected service face the body reads. */
+const boardServices = boardRegistration?.inject?.('session-a')?.services
+check(boardServices !== undefined, 'the board registration injects no services')
+check(typeof boardServices?.loadAgentReport === 'function', 'the board has no agent-report reader')
+check(typeof boardServices?.openFileLink === 'function', 'the board has no write-scope opener')
 
 /* --- Walk helpers ----------------------------------------------------- */
 
@@ -579,6 +599,12 @@ check(sortButtons.every(node => node.props?.['aria-haspopup'] === 'menu'
 'the sort button has no localized accessibility state')
 check(strip.texts.filter(text => text === 'setSortNewest').length === 2,
   'the section sort menus do not name the current option')
+const agentsHeadNode = strip.nodes.find(node => node.props?.className === 'tk-agents-head')
+const tasksHeadNode = strip.nodes.find(node => node.props?.className === 'tk-section-head')
+check(within(agentsHeadNode, node => node.props?.className === 'tk-sort').length === 1,
+  'the agents section header has no sort control')
+check(within(tasksHeadNode, node => node.props?.className === 'tk-sort').length === 1,
+  'the tasks section header has no sort control')
 check(!strip.texts.includes('agentOpenHint'), 'the agents header still shows the static open-chat hint')
 
 /* --- Role grouping: two agents of one role share a nested head -------- */
@@ -731,8 +757,9 @@ check(withAgent.texts.includes('agentTasksHeading'), 'the agent dialog has no ta
 check(withAgent.texts.includes('Wire the board'), 'the agent dialog does not list the task it owns')
 check(withAgent.nodes.some(node => node.props?.className === 'tk-metrics'), 'the agent dialog has no metric grid')
 check(withAgent.texts.includes('metricTokens') && withAgent.texts.includes('metricCostEquivalent'), 'the agent dialog lost its metrics')
-check(withAgent.joined.includes('metricCostApiSpend') && withAgent.joined.includes('$0'),
-  'the agent cost sub-line does not show the real API spend')
+check(withAgent.joined.includes('metricCostApiSpend') && withAgent.joined.includes('$0')
+  && withAgent.joined.includes('$1.23'),
+'the agent cost sub-line does not show both the real API spend and the equivalent')
 check(withAgent.texts.includes('metricBackground'), 'the agent dialog does not separate the background time from the run time')
 check(withAgent.joined.includes('costPlanNote'), 'the subscription case is not explained')
 check(withAgent.texts.includes('agentModel'), 'the agent dialog does not show the model')
@@ -1321,6 +1348,361 @@ check(scaleRanges.some(node => node.props?.['aria-label'] === 'setScale'),
   'the Settings page lost the panel scale slider')
 check(scaleRanges.some(node => node.props?.['aria-label'] === 'setDialogScale'),
   'the Settings page has no dialog scale slider')
+
+/* --- The sort menu reorders the columns, not only the stored value ----- */
+
+const sortOrderState = JSON.parse(JSON.stringify(listState))
+sortOrderState.projectionsBySession.root.values.agentTeam.tasks.push({
+  id: 'task-4',
+  revision: 1,
+  subject: 'Newest queued task',
+  description: '',
+  status: 'pending',
+  blockedBy: [],
+  writeScopes: [],
+  ready: true,
+  writeScopeWarnings: [],
+})
+// task-2 is blocked in the shipped fixture; unblock it so the queued column
+// holds two cards with different first-seen stamps.
+const sortOldTask = sortOrderState.projectionsBySession.root.values.agentTeam.tasks.find(task => task.id === 'task-2')
+sortOldTask.blockedBy = []
+sortOldTask.ready = true
+/** The queued column's card ids, in render order. */
+const queuedOrder = rendered => {
+  const queued = rendered.nodes.find(node => node.props?.['data-column'] === 'queued')
+  return within(queued, node => node.props?.['data-task-id'] !== undefined).map(node => node.props['data-task-id'])
+}
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  autoRoleGroups: false, customGroups: false, sort: 'newest',
+}))
+// The first pass records the new task's first-seen stamp; the second render
+// reads that ledger back exactly as a page reload would.
+boardFromFreshBundle(sortOrderState)
+resetSlots()
+resetHooks()
+const newestMenuBoard = surface(tabBody({ ...props, useSessions: selector => selector(sortOrderState) }))
+check(queuedOrder(newestMenuBoard)[0] === 'task-4',
+  'the newest-first default does not put the freshly seen task on top: ' + queuedOrder(newestMenuBoard).join(','))
+const headerSorters = newestMenuBoard.nodes.filter(node => node.props?.className === 'tk-sort-btn')
+check(headerSorters.length === 2, 'the two header sort controls are missing')
+headerSorters[1]?.props?.onClick?.({ stopPropagation: () => {} })
+resetHooks()
+const openedSortMenu = surface(tabBody({ ...props, useSessions: selector => selector(sortOrderState) }))
+openedSortMenu.nodes.find(node => node.props?.className === 'tk-sort-option' && node.props?.['data-value'] === 'oldest')
+  ?.props?.onClick?.({ stopPropagation: () => {} })
+const switchedOrderBoard = boardFromFreshBundle(sortOrderState)
+check(queuedOrder(switchedOrderBoard)[0] === 'task-2',
+  'the header sort menu did not reorder the column oldest-first: ' + queuedOrder(switchedOrderBoard).join(','))
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).sort === 'oldest',
+  'the header sort menu did not persist the switched order')
+
+/* --- The dialog scale reaches the agent dialog as well ----------------- */
+
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  sort: 'newest', autoRoleGroups: false, customGroups: false, dialogScale: 1.25,
+}))
+const scaledAgentBoard = boardFromFreshBundle()
+scaledAgentBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')?.props?.onClick?.()
+resetHooks()
+const scaledAgentTree = surface(tabBody(props))
+const scaledAgentDialog = scaledAgentTree.nodes.find(node => node.props?.['data-agent-dialog'] === 'session-a')
+check(scaledAgentDialog?.props?.style?.zoom === 1.25,
+  'the dialog scale is not applied to the agent dialog, got: ' + JSON.stringify(scaledAgentDialog?.props?.style))
+
+/* --- Remembered background time survives a roster drop on a fresh page - */
+
+const savedAgentRoster = jobsState.rows['session-a']
+const savedBackgroundText = storage.get(BACKGROUND_STORAGE_KEY)
+jobsState.rows['session-a'] = []
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: false, customGroups: false }))
+const droppedRosterBoard = boardFromFreshBundle()
+const droppedRosterRow = droppedRosterBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')
+check(droppedRosterRow !== undefined, 'the agent row disappeared with its roster')
+check(within(droppedRosterRow, node => node.props?.title === 'metricBackground').length > 0,
+  'a roster drop erased the remembered background time on a fresh page')
+const droppedBackground = JSON.parse(storage.get(BACKGROUND_STORAGE_KEY) ?? '{}')
+check(Array.isArray(droppedBackground['session-a']) && droppedBackground['session-a'].length > 0,
+  'a roster drop erased the persisted background intervals: ' + JSON.stringify(droppedBackground))
+check(storage.get(BACKGROUND_STORAGE_KEY) === savedBackgroundText,
+  'an empty roster rewrote the persisted background intervals')
+jobsState.rows['session-a'] = savedAgentRoster
+
+/* --- Settings store: sanitized reads and clamped writes ---------------- */
+
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  autoRoleGroups: 'yes',
+  customGroups: true,
+  customGroupsText: 42,
+  sort: 'bogus',
+  animateCards: false,
+  animationMs: 99999,
+  uiScale: 0.01,
+  dialogScale: 9,
+}))
+const clampedBoard = boardFromFreshBundle()
+const clampedRoot = clampedBoard.nodes.find(node => node.props?.className === 'tk-root')
+check(clampedRoot?.props?.style?.zoom === 0.8,
+  'the sanitized panel scale was not applied to the board root, got: ' + JSON.stringify(clampedRoot?.props?.style))
+resetSlots()
+const clampedSettings = surface(settingsSection({ t: key => key }))
+const settingBoxes = clampedSettings.nodes.filter(node => node.props?.type === 'checkbox')
+check(settingBoxes.length === 3, 'the Settings page lost a grouping or animation checkbox')
+check(settingBoxes[0]?.props?.checked === true && settingBoxes[1]?.props?.checked === true
+  && settingBoxes[2]?.props?.checked === false,
+'the Settings page does not render the sanitized booleans')
+const settingTextarea = clampedSettings.nodes.find(node => node.props?.className === 'tk-set-text')
+check(settingTextarea?.props?.value === '' && settingTextarea?.props?.disabled === false,
+  'the custom-groups editor did not sanitize a non-string value')
+const settingSelect = clampedSettings.nodes.find(node => node.props?.className === 'tk-set-select')
+check(settingSelect?.props?.value === 'newest', 'the Settings page did not fall back to the default sort')
+const rangeByLabel = (rendered, label) => rendered.nodes.find(node => node.props?.type === 'range'
+  && node.props?.['aria-label'] === label)
+const animationRange = rangeByLabel(clampedSettings, 'setAnimationDuration')
+check(animationRange?.props?.value === 1000 && animationRange?.props?.disabled === true,
+  'the animation duration was not clamped to its maximum')
+check(rangeByLabel(clampedSettings, 'setScale')?.props?.value === 0.8,
+  'the panel scale was not clamped to its minimum')
+check(rangeByLabel(clampedSettings, 'setDialogScale')?.props?.value === 1.4,
+  'the dialog scale was not clamped to its maximum')
+check(clampedSettings.texts.includes('1000 setMs'),
+  'the clamped animation duration has no value label')
+check(clampedSettings.texts.includes('x0.80') && clampedSettings.texts.includes('x1.40'),
+  'a clamped scale has no formatted value label')
+// Every control writes through the same sanitizer.
+animationRange?.props?.onChange?.({ target: { value: '9999' } })
+rangeByLabel(clampedSettings, 'setScale')?.props?.onChange?.({ target: { value: '5' } })
+settingSelect?.props?.onChange?.({ target: { value: 'bogus' } })
+const clampedWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
+check(clampedWrite.animationMs === 1000 && clampedWrite.uiScale === 1.4 && clampedWrite.dialogScale === 1.4,
+  'the settings writer did not clamp an out-of-range value: ' + JSON.stringify(clampedWrite))
+check(clampedWrite.sort === 'newest' && clampedWrite.autoRoleGroups === true
+  && clampedWrite.customGroups === true && clampedWrite.customGroupsText === '',
+'the settings writer did not sanitize the invalid fields: ' + JSON.stringify(clampedWrite))
+settingTextarea?.props?.onChange?.({ target: { value: 'crew: builder, reviewer\nqa: test' } })
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).customGroupsText === 'crew: builder, reviewer\nqa: test',
+  'the custom-groups text was not stored verbatim')
+
+/* --- Task dialog Report: loading, ready and empty ---------------------- */
+
+// A dedicated owner keeps late async updates from the earlier dialog tests,
+// which are keyed by `session-a`, away from these Report states.
+const reportState = JSON.parse(JSON.stringify(listState))
+reportState.byId['session-report'] = { id: 'session-report', parentId: 'root', running: false, updatedAt: 0 }
+reportState.projectionsBySession.root.values.agentTeam.tasks.push({
+  id: 'task-report',
+  revision: 1,
+  subject: 'Report task',
+  description: '',
+  status: 'in_progress',
+  blockedBy: [],
+  writeScopes: [],
+  ready: true,
+  ownerId: 'session-report',
+  ownerName: 'reporter',
+  writeScopeWarnings: [],
+})
+
+/** Mount the board, open one task, and leave the task dialog on its Report tab. */
+const openTaskReport = (taskId, loadAgentReport) => {
+  const testProps = {
+    ...props,
+    useSessions: selector => selector(reportState),
+    services: { ...props.services, loadAgentReport },
+  }
+  resetSlots()
+  resetHooks()
+  const start = surface(tabBody(testProps))
+  start.nodes.find(node => typeof node.type === 'function' && node.type.name === 'TaskCard'
+    && node.props?.task?.id === taskId)?.props?.onOpen?.(taskId)
+  resetHooks()
+  const opened = surface(tabBody(testProps))
+  opened.nodes.find(node => node.props?.['data-tab'] === 'report')?.props?.onClick?.()
+  resetHooks()
+  return { props: testProps, view: surface(tabBody(testProps)) }
+}
+const loadingReport = openTaskReport('task-report', () => new Promise(() => {}))
+check(loadingReport.view.nodes.some(node => node.props?.['data-report'] === 'loading'),
+  'the Report tab does not show its loading state while the answer is pending')
+check(loadingReport.view.texts.includes('reportLoading'), 'the loading state has no localized note')
+check(!loadingReport.view.nodes.some(node => node.props?.['data-report'] === 'ready'),
+  'the Report tab claimed a ready answer before one arrived')
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const stillLoadingReport = surface(tabBody(loadingReport.props))
+check(stillLoadingReport.nodes.some(node => node.props?.['data-report'] === 'loading'),
+  'the Report tab dropped its loading state without an answer')
+const readyReportProps = {
+  ...loadingReport.props,
+  services: {
+    ...loadingReport.props.services,
+    loadAgentReport: async () => 'The held report.',
+  },
+}
+resetHooks()
+surface(tabBody(readyReportProps))
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const readyReport = surface(tabBody(readyReportProps))
+const readyReportPanel = readyReport.nodes.find(node => node.props?.['data-tabpanel'] === 'report')
+check(readyReportPanel !== undefined, 'the Report panel disappeared after the answer arrived')
+check(readyReport.nodes.some(node => node.props?.['data-report'] === 'ready')
+  && surface(readyReportPanel).joined.includes('The held report.'),
+'the Report tab did not show the agent final answer: ' + surface(readyReportPanel)?.joined?.slice(0, 200))
+const emptyReport = openTaskReport('task-report', async () => undefined)
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const emptyReportView = surface(tabBody(emptyReport.props))
+const emptyReportPanel = emptyReportView.nodes.find(node => node.props?.['data-tabpanel'] === 'report')
+check(emptyReportView.nodes.some(node => node.props?.['data-report'] === 'empty'),
+  'an agent without a final answer did not show the empty Report state')
+check(surface(emptyReportPanel).texts.includes('reportEmptyNote'),
+  'the empty Report state has no explanation')
+check(surface(emptyReportPanel).texts.includes('agentOpen'),
+  'the empty Report state has no open-chat fallback')
+
+/* --- loadAgentReport waits for the chat snapshot ----------------------- */
+
+const heldState = { releaseCount: 0, chatClosed: 0 }
+let chatRows = []
+let publishChat
+const heldChat = {
+  getSnapshot: () => ({ nodes: { values: () => chatRows } }),
+  subscribe: listener => {
+    publishChat = listener
+    return () => { heldState.chatClosed += 1 }
+  },
+}
+const heldSessions = {
+  retain: () => ({
+    binding: { sessionId: 'session-a' },
+    ready: Promise.resolve(),
+    release: () => { heldState.releaseCount += 1 },
+  }),
+  subagentAddress: () => ({ childSessionId: 'session-a', parentSessionId: 'root', mode: 'continuable' }),
+}
+const previousGet = ctx.get
+ctx.get = name => {
+  if (name === 'sessions') return heldSessions
+  if (name === 'uiConversation') return { binding: () => ({ target: () => heldChat }) }
+  return undefined
+}
+const heldReport = boardServices.loadAgentReport('session-a')
+let heldSettled = false
+heldReport.then(() => { heldSettled = true })
+await new Promise(resolve => setTimeout(resolve, 20))
+check(heldSettled === false, 'the report reader resolved while the never-opened chat was still empty')
+chatRows = [{
+  kind: 'assistant-step',
+  anchorSeq: 4,
+  data: { blocks: [{ kind: 'reasoning', text: 'not the answer' }, { kind: 'text', text: '  Held final answer.  ' }] },
+}]
+publishChat()
+const heldAnswer = await heldReport
+check(heldAnswer === 'Held final answer.',
+  'the report reader did not return the answer that filled the snapshot: ' + String(heldAnswer))
+check(heldState.releaseCount === 1, 'the report reader did not release its retained reference')
+check(heldState.chatClosed === 1, 'the report reader did not unsubscribe from the chat target')
+
+// A builder that answers from inside subscribe still unsubscribes and resolves.
+heldState.releaseCount = 0
+heldState.chatClosed = 0
+let syncRows = []
+const syncChat = {
+  getSnapshot: () => ({ nodes: { values: () => syncRows } }),
+  subscribe: listener => {
+    syncRows = [{
+      kind: 'assistant-step',
+      anchorSeq: 7,
+      data: { blocks: [{ kind: 'text', text: 'Synchronous answer.' }] },
+    }]
+    listener()
+    return () => { heldState.chatClosed += 1 }
+  },
+}
+ctx.get = name => {
+  if (name === 'sessions') return heldSessions
+  if (name === 'uiConversation') return { binding: () => ({ target: () => syncChat }) }
+  return undefined
+}
+check(await boardServices.loadAgentReport('session-a') === 'Synchronous answer.',
+  'a chat target that answers inside subscribe did not resolve')
+check(heldState.chatClosed === 1, 'a synchronous subscriber leaked its chat subscription')
+check(heldState.releaseCount === 1, 'a synchronous subscriber leaked its reference')
+
+// A target without a subscription resolves immediately and still releases.
+heldState.releaseCount = 0
+ctx.get = name => {
+  if (name === 'sessions') return heldSessions
+  if (name === 'uiConversation') {
+    return { binding: () => ({ target: () => ({ getSnapshot: () => ({ nodes: { values: () => [] } }) }) }) }
+  }
+  return undefined
+}
+check(await boardServices.loadAgentReport('session-a') === undefined,
+  'an empty chat target without a subscription did not resolve empty')
+check(heldState.releaseCount === 1, 'the no-subscription path leaked its reference')
+
+// A failed initial open settles the wait empty and clears its timer.
+heldState.releaseCount = 0
+ctx.get = name => {
+  if (name === 'sessions') {
+    return {
+      retain: () => ({
+        binding: { sessionId: 'session-a' },
+        ready: Promise.reject(new Error('open failed')),
+        release: () => { heldState.releaseCount += 1 },
+      }),
+    }
+  }
+  if (name === 'uiConversation') {
+    return {
+      binding: () => ({
+        target: () => ({
+          getSnapshot: () => ({ nodes: { values: () => [] } }),
+          subscribe: () => () => {},
+        }),
+      }),
+    }
+  }
+  return undefined
+}
+check(await boardServices.loadAgentReport('session-a') === undefined,
+  'a failed chat open rejected instead of resolving empty')
+check(heldState.releaseCount === 1, 'the failed-open path leaked its reference')
+
+// Missing services and invalid owners are silent, as before.
+ctx.get = () => undefined
+check(await boardServices.loadAgentReport('session-a') === undefined,
+  'a missing sessions service rejected')
+check(await boardServices.loadAgentReport('') === undefined, 'an empty owner id rejected')
+
+/* --- Write scopes: real file addresses and the folder heuristic -------- */
+
+const navigation = { tabs: [], resources: [] }
+ctx.get = name => (name === 'sidebarRight'
+  ? {
+    openTab: kind => { navigation.tabs.push(kind) },
+    openResource: address => { navigation.resources.push(address) },
+  }
+  : undefined)
+boardServices.openFileLink('root', 'src/client')
+check(navigation.resources[0] === 'dsh-resource://file/session/root/src/client',
+  'a file write scope did not become a file resource: ' + String(navigation.resources[0]))
+boardServices.openFileLink('root', 'C:\\work\\file name.ts')
+check(navigation.resources[1] === 'dsh-resource://file/session/root/C:/work/file%20name.ts',
+  'the file resource did not encode a workspace path: ' + String(navigation.resources[1]))
+boardServices.openFileLink('root', 'src/client/')
+check(navigation.tabs[0] === 'files', 'a trailing-slash folder scope did not open the Files page')
+boardServices.openFileLink('root', 'src\\client\\')
+check(navigation.tabs[1] === 'files', 'a trailing-backslash folder scope did not open the Files page')
+boardServices.openFileLink('root', '')
+boardServices.openFileLink('', 'src/client')
+check(navigation.tabs.length === 2 && navigation.resources.length === 2,
+  'an empty scope or session id was treated as a link')
+ctx.get = previousGet
 
 /* --- Report ----------------------------------------------------------- */
 
