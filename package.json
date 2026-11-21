@@ -1,6 +1,6 @@
 {
   "name": "dsh-agent-team-viewer",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "license": "MIT",
   "type": "module",
   "description": "DeepSeek Harness plugin: a read-only viewer of the Agent Team board. Kanban columns follow task status, a card opens a block inspector, the subagent tree is grouped by status with run time, background time, tokens and agent-hours in the same order the totals row uses, and each agent's background processes are counted in its row and listed in a foldable, scrollable dialog block.",
