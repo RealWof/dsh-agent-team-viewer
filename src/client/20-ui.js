@@ -199,6 +199,7 @@
   border:0;border-radius:var(--dsw-radius-panel,16px);background:var(--dsw-alias-bg-layer-2);
   box-shadow:var(--dsw-elevation-prominent,0 18px 48px rgba(0,0,0,.35));color:var(--dsw-alias-label-primary);overflow:hidden}
 .tk-insp-head{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.tk-insp-actions{display:inline-flex;align-items:center;gap:2px;flex:none}
 .tk-insp-heading{display:flex;flex-direction:column;gap:3px;min-width:0}
 .tk-insp-title{margin:0;font-size:14px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
 .tk-insp-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}

@@ -848,9 +848,27 @@ check(withTask.texts.includes('Draw the columns.'), 'the task dialog lost the de
 check(withTask.texts.includes('agentHeading'), 'the task dialog lost its agent block')
 check(withTask.texts.includes('agentMetricsNote'), 'the agent metrics are not labelled as the agent session')
 check(withTask.texts.includes('builder'), 'the task dialog does not name the owning agent')
-check(withTask.texts.includes('agentOpen') && withTask.texts.includes('agentOpenAside') && withTask.texts.includes('agentDetails'),
-  'the task dialog lost one of its agent actions')
 check(withTask.nodes.some(node => node.props?.className === 'tk-stats'), 'the task dialog shows no compact agent metrics')
+// The agent actions live in the header's right corner, left of the close
+// control, and the agent section keeps no action footer of its own.
+const taskDialogNode = withTask.nodes.find(node => node.props?.['data-task-id'] === 'task-1'
+  && node.props?.role === 'dialog')
+const taskHead = within(taskDialogNode, node => node.props?.className === 'tk-insp-head')[0]
+const headActionBar = within(taskHead, node => node.props?.className === 'tk-insp-actions')[0]
+check(headActionBar !== undefined, 'the task dialog header has no agent actions')
+const headActionLabels = within(headActionBar, node => node.type === 'button')
+  .map(node => node.props?.['aria-label'])
+check(headActionLabels.join(',') === 'agentOpenHint,agentOpenAsideHint,agentDetails',
+  'the task dialog header actions are not the open/aside/details controls: ' + headActionLabels.join(','))
+check(within(headActionBar, node => node.type === 'button' && node.props?.className === 'tk-icon-btn').length === 3,
+  'the task dialog header actions are not compact icon buttons')
+const headChildren = Array.isArray(taskHead?.props?.children) ? taskHead.props.children : []
+check(headChildren.findIndex(child => child?.props?.className === 'tk-insp-actions')
+  === headChildren.length - 2, 'the agent actions are not immediately left of the close button')
+check(headChildren[headChildren.length - 1]?.props?.['aria-label'] === 'close',
+  'the close button is not the last control of the task dialog header')
+check(within(taskDialogNode, node => node.props?.className === 'tk-actions').length === 0,
+  'the agent block still carries the old action footer')
 
 /* The task dialog is two columns: facts on the left, Markdown on the right. */
 const taskDialog = withTask.nodes.find(node => node.props?.['data-task-id'] === 'task-1'
@@ -932,7 +950,7 @@ surface(tabBody(props))
 
 /* Navigating from the task dialog must also close it. */
 const openFromTask = within(taskTree, node => node.type === 'button'
-  && (Array.isArray(node.props?.children) ? node.props.children.includes('agentOpen') : node.props?.children === 'agentOpen'))[0]
+  && node.props?.['aria-label'] === 'agentOpenHint')[0]
 check(openFromTask !== undefined, 'the task dialog has no agent-open button to click')
 openFromTask?.props?.onClick?.()
 resetHooks()

@@ -146,6 +146,33 @@
       const activityText = agent === undefined ? undefined : activityOf(agent, translateAgent)
       const modeText = agent === undefined ? undefined : modeOf(agent, translateAgent)
 
+      // The owning agent's actions sit in the header's right corner, left of
+      // the close control, so the agent block itself stays facts only.
+      const headActions = agent === undefined
+        ? null
+        : h('span', { className: 'tk-insp-actions' },
+          typeof onOpenAgent !== 'function' ? null : h('button', {
+            type: 'button',
+            className: 'tk-icon-btn',
+            title: t('agentOpenHint'),
+            'aria-label': t('agentOpenHint'),
+            onClick: () => { onOpenAgent(task.ownerId, 'main') },
+          }, h(Icon, { name: 'chevron-right', size: 13 })),
+          typeof onOpenAgent !== 'function' ? null : h('button', {
+            type: 'button',
+            className: 'tk-icon-btn',
+            title: t('agentOpenAsideHint'),
+            'aria-label': t('agentOpenAsideHint'),
+            onClick: () => { onOpenAgent(task.ownerId, 'aside') },
+          }, h(Icon, { name: 'panel-right', size: 13 })),
+          typeof onInspect !== 'function' ? null : h('button', {
+            type: 'button',
+            className: 'tk-icon-btn',
+            title: t('agentDetails'),
+            'aria-label': t('agentDetails'),
+            onClick: () => { onInspect(task.ownerId) },
+          }, h(Icon, { name: 'gauge', size: 13 })))
+
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
           h('h2', { className: 'tk-insp-title' }, String(task.subject ?? task.id)),
@@ -158,6 +185,7 @@
               : h(Chip, { icon: 'users' }, agentName),
             deps.length > 0 ? h(Chip, { tone: 'warn', icon: 'link' }, String(deps.length)) : null)),
         h('span', { className: 'tk-head-spacer' }),
+        headActions,
         h('button', {
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
@@ -199,25 +227,7 @@
             KeyRow({ name: 'agentName', label: t('agentLabel'), children: agentName }),
             activityText === undefined ? null : KeyRow({ name: 'agentActivity', label: t('stateLabel'), children: activityText }),
             modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })),
-          agentLine.length === 0 ? null : h('div', { className: 'tk-stats' }, agentLine),
-          onOpenAgent === undefined ? null : h('div', { className: 'tk-actions' },
-            h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenHint'),
-              onClick: () => { onOpenAgent(task.ownerId, 'main') },
-            }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen')),
-            agent === undefined ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenAsideHint'),
-              onClick: () => { onOpenAgent(task.ownerId, 'aside') },
-            }, h(Icon, { name: 'panel-right', size: 11 }), t('agentOpenAside')),
-            onInspect === undefined || agent === undefined ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              onClick: () => { onInspect(task.ownerId) },
-            }, h(Icon, { name: 'gauge', size: 11 }), t('agentDetails'))))
+          agentLine.length === 0 ? null : h('div', { className: 'tk-stats' }, agentLine))
 
       const depsBlock = h(Section, {
         title: t('dependencies'), icon: 'link', note: deps.length === 0 ? t('noDependencies') : undefined,

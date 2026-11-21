@@ -81,6 +81,9 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Changed
 
+- The task dialog's agent actions (**Open**, **Aside**, **Details**) moved from the agent block's
+  footer into the dialog header's right corner as compact icon buttons immediately left of the close
+  control, so the agent block keeps only the agent's facts and metrics.
 - The Settings page reads like a General settings tab: a calm vertical list inside a 760px column,
   small muted section headings, and one row per preference with its title and a short description on
   the left and the control on the right, separated by hairline rules. Booleans are now switch-style
