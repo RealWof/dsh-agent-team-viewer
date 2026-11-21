@@ -56,3 +56,19 @@ jobs:
             echo '::error::a private absolute path leaked into the docs'
             exit 1
           fi
+
+  commit-messages:
+    name: Commit messages
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - name: Validate the pull request title and commit messages
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          node scripts/check-commits.mjs "${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}"
