@@ -126,6 +126,10 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Fixed
 
+- Secondary notes in the task dialog's sections — **No dependencies**, **No write scopes**, the fold
+  counts — wrap below their heading when the narrow 240px metadata column runs out of room instead of
+  being squeezed beside it or clipped. Definition-list values, list rows and mono file names wrap in
+  the same narrow column.
 - The agent model line no longer always takes a line of its own: it closes the metric row and sits
   beside the statistics when the card is wide, wrapping to a right-aligned line only when the card or
   panel narrows. A model line with no metric still draws its row.

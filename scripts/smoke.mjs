@@ -940,6 +940,28 @@ check(artifact.includes('@media (max-width:640px)'), 'the two-column layout has 
 check(artifact.includes('.tk-insp-aside{border-right:0;padding-right:0}'),
   'the narrow layout keeps the metadata divider')
 
+/* A secondary note wraps below its heading when the narrow metadata column
+   runs out of room instead of being squeezed beside it or clipped. */
+check(artifact.includes('.tk-sec-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;row-gap:2px;min-width:0}'),
+  'section headers do not wrap their note below the heading')
+check(artifact.includes('.tk-sec-head>.tk-sec-title{flex:1 1 auto;min-width:0}'),
+  'section titles cannot shrink beside a note')
+check(artifact.includes('.tk-sec-note{min-width:0;flex:0 1 auto;max-width:100%;margin-left:auto;'),
+  'section notes are not shrinkable and right-aligned on their line')
+check(artifact.includes('.tk-kv dd{min-width:0;margin:0;overflow-wrap:anywhere;word-break:break-word;font-variant-numeric:tabular-nums}'),
+  'definition-list values do not wrap in the narrow metadata column')
+check(artifact.includes('font-variant-numeric:tabular-nums;\n  min-width:0;overflow-wrap:anywhere}'),
+  'mono values have no wrapping rule')
+const depsHead = within(taskDialogNode, node => {
+  if (node.props?.className !== 'tk-sec-head') return false
+  const kids = Array.isArray(node.props?.children) ? node.props.children : []
+  return kids.some(child => child?.props?.className === 'tk-sec-title' && child.props.children === 'dependencies')
+})[0]
+const depsHeadKids = Array.isArray(depsHead?.props?.children) ? depsHead.props.children : []
+check(depsHeadKids.some(child => child?.props?.className === 'tk-sec-note'
+  && child.props.children === 'noDependencies'),
+'the dependencies note is not a sibling of its heading in the shared section row')
+
 /* Every write scope is a real link; a folder asks for the Files page instead. */
 const scopeLinks = withTask.nodes.filter(node => node.props?.className === 'tk-file-link')
 check(scopeLinks.length === 2, 'the write scopes are not rendered as links, got ' + scopeLinks.length)
