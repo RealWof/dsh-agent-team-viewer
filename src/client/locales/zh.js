@@ -143,4 +143,5 @@
       aboutRepository: '仓库',
       aboutReadme: 'README',
       aboutChangelog: '更新日志',
+      ungrouped: '未分组',
     }

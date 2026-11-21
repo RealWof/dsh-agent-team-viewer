@@ -206,6 +206,18 @@
     }
 
     /**
+     * The visible title of one group unit. A custom or role group carries its
+     * data name; the built-in leftover group carries a dictionary key.
+     * @param unit - one group unit.
+     * @param t - translate function.
+     * @returns the title text.
+     */
+    function groupUnitTitle(unit, t) {
+      if (unit.titleKey === 'ungrouped') return t('ungrouped')
+      return unit.titleKey === undefined ? unit.title : t(unit.titleKey)
+    }
+
+    /**
      * One status group's header. The whole row is the disclosure button, so a
      * click anywhere on it folds the pile; the count sits in the row and
      * therefore stays visible while the group is folded. A nested head (a
@@ -311,12 +323,13 @@
         }
         const subgroupId = groupIdOf('tasks', column.key + ':' + unit.key)
         const folded = isGroupCollapsed(boardId, subgroupId, unit.tasks.length)
-        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        const title = groupUnitTitle(unit, t)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
             groupId: subgroupId,
             state: column.state,
-            title: unit.title,
+            title,
             count: unit.tasks.length,
             expanded: !folded,
             label,
@@ -685,12 +698,13 @@
         }
         const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
         const folded = isGroupCollapsed(boardId, subgroupId, unit.agents.length)
-        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        const title = groupUnitTitle(unit, t)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
             groupId: subgroupId,
             state: column.state,
-            title: unit.title,
+            title,
             count: unit.agents.length,
             expanded: !folded,
             label,

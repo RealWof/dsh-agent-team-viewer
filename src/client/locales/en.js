@@ -142,4 +142,5 @@
       aboutRepository: 'Repository',
       aboutReadme: 'README',
       aboutChangelog: 'Changelog',
+      ungrouped: 'Ungrouped',
     }

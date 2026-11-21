@@ -143,4 +143,5 @@
       aboutRepository: 'Репозиторий',
       aboutReadme: 'README',
       aboutChangelog: 'Журнал изменений',
+      ungrouped: 'Без группы',
     }

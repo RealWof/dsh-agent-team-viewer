@@ -143,4 +143,5 @@
       aboutRepository: 'Repository',
       aboutReadme: 'README',
       aboutChangelog: 'Änderungsprotokoll',
+      ungrouped: 'Ohne Gruppe',
     }

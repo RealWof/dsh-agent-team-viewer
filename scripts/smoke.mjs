@@ -1476,6 +1476,24 @@ const unmatchedTask = within(groupedQueued, node => node.props?.['data-task-id']
 check(unmatchedTask.length === 1, 'an unmatched task disappeared instead of staying flat')
 check(within(reviewTaskBody, node => node.props?.['data-task-id'] === 'task-6').length === 0,
   'an unmatched task was filed under a custom group it does not match')
+// The unmatched tasks get their own Ungrouped head because another group exists.
+const taskUngroupedHead = within(groupedQueued, node => node.props?.['data-target'] === 'tasks:queued:ungrouped')[0]
+check(taskUngroupedHead !== undefined, 'the unmatched tasks did not get an Ungrouped head')
+check(taskUngroupedHead?.props?.['data-subgroup'] === 'true',
+  'the tasks Ungrouped head is not marked as a subgroup')
+check(within(taskUngroupedHead, node => node.props?.className === 'tk-col-title')[0]?.props?.children === 'ungrouped',
+  'the tasks Ungrouped head is not titled by the dictionary key')
+check(within(taskUngroupedHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '1',
+  'the tasks Ungrouped head does not count its leftover task')
+const taskUngroupedBody = within(groupedQueued, node => node.props?.['data-group-body'] === 'tasks:queued:ungrouped')[0]
+check(within(taskUngroupedBody, node => node.props?.['data-task-id'] === 'task-6').length === 1,
+  'the unmatched task is missing from its Ungrouped group')
+// A column whose tasks all miss the custom groups stays flat: no empty group.
+const groupedDone = taskGroupBoard.nodes.find(node => node.props?.['data-column'] === 'done')
+check(within(groupedDone, node => node.props?.['data-task-id'] === 'task-3').length === 1,
+  'an unmatched task in a column without a group disappeared')
+check(within(groupedDone, node => node.props?.['data-target'] === 'tasks:done:ungrouped').length === 0,
+  'an Ungrouped head was drawn for a column with no other group')
 
 // The custom task group folds through the same board-scoped state as agents.
 reviewTaskHead?.props?.onClick?.()
@@ -1555,6 +1573,32 @@ check(within(customHead, node => node.props?.className === 'tk-col-count')[0]?.p
   'the custom group head does not count its single member')
 check(within(customActive, node => node.props?.className === 'tk-agent-row').length === 2,
   'the custom group did not keep the lead and its one member')
+// The other agent sits in a column with no group head, so it stays flat.
+const customDone = customBoard.nodes.find(node => node.props?.['data-agent-column'] === 'done')
+check(within(customDone, node => node.props?.className === 'tk-agent-row').length === 1,
+  'the ungrouped agent left its column')
+check(within(customDone, node => node.props?.['data-target'] === 'agents:done:ungrouped').length === 0,
+  'an Ungrouped head was drawn for a column with no other group')
+
+// A singleton role beside a real role group joins an Ungrouped head.
+const leftoverRoleState = JSON.parse(JSON.stringify(sharedRoleState))
+leftoverRoleState.byId['session-c'] = { id: 'session-c', parentId: 'root', running: true, updatedAt: 0 }
+leftoverRoleState.projectionsBySession['session-c'] = { values: {} }
+leftoverRoleState.projectionsBySession.root.values.subagentCatalog.push(
+  { id: 'session-c', mode: 'continuable', name: 'tester', createdAt: 3 },
+)
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: true, customGroups: false }))
+const leftoverRoleBoard = boardFromFreshBundle(leftoverRoleState)
+const leftoverActive = leftoverRoleBoard.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+const leftoverUngrouped = within(leftoverActive,
+  node => node.props?.['data-target'] === 'agents:active:ungrouped')[0]
+check(leftoverUngrouped !== undefined, 'a singleton role was left flat beside a role group')
+check(within(leftoverUngrouped, node => node.props?.className === 'tk-col-title')[0]?.props?.children === 'ungrouped',
+  'the singleton-role Ungrouped head is not titled by the dictionary key')
+check(within(leftoverUngrouped, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '1',
+  'the singleton-role Ungrouped head does not count its agent')
+check(within(leftoverActive, node => node.props?.className === 'tk-agent-row').length === 4,
+  'the singleton-role Ungrouped group lost a row')
 
 // With both grouping switches off the column goes back to a flat list.
 storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: false, customGroups: false }))
@@ -1563,6 +1607,12 @@ check(!flatBoard.nodes.some(node => node.props?.['data-subgroup'] !== undefined)
   'a subgroup head is rendered with both grouping switches off')
 check(flatBoard.nodes.filter(node => node.props?.className === 'tk-agent-row').length === 3,
   'the flat fallback lost an agent row')
+
+// Automatic grouping with only singleton roles keeps the flat list too.
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ autoRoleGroups: true, customGroups: false }))
+const singletonBoard = boardFromFreshBundle()
+check(!singletonBoard.nodes.some(node => String(node.props?.['data-target'] ?? '').endsWith(':ungrouped')),
+  'an Ungrouped head was drawn for a column with no other group')
 
 // ...and the flat rows still follow the view sort, with the Lead pinned first.
 const flatSortState = JSON.parse(JSON.stringify(listState))

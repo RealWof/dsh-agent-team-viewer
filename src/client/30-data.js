@@ -584,7 +584,9 @@
      * Build the rows of one agent status column after its Lead: custom groups
      * in editor order (each with a head, even for a single member), then role
      * groups when `autoRoleGroups` is on (a role with two or more members gets
-     * a head; a singleton role is a plain row), then the leftovers.
+     * a head; a singleton role is a plain row). When any group head exists in
+     * the column, the leftover rows (unmatched agents and singleton roles) are
+     * collected under one Ungrouped head; when no head exists they stay flat.
      * @param agents - the column's agents, the Lead already removed.
      * @param settings - the view settings.
      * @returns the row units; `null` when both grouping switches are off.
@@ -621,7 +623,14 @@
       }
       if (auto !== true) {
         if (leftover.length > 0) {
-          units.push({ key: 'other', agents: sortAgents(leftover, settings.sort), head: false })
+          units.push(units.length > 0
+            ? {
+              key: 'ungrouped',
+              titleKey: 'ungrouped',
+              agents: sortAgents(leftover, settings.sort),
+              head: true,
+            }
+            : { key: 'other', agents: sortAgents(leftover, settings.sort), head: false })
         }
         return units
       }
@@ -641,8 +650,17 @@
       }
       groups.sort((left, right) => groupRecencyOf(right) - groupRecencyOf(left)
         || String(left.title).localeCompare(String(right.title)))
-      // A singleton role is a plain row, ordered like every other agent.
+      // A singleton role is a plain row, ordered like every other agent; when
+      // the column already has a group head, it joins the Ungrouped group.
       const singleAgents = sortAgents(singles.map(unit => unit.agents[0]), settings.sort)
+      if (units.length + groups.length > 0 && singleAgents.length > 0) {
+        return units.concat(groups, [{
+          key: 'ungrouped',
+          titleKey: 'ungrouped',
+          agents: singleAgents,
+          head: true,
+        }])
+      }
       const singleUnits = singleAgents.map(agent => singles.find(unit => unit.agents[0] === agent))
       return units.concat(groups, singleUnits)
     }
@@ -673,7 +691,10 @@
     /**
      * Build the task rows of one status column after its sort: the custom
      * groups in editor order (each with a head, even for a single member), then
-     * the unmatched tasks flat. There is no automatic role grouping for tasks.
+     * the unmatched tasks. When at least one custom group has members, the
+     * unmatched tasks get their own Ungrouped head; otherwise they stay flat,
+     * so an empty group is never drawn for a whole column. There is no
+     * automatic role grouping for tasks.
      * @param tasks - the column's tasks, already sorted.
      * @param settings - the view settings.
      * @returns the row units; `null` when task grouping is off or empty.
@@ -698,7 +719,11 @@
         if (bucket.tasks.length === 0) continue
         units.push({ key: bucket.key, title: bucket.title, tasks: bucket.tasks, head: true })
       }
-      if (unmatched.length > 0) units.push({ key: 'other', title: '', tasks: unmatched, head: false })
+      if (unmatched.length > 0) {
+        units.push(units.length > 0
+          ? { key: 'ungrouped', titleKey: 'ungrouped', tasks: unmatched, head: true }
+          : { key: 'other', title: '', tasks: unmatched, head: false })
+      }
       return units
     }
 

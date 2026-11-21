@@ -771,6 +771,7 @@ window.__ModuleLoader__.load({
       aboutRepository: 'Repository',
       aboutReadme: 'README',
       aboutChangelog: 'Changelog',
+      ungrouped: 'Ungrouped',
     }
 
 /**
@@ -918,6 +919,7 @@ window.__ModuleLoader__.load({
       aboutRepository: 'Репозиторий',
       aboutReadme: 'README',
       aboutChangelog: 'Журнал изменений',
+      ungrouped: 'Без группы',
     }
 
 /**
@@ -1065,6 +1067,7 @@ window.__ModuleLoader__.load({
       aboutRepository: '仓库',
       aboutReadme: 'README',
       aboutChangelog: '更新日志',
+      ungrouped: '未分组',
     }
 
 /**
@@ -1212,6 +1215,7 @@ window.__ModuleLoader__.load({
       aboutRepository: 'リポジトリ',
       aboutReadme: 'README',
       aboutChangelog: '変更履歴',
+      ungrouped: '未分類',
     }
 
 /**
@@ -1359,6 +1363,7 @@ window.__ModuleLoader__.load({
       aboutRepository: 'Repositorio',
       aboutReadme: 'README',
       aboutChangelog: 'Registro de cambios',
+      ungrouped: 'Sin grupo',
     }
 
 /**
@@ -1506,6 +1511,7 @@ window.__ModuleLoader__.load({
       aboutRepository: 'Dépôt',
       aboutReadme: 'README',
       aboutChangelog: 'Journal des modifications',
+      ungrouped: 'Sans groupe',
     }
 
 /**
@@ -1653,6 +1659,7 @@ window.__ModuleLoader__.load({
       aboutRepository: 'Repository',
       aboutReadme: 'README',
       aboutChangelog: 'Änderungsprotokoll',
+      ungrouped: 'Ohne Gruppe',
     }
 
 /**
@@ -1800,6 +1807,7 @@ window.__ModuleLoader__.load({
       aboutRepository: 'Repositório',
       aboutReadme: 'README',
       aboutChangelog: 'Registro de alterações',
+      ungrouped: 'Sem grupo',
     }
 
 /* ------------------------------------------------------------------ *
@@ -3355,7 +3363,9 @@ window.__ModuleLoader__.load({
      * Build the rows of one agent status column after its Lead: custom groups
      * in editor order (each with a head, even for a single member), then role
      * groups when `autoRoleGroups` is on (a role with two or more members gets
-     * a head; a singleton role is a plain row), then the leftovers.
+     * a head; a singleton role is a plain row). When any group head exists in
+     * the column, the leftover rows (unmatched agents and singleton roles) are
+     * collected under one Ungrouped head; when no head exists they stay flat.
      * @param agents - the column's agents, the Lead already removed.
      * @param settings - the view settings.
      * @returns the row units; `null` when both grouping switches are off.
@@ -3392,7 +3402,14 @@ window.__ModuleLoader__.load({
       }
       if (auto !== true) {
         if (leftover.length > 0) {
-          units.push({ key: 'other', agents: sortAgents(leftover, settings.sort), head: false })
+          units.push(units.length > 0
+            ? {
+              key: 'ungrouped',
+              titleKey: 'ungrouped',
+              agents: sortAgents(leftover, settings.sort),
+              head: true,
+            }
+            : { key: 'other', agents: sortAgents(leftover, settings.sort), head: false })
         }
         return units
       }
@@ -3412,8 +3429,17 @@ window.__ModuleLoader__.load({
       }
       groups.sort((left, right) => groupRecencyOf(right) - groupRecencyOf(left)
         || String(left.title).localeCompare(String(right.title)))
-      // A singleton role is a plain row, ordered like every other agent.
+      // A singleton role is a plain row, ordered like every other agent; when
+      // the column already has a group head, it joins the Ungrouped group.
       const singleAgents = sortAgents(singles.map(unit => unit.agents[0]), settings.sort)
+      if (units.length + groups.length > 0 && singleAgents.length > 0) {
+        return units.concat(groups, [{
+          key: 'ungrouped',
+          titleKey: 'ungrouped',
+          agents: singleAgents,
+          head: true,
+        }])
+      }
       const singleUnits = singleAgents.map(agent => singles.find(unit => unit.agents[0] === agent))
       return units.concat(groups, singleUnits)
     }
@@ -3444,7 +3470,10 @@ window.__ModuleLoader__.load({
     /**
      * Build the task rows of one status column after its sort: the custom
      * groups in editor order (each with a head, even for a single member), then
-     * the unmatched tasks flat. There is no automatic role grouping for tasks.
+     * the unmatched tasks. When at least one custom group has members, the
+     * unmatched tasks get their own Ungrouped head; otherwise they stay flat,
+     * so an empty group is never drawn for a whole column. There is no
+     * automatic role grouping for tasks.
      * @param tasks - the column's tasks, already sorted.
      * @param settings - the view settings.
      * @returns the row units; `null` when task grouping is off or empty.
@@ -3469,7 +3498,11 @@ window.__ModuleLoader__.load({
         if (bucket.tasks.length === 0) continue
         units.push({ key: bucket.key, title: bucket.title, tasks: bucket.tasks, head: true })
       }
-      if (unmatched.length > 0) units.push({ key: 'other', title: '', tasks: unmatched, head: false })
+      if (unmatched.length > 0) {
+        units.push(units.length > 0
+          ? { key: 'ungrouped', titleKey: 'ungrouped', tasks: unmatched, head: true }
+          : { key: 'other', title: '', tasks: unmatched, head: false })
+      }
       return units
     }
 
@@ -4712,6 +4745,18 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The visible title of one group unit. A custom or role group carries its
+     * data name; the built-in leftover group carries a dictionary key.
+     * @param unit - one group unit.
+     * @param t - translate function.
+     * @returns the title text.
+     */
+    function groupUnitTitle(unit, t) {
+      if (unit.titleKey === 'ungrouped') return t('ungrouped')
+      return unit.titleKey === undefined ? unit.title : t(unit.titleKey)
+    }
+
+    /**
      * One status group's header. The whole row is the disclosure button, so a
      * click anywhere on it folds the pile; the count sits in the row and
      * therefore stays visible while the group is folded. A nested head (a
@@ -4817,12 +4862,13 @@ window.__ModuleLoader__.load({
         }
         const subgroupId = groupIdOf('tasks', column.key + ':' + unit.key)
         const folded = isGroupCollapsed(boardId, subgroupId, unit.tasks.length)
-        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        const title = groupUnitTitle(unit, t)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
             groupId: subgroupId,
             state: column.state,
-            title: unit.title,
+            title,
             count: unit.tasks.length,
             expanded: !folded,
             label,
@@ -5191,12 +5237,13 @@ window.__ModuleLoader__.load({
         }
         const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
         const folded = isGroupCollapsed(boardId, subgroupId, unit.agents.length)
-        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        const title = groupUnitTitle(unit, t)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
             groupId: subgroupId,
             state: column.state,
-            title: unit.title,
+            title,
             count: unit.agents.length,
             expanded: !folded,
             label,

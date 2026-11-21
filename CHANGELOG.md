@@ -13,6 +13,10 @@ All notable changes to this plugin are documented here. The format follows
   whose selection is unknown gets no line, and the agent dialog is unchanged.
 - The Settings page ends with an **About** block whose localized button links open the repository,
   the README and the CHANGELOG on GitHub in a new tab.
+- A status column that already has custom or role groups now files its leftover cards — unmatched
+  tasks and singleton roles — under one localized **Ungrouped** group with the same count, per-board
+  fold, cap and scroll as any other group. A column with no other group keeps its flat list, so an
+  empty group is never drawn.
 - `agentsLimit` — how many subagents the board walks and draws — is now the profile row's Config field:
   the default is `-1` (no limit), because a session appends every new agent to the end of its catalog and
   a cap therefore hides the newest, busiest agents; a positive number is available for a profile that must

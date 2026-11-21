@@ -143,4 +143,5 @@
       aboutRepository: 'リポジトリ',
       aboutReadme: 'README',
       aboutChangelog: '変更履歴',
+      ungrouped: '未分類',
     }
