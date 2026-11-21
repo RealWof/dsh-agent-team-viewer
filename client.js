@@ -706,7 +706,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Running',
       jobsLongest: 'longest',
       jobsEmpty: 'No background processes',
-      settingsTitle: 'Agent Team viewer',
       settingsNote: 'These preferences are stored in this browser only.',
       setGrouping: 'Grouping',
       setAutoRoleGroups: 'Automatic grouping by roles',
@@ -850,7 +849,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Выполняется',
       jobsLongest: 'дольше всех',
       jobsEmpty: 'Фоновых процессов нет',
-      settingsTitle: 'Просмотр доски команды',
       settingsNote: 'Эти настройки хранятся только в этом браузере.',
       setGrouping: 'Группировка',
       setAutoRoleGroups: 'Автоматическая группировка по ролям',
@@ -994,7 +992,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: '运行中',
       jobsLongest: '最久',
       jobsEmpty: '没有后台进程',
-      settingsTitle: 'Agent Team 看板查看器',
       settingsNote: '这些设置仅保存在当前浏览器中。',
       setGrouping: '分组',
       setAutoRoleGroups: '按角色自动分组',
@@ -1138,7 +1135,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: '実行中',
       jobsLongest: '最長',
       jobsEmpty: 'バックグラウンドプロセスはありません',
-      settingsTitle: 'エージェントチームビューア',
       settingsNote: 'これらの設定はこのブラウザにのみ保存されます。',
       setGrouping: 'グループ化',
       setAutoRoleGroups: 'ロールによる自動グループ化',
@@ -1282,7 +1278,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'En ejecución',
       jobsLongest: 'más largo',
       jobsEmpty: 'No hay procesos en segundo plano',
-      settingsTitle: 'Visor del equipo de agentes',
       settingsNote: 'Estas preferencias se guardan solo en este navegador.',
       setGrouping: 'Agrupación',
       setAutoRoleGroups: 'Agrupación automática por roles',
@@ -1426,7 +1421,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'En cours',
       jobsLongest: 'le plus long',
       jobsEmpty: 'Aucun processus en arrière-plan',
-      settingsTitle: 'Visionneuse du tableau Agent Team',
       settingsNote: 'Ces préférences sont enregistrées uniquement dans ce navigateur.',
       setGrouping: 'Regroupement',
       setAutoRoleGroups: 'Regroupement automatique par rôles',
@@ -1570,7 +1564,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Läuft',
       jobsLongest: 'am längsten',
       jobsEmpty: 'Keine Hintergrundprozesse',
-      settingsTitle: 'Agent-Team-Viewer',
       settingsNote: 'Diese Einstellungen werden nur in diesem Browser gespeichert.',
       setGrouping: 'Gruppierung',
       setAutoRoleGroups: 'Automatische Gruppierung nach Rollen',
@@ -1714,7 +1707,6 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Em execução',
       jobsLongest: 'mais longo',
       jobsEmpty: 'Nenhum processo em segundo plano',
-      settingsTitle: 'Visualizador da equipe de agentes',
       settingsNote: 'Estas preferências são salvas apenas neste navegador.',
       setGrouping: 'Agrupamento',
       setAutoRoleGroups: 'Agrupamento automático por funções',
@@ -6837,12 +6829,13 @@ window.__ModuleLoader__.load({
 
         // The Settings page of the board. Its preferences are browser-local
         // view state, so the page writes localStorage and never the Host
-        // settings document; `label` is a thunk to follow a language change.
+        // settings document. The nav label is the plugin's literal name and
+        // stays untranslated in every language; the page content is localized.
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
           id: 'agent-team-viewer',
           order: 80,
-          label: () => t('settingsTitle'),
+          label: () => 'Agent Team Viewer',
           locale: NS,
           inject: () => ({}),
         }, SettingsSection))

@@ -587,12 +587,13 @@
 
         // The Settings page of the board. Its preferences are browser-local
         // view state, so the page writes localStorage and never the Host
-        // settings document; `label` is a thunk to follow a language change.
+        // settings document. The nav label is the plugin's literal name and
+        // stays untranslated in every language; the page content is localized.
         ctx.slots.inject('settings.section', () => ctx.slots.register({
           name: 'settings.section',
           id: 'agent-team-viewer',
           order: 80,
-          label: () => t('settingsTitle'),
+          label: () => 'Agent Team Viewer',
           locale: NS,
           inject: () => ({}),
         }, SettingsSection))

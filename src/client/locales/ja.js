@@ -107,7 +107,6 @@
       jobsRunningCount: '実行中',
       jobsLongest: '最長',
       jobsEmpty: 'バックグラウンドプロセスはありません',
-      settingsTitle: 'エージェントチームビューア',
       settingsNote: 'これらの設定はこのブラウザにのみ保存されます。',
       setGrouping: 'グループ化',
       setAutoRoleGroups: 'ロールによる自動グループ化',

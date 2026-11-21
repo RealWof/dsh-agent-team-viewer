@@ -261,7 +261,10 @@ check(settingsRegistration !== undefined, 'the Settings section was not register
 check(settingsRegistration?.id === 'agent-team-viewer', 'the Settings section id is wrong')
 check(settingsRegistration?.order === 80, 'the Settings section is not in the expected order')
 check(typeof settingsRegistration?.label === 'function', 'the Settings section label must be a thunk')
-check(settingsRegistration?.label?.() === 'settingsTitle', 'the Settings section label lost its title')
+check(settingsRegistration?.label?.() === 'Agent Team Viewer',
+  'the Settings nav item is not the literal plugin name')
+check(settingsRegistration?.label?.('ru') === 'Agent Team Viewer',
+  'the Settings nav item follows the language instead of the literal plugin name')
 check(settingsRegistration?.locale === 'agent-team-viewer', 'the Settings section lost its locale namespace')
 
 /* The injected service face the body reads. */

@@ -58,6 +58,9 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Changed
 
+- The Settings nav item now reads exactly **Agent Team Viewer** in every language: the plugin name is
+  the one literal that never goes through a dictionary, while the page content and its hints stay
+  translated.
 - The task dialog is two columns on wide screens: the timeline, agent block, dependencies and write
   scopes keep the left column, while the Description/Report tabs and their Markdown sit in a right
   column with its own scroll box (`.tk-insp-prose`). Both columns scroll independently, so a long

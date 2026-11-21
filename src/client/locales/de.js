@@ -107,7 +107,6 @@
       jobsRunningCount: 'Läuft',
       jobsLongest: 'am längsten',
       jobsEmpty: 'Keine Hintergrundprozesse',
-      settingsTitle: 'Agent-Team-Viewer',
       settingsNote: 'Diese Einstellungen werden nur in diesem Browser gespeichert.',
       setGrouping: 'Gruppierung',
       setAutoRoleGroups: 'Automatische Gruppierung nach Rollen',

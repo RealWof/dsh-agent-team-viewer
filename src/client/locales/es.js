@@ -107,7 +107,6 @@
       jobsRunningCount: 'En ejecución',
       jobsLongest: 'más largo',
       jobsEmpty: 'No hay procesos en segundo plano',
-      settingsTitle: 'Visor del equipo de agentes',
       settingsNote: 'Estas preferencias se guardan solo en este navegador.',
       setGrouping: 'Agrupación',
       setAutoRoleGroups: 'Agrupación automática por roles',

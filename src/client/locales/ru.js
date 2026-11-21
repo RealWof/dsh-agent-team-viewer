@@ -107,7 +107,6 @@
       jobsRunningCount: 'Выполняется',
       jobsLongest: 'дольше всех',
       jobsEmpty: 'Фоновых процессов нет',
-      settingsTitle: 'Просмотр доски команды',
       settingsNote: 'Эти настройки хранятся только в этом браузере.',
       setGrouping: 'Группировка',
       setAutoRoleGroups: 'Автоматическая группировка по ролям',

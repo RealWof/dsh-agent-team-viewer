@@ -107,7 +107,6 @@
       jobsRunningCount: '运行中',
       jobsLongest: '最久',
       jobsEmpty: '没有后台进程',
-      settingsTitle: 'Agent Team 看板查看器',
       settingsNote: '这些设置仅保存在当前浏览器中。',
       setGrouping: '分组',
       setAutoRoleGroups: '按角色自动分组',

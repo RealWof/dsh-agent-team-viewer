@@ -107,7 +107,6 @@
       jobsRunningCount: 'En cours',
       jobsLongest: 'le plus long',
       jobsEmpty: 'Aucun processus en arrière-plan',
-      settingsTitle: 'Visionneuse du tableau Agent Team',
       settingsNote: 'Ces préférences sont enregistrées uniquement dans ce navigateur.',
       setGrouping: 'Regroupement',
       setAutoRoleGroups: 'Regroupement automatique par rôles',
