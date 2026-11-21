@@ -152,8 +152,9 @@
     }
 
     /**
-     * The agent dialog: what this agent did, the background jobs it is running
-     * and the tasks it owns — the two lists fold and scroll on their own.
+     * The agent dialog: what this agent did, the tasks it owns and the
+     * background jobs it is running — the two lists fold and scroll on their
+     * own, and the tasks come first.
      * @param props - `agent`, `stats`, `jobs`, `tasks`, `whoById`, `now`, `t`,
      *   `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
      */
@@ -234,11 +235,22 @@
             note: String(jobItems.length),
             target: 'agent-jobs',
             expanded: jobsOpen,
+            scroll: false,
             label: (jobsOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('jobsHeading'),
             onToggle: () => { setJobsOpen(value => !value) },
-          }, h('ul', { className: 'tk-jobs' }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
+          }, h('ul', {
+            className: 'tk-jobs',
+            tabIndex: 0,
+            role: 'group',
+            'aria-label': t('jobsHeading'),
+          }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
 
-      const taskList = h('ul', { className: 'tk-list' }, tasks.map(task => h('li', { key: task.id },
+      const taskList = h('ul', {
+        className: 'tk-list',
+        tabIndex: 0,
+        role: 'group',
+        'aria-label': t('agentTasksHeading'),
+      }, tasks.map(task => h('li', { key: task.id },
         h('button', {
           type: 'button',
           className: 'tk-task-link',
@@ -257,6 +269,7 @@
           note: String(tasks.length),
           target: 'agent-tasks',
           expanded: tasksOpen,
+          scroll: false,
           label: (tasksOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('agentTasksHeading'),
           onToggle: () => { setTasksOpen(value => !value) },
         }, taskList)
@@ -279,8 +292,8 @@
           h(Section, { title: t('statsHeading'), icon: 'gauge', note: agent.running ? t('statsNoteActive') : undefined },
             h(AgentMetrics, { stats, agent, costState, t })),
           h(Section, { title: t('stateLabel'), icon: 'layers' }, facts),
-          jobsBlock,
           tasksBlock,
+          jobsBlock,
           h('div', { className: 'tk-actions' },
             h('button', {
               type: 'button',

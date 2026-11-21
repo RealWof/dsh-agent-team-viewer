@@ -1953,6 +1953,10 @@ window.__ModuleLoader__.load({
 .tk-sec-scroll{max-height:168px;overflow:auto;overscroll-behavior:contain;min-width:0;padding-right:2px}
 .tk-sec-scroll:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));
   outline-offset:2px;border-radius:var(--dsw-radius-sm)}
+.tk-insp[data-agent-dialog] .tk-jobs,.tk-insp[data-agent-dialog] .tk-list{max-height:min(38vh,300px);overflow:auto;
+  overscroll-behavior:contain;padding-right:2px}
+.tk-insp[data-agent-dialog] .tk-jobs:focus-visible,.tk-insp[data-agent-dialog] .tk-list:focus-visible{
+  outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}
 .tk-jobs{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none;min-width:0}
 .tk-job{display:flex;align-items:flex-start;gap:5px;min-width:0}
 .tk-job-main{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-width:0}
@@ -2523,11 +2527,12 @@ window.__ModuleLoader__.load({
      * A titled block of the inspector that folds away and scrolls once it
      * outgrows the dialog. The header keeps its note (the item count), so a
      * folded block still says how much it holds. The scroll box is focusable,
-     * so a keyboard reader can scroll it without a mouse.
+     * so a keyboard reader can scroll it without a mouse. A list that is its
+     * own scroll box passes `scroll: false` and owns the focusable region.
      * @param props - `title`, optional `icon` and `note`, plus `target`,
-     *   `expanded`, `label`, `onToggle` and the block content.
+     *   `expanded`, `label`, `onToggle`, optional `scroll` and the content.
      */
-    function FoldSection({ title, icon = undefined, note = undefined, target, expanded, label, onToggle, children }) {
+    function FoldSection({ title, icon = undefined, note = undefined, target, expanded, label, onToggle, scroll = true, children }) {
       return h('section', { className: 'tk-sec', 'data-fold-block': target },
         h('div', { className: 'tk-sec-head' },
           h(FoldToggle, { expanded, label, target, onClick: onToggle }),
@@ -2535,12 +2540,14 @@ window.__ModuleLoader__.load({
           h('h3', { className: 'tk-sec-title' }, title),
           note === undefined || note === null ? null : h('span', { className: 'tk-sec-note' }, note)),
         expanded === true
-          ? h('div', {
-            className: 'tk-sec-scroll',
-            tabIndex: 0,
-            role: 'group',
-            'aria-label': title,
-          }, children)
+          ? (scroll === false
+            ? children
+            : h('div', {
+              className: 'tk-sec-scroll',
+              tabIndex: 0,
+              role: 'group',
+              'aria-label': title,
+            }, children))
           : null)
     }
 
@@ -6038,8 +6045,9 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The agent dialog: what this agent did, the background jobs it is running
-     * and the tasks it owns — the two lists fold and scroll on their own.
+     * The agent dialog: what this agent did, the tasks it owns and the
+     * background jobs it is running — the two lists fold and scroll on their
+     * own, and the tasks come first.
      * @param props - `agent`, `stats`, `jobs`, `tasks`, `whoById`, `now`, `t`,
      *   `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
      */
@@ -6120,11 +6128,22 @@ window.__ModuleLoader__.load({
             note: String(jobItems.length),
             target: 'agent-jobs',
             expanded: jobsOpen,
+            scroll: false,
             label: (jobsOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('jobsHeading'),
             onToggle: () => { setJobsOpen(value => !value) },
-          }, h('ul', { className: 'tk-jobs' }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
+          }, h('ul', {
+            className: 'tk-jobs',
+            tabIndex: 0,
+            role: 'group',
+            'aria-label': t('jobsHeading'),
+          }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
 
-      const taskList = h('ul', { className: 'tk-list' }, tasks.map(task => h('li', { key: task.id },
+      const taskList = h('ul', {
+        className: 'tk-list',
+        tabIndex: 0,
+        role: 'group',
+        'aria-label': t('agentTasksHeading'),
+      }, tasks.map(task => h('li', { key: task.id },
         h('button', {
           type: 'button',
           className: 'tk-task-link',
@@ -6143,6 +6162,7 @@ window.__ModuleLoader__.load({
           note: String(tasks.length),
           target: 'agent-tasks',
           expanded: tasksOpen,
+          scroll: false,
           label: (tasksOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('agentTasksHeading'),
           onToggle: () => { setTasksOpen(value => !value) },
         }, taskList)
@@ -6165,8 +6185,8 @@ window.__ModuleLoader__.load({
           h(Section, { title: t('statsHeading'), icon: 'gauge', note: agent.running ? t('statsNoteActive') : undefined },
             h(AgentMetrics, { stats, agent, costState, t })),
           h(Section, { title: t('stateLabel'), icon: 'layers' }, facts),
-          jobsBlock,
           tasksBlock,
+          jobsBlock,
           h('div', { className: 'tk-actions' },
             h('button', {
               type: 'button',

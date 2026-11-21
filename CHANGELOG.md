@@ -62,6 +62,10 @@ All notable changes to this plugin are documented here. The format follows
   dialog body scrolls as before.
 - The agents header no longer shows the old static open-chat hint; the action moved into each row and
   its name control.
+- The agent dialog now lists the agent's tasks before its background processes, and both lists are
+  their own keyboard-focusable scroll boxes (`.tk-jobs`, `.tk-list`) with a dedicated height, so a long
+  list no longer stretches the dialog. Each section keeps its title and count, and a task row still
+  opens the task dialog.
 - The agents strip now derives a role from the agent's name before its preset, so the harness default
   `standard` preset no longer collapses distinct builders and integrators into one meaningless group.
 

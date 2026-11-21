@@ -833,11 +833,11 @@ check(withAgent.joined.includes('running suite 3/9'), 'the live progress line is
 check(withAgent.joined.includes('exit code: 0'), 'the terminal reason is missing from the agent dialog')
 check(!withAgent.joined.includes('npm ci'), 'an unowned job was attributed to an agent')
 
-/* The dialog order is stats, facts, background jobs, tasks. */
+/* The dialog order is stats, facts, tasks, background jobs. */
 const atText = label => withAgent.texts.indexOf(label)
-check(atText('statsHeading') < atText('stateLabel') && atText('stateLabel') < atText('jobsHeading')
-  && atText('jobsHeading') < atText('agentTasksHeading'),
-'the agent dialog blocks are out of order: ' + ['statsHeading', 'stateLabel', 'jobsHeading', 'agentTasksHeading']
+check(atText('statsHeading') < atText('stateLabel') && atText('stateLabel') < atText('agentTasksHeading')
+  && atText('agentTasksHeading') < atText('jobsHeading'),
+'the agent dialog blocks are out of order: ' + ['statsHeading', 'stateLabel', 'agentTasksHeading', 'jobsHeading']
   .map(key => key + '@' + atText(key)).join(', '))
 
 /* Both lists scroll inside the dialog and fold from their headers. */
@@ -849,9 +849,18 @@ const backgroundTile = metricTiles.find(tile => surface(tile).texts.includes('me
 check(backgroundTile !== undefined, 'the agent dialog has no background-time tile')
 check(surface(backgroundTile).joined.includes('unitMin'),
   'the background-time tile does not show the background span: ' + surface(backgroundTile).joined)
-const scrollers = within(dialogNode, node => node.props?.className === 'tk-sec-scroll')
-check(scrollers.length === 2, 'expected two scrollable dialog blocks, got ' + scrollers.length)
-check(scrollers.every(node => node.props?.tabIndex === 0), 'a scrollable dialog block is not keyboard focusable')
+const taskScroller = within(dialogNode, node => node.props?.className === 'tk-list')[0]
+const jobScroller = within(dialogNode, node => node.props?.className === 'tk-jobs')[0]
+check(taskScroller !== undefined && jobScroller !== undefined, 'the agent dialog lists are missing')
+check(taskScroller?.props?.tabIndex === 0 && jobScroller?.props?.tabIndex === 0,
+  'an agent dialog list is not a keyboard-focusable scroll box')
+check(taskScroller?.props?.role === 'group' && taskScroller?.props?.['aria-label'] === 'agentTasksHeading',
+  'the task list has no accessible group label')
+check(jobScroller?.props?.role === 'group' && jobScroller?.props?.['aria-label'] === 'jobsHeading',
+  'the background-process list has no accessible group label')
+check(artifact.includes('.tk-insp[data-agent-dialog] .tk-jobs')
+  && artifact.includes('.tk-insp[data-agent-dialog] .tk-list'),
+'the agent dialog lists have no dedicated scroll styles')
 
 const foldBlockButton = (rendered, target) => rendered.nodes.find(node => node.type === 'button'
   && node.props?.['data-fold'] === 'section' && node.props?.['data-target'] === target)
@@ -899,6 +908,17 @@ const withSettledAgent = surface(tabBody(props))
 check(withSettledAgent.nodes.some(node => node.props?.['data-agent-dialog'] === 'session-b'),
   'the settled agent dialog did not open')
 check(!withSettledAgent.texts.includes('jobsHeading'), 'the settled agent dialog shows a jobs block without a roster')
+
+/* A task row in the agent dialog still opens the task dialog. */
+const dialogTaskLink = withAgent.nodes.find(node => node.props?.className === 'tk-task-link')
+check(dialogTaskLink !== undefined, 'the agent dialog has no task link')
+dialogTaskLink?.props?.onClick?.()
+resetHooks()
+const afterTaskLink = surface(tabBody(props))
+check(afterTaskLink.nodes.some(node => node.props?.['data-task-id'] === 'task-1' && node.props?.role === 'dialog'),
+  'a task row in the agent dialog did not open the task dialog')
+check(!afterTaskLink.nodes.some(node => node.props?.['data-agent-dialog'] === 'session-a'),
+  'the agent dialog stayed open after its task row was clicked')
 
 /* --- Fold state: sections, groups, and the overflow cap ---------------- */
 

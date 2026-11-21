@@ -233,6 +233,10 @@
 .tk-sec-scroll{max-height:168px;overflow:auto;overscroll-behavior:contain;min-width:0;padding-right:2px}
 .tk-sec-scroll:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));
   outline-offset:2px;border-radius:var(--dsw-radius-sm)}
+.tk-insp[data-agent-dialog] .tk-jobs,.tk-insp[data-agent-dialog] .tk-list{max-height:min(38vh,300px);overflow:auto;
+  overscroll-behavior:contain;padding-right:2px}
+.tk-insp[data-agent-dialog] .tk-jobs:focus-visible,.tk-insp[data-agent-dialog] .tk-list:focus-visible{
+  outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}
 .tk-jobs{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none;min-width:0}
 .tk-job{display:flex;align-items:flex-start;gap:5px;min-width:0}
 .tk-job-main{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-width:0}
@@ -803,11 +807,12 @@
      * A titled block of the inspector that folds away and scrolls once it
      * outgrows the dialog. The header keeps its note (the item count), so a
      * folded block still says how much it holds. The scroll box is focusable,
-     * so a keyboard reader can scroll it without a mouse.
+     * so a keyboard reader can scroll it without a mouse. A list that is its
+     * own scroll box passes `scroll: false` and owns the focusable region.
      * @param props - `title`, optional `icon` and `note`, plus `target`,
-     *   `expanded`, `label`, `onToggle` and the block content.
+     *   `expanded`, `label`, `onToggle`, optional `scroll` and the content.
      */
-    function FoldSection({ title, icon = undefined, note = undefined, target, expanded, label, onToggle, children }) {
+    function FoldSection({ title, icon = undefined, note = undefined, target, expanded, label, onToggle, scroll = true, children }) {
       return h('section', { className: 'tk-sec', 'data-fold-block': target },
         h('div', { className: 'tk-sec-head' },
           h(FoldToggle, { expanded, label, target, onClick: onToggle }),
@@ -815,12 +820,14 @@
           h('h3', { className: 'tk-sec-title' }, title),
           note === undefined || note === null ? null : h('span', { className: 'tk-sec-note' }, note)),
         expanded === true
-          ? h('div', {
-            className: 'tk-sec-scroll',
-            tabIndex: 0,
-            role: 'group',
-            'aria-label': title,
-          }, children)
+          ? (scroll === false
+            ? children
+            : h('div', {
+              className: 'tk-sec-scroll',
+              tabIndex: 0,
+              role: 'group',
+              'aria-label': title,
+            }, children))
           : null)
     }
 
