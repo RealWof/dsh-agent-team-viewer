@@ -784,9 +784,20 @@ check(within(textColumn, node => node.props?.className === 'tk-tabs').length ===
   'the Description/Report tabs are not in the text column')
 check(within(metaColumn, node => node.props?.className === 'tk-tabs').length === 0,
   'the tabs are still in the metadata column')
-check(artifact.includes('.tk-insp[data-layout="task"]{width:min(920px'), 'the task dialog is not widened in the stylesheet')
+check(artifact.includes('.tk-insp[data-layout="task"]{width:min(860px,100%);max-width:min(860px,96vw)'),
+  'the task dialog is not sized to the tight two-column width in the stylesheet')
+check(artifact.includes('grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:14px;align-items:start'),
+  'the task dialog grid does not start-align a 240px metadata column')
+check(artifact.includes('.tk-insp[data-layout="task"] .tk-insp-body{padding:10px 12px 12px}'),
+  'the task dialog body still carries the full inspector padding')
+check(artifact.includes('border-right:1px solid var(--dsw-alias-border-l1)'),
+  'the metadata column has no vertical hairline divider')
+check(artifact.includes('.tk-insp-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;max-height:min(54vh,460px)'),
+  'the metadata column lost its own capped scroll box')
 check(artifact.includes('.tk-insp-prose{'), 'the Markdown scroll box has no stylesheet rule')
 check(artifact.includes('@media (max-width:640px)'), 'the two-column layout has no narrow-screen fallback')
+check(artifact.includes('.tk-insp-aside{border-right:0;padding-right:0}'),
+  'the narrow layout keeps the metadata divider')
 
 /* Every write scope is a real link; a folder asks for the Files page instead. */
 const scopeLinks = withTask.nodes.filter(node => node.props?.className === 'tk-file-link')
