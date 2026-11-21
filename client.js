@@ -2022,7 +2022,8 @@ window.__ModuleLoader__.load({
 
     /**
      * Read the observation ledger from localStorage.
-     * @returns `{ [taskId]: { s?: number, c?: number } }` with unix ms stamps.
+     * @returns `{ [taskId]: { f?: number, s?: number, c?: number } }` with unix
+     *   ms stamps: first seen, started and completed.
      */
     function readLedger() {
       try {
@@ -2067,6 +2068,11 @@ window.__ModuleLoader__.load({
     /**
      * Fold the given task views into the shared ledger, stamping first-seen
      * transitions. Called by the always-on watcher and by the board.
+     *
+     * Every task gets `f`, the first moment the board ever saw it, so the
+     * columns can be ordered by when the work appeared rather than by id. A
+     * record from an older version only carries `s`/`c`; it keeps them and
+     * gains `f` the next time the task is seen.
      * @param tasks - the Team task views.
      * @returns whether anything changed.
      */
@@ -2078,20 +2084,28 @@ window.__ModuleLoader__.load({
         if (task === null || typeof task !== 'object' || typeof task.id !== 'string') continue
         const previous = next[task.id] !== null && typeof next[task.id] === 'object' ? next[task.id] : {}
         const record = { ...previous }
+        let touched = false
+        if (typeof record.f !== 'number') {
+          record.f = at
+          touched = true
+        }
         if (task.status === 'in_progress' && typeof record.s !== 'number') {
           record.s = at
-          changed = true
+          touched = true
         }
         if (task.status === 'completed' && typeof record.c !== 'number') {
           record.c = at
-          changed = true
+          touched = true
         }
         if (task.status === 'pending' && typeof record.c === 'number') {
           // Reopening starts a new run; the previous completion is history.
           delete record.c
+          touched = true
+        }
+        if (touched) {
+          next[task.id] = record
           changed = true
         }
-        if (changed) next[task.id] = record
       }
       const ids = Object.keys(next)
       if (ids.length > LEDGER_LIMIT) {
@@ -2304,6 +2318,111 @@ window.__ModuleLoader__.load({
       if (task.status === 'completed') return 'done'
       if (task.status === 'in_progress') return 'active'
       return task.ready === false ? 'blocked' : 'queued'
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Ordering: the view setting decides how the cards of a column and the
+     * agents of a group are sorted. A task's first-seen stamp comes from the
+     * observation ledger; an agent carries its own createdAt/updatedAt. The
+     * Lead is always pinned first in its own column, and a task the ledger
+     * never saw sorts after the ones it did.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * The first-seen stamp of a task from the observation ledger. A record
+     * written before `f` existed falls back to its start and completion
+     * stamps, so the order does not jump when the version changes.
+     * @param ledger - the observation ledger.
+     * @param task - a Team task view.
+     * @returns unix ms, or undefined when the task was never observed.
+     */
+    function firstSeenOf(ledger, task) {
+      const record = ledger?.[task?.id]
+      if (record === null || typeof record !== 'object') return undefined
+      if (typeof record.f === 'number' && Number.isFinite(record.f)) return record.f
+      if (typeof record.s === 'number' && Number.isFinite(record.s)) return record.s
+      if (typeof record.c === 'number' && Number.isFinite(record.c)) return record.c
+      return undefined
+    }
+
+    /**
+     * Compare two task ids the way the board has always ordered them: numeric
+     * natural order, so `#2` stays before `#10`.
+     * @returns a negative, zero or positive number.
+     */
+    function compareTaskIds(left, right) {
+      return String(left?.id).localeCompare(String(right?.id), undefined, { numeric: true })
+    }
+
+    /**
+     * Sort one status column's tasks by the view setting. `newest` puts the
+     * freshest work on top (`oldest` reverses that); a task without a stamp
+     * sorts last, and the id breaks every remaining tie so the order is
+     * deterministic across renders.
+     * @param tasks - the column's tasks.
+     * @param sort - `newest`, `oldest` or `name`.
+     * @param ledger - the observation ledger.
+     * @returns a sorted copy.
+     */
+    function sortTasks(tasks, sort, ledger) {
+      const rows = [...tasks]
+      const idOrder = (left, right) => (sort === 'oldest' ? compareTaskIds(left, right) : -compareTaskIds(left, right))
+      rows.sort((left, right) => {
+        if (sort === 'name') {
+          const byName = String(left.subject ?? left.id).localeCompare(String(right.subject ?? right.id))
+          return byName !== 0 ? byName : compareTaskIds(left, right)
+        }
+        const leftAt = firstSeenOf(ledger, left)
+        const rightAt = firstSeenOf(ledger, right)
+        if (leftAt === undefined && rightAt === undefined) return idOrder(left, right)
+        if (leftAt === undefined) return 1
+        if (rightAt === undefined) return -1
+        const delta = sort === 'oldest' ? leftAt - rightAt : rightAt - leftAt
+        return delta !== 0 ? delta : idOrder(left, right)
+      })
+      return rows
+    }
+
+    /**
+     * The agent's own clock: when it was created, else when it was last seen.
+     * @param agent - one agent entry.
+     * @returns unix ms; 0 when neither stamp is known.
+     */
+    function agentStampOf(agent) {
+      if (typeof agent?.createdAt === 'number' && Number.isFinite(agent.createdAt)) return agent.createdAt
+      if (typeof agent?.updatedAt === 'number' && Number.isFinite(agent.updatedAt)) return agent.updatedAt
+      return 0
+    }
+
+    /**
+     * Compare two agents by name, then by id, so equally named rows keep a
+     * stable order.
+     * @returns a negative, zero or positive number.
+     */
+    function compareAgents(left, right) {
+      const byName = String(left?.name ?? '').localeCompare(String(right?.name ?? ''))
+      return byName !== 0 ? byName : String(left?.id).localeCompare(String(right?.id))
+    }
+
+    /**
+     * Sort agents by the view setting, freshest first by default. Pinning the
+     * Lead is the caller's job, because the pin is per column.
+     * @param agents - the agents to order.
+     * @param sort - `newest`, `oldest` or `name`.
+     * @returns a sorted copy.
+     */
+    function sortAgents(agents, sort) {
+      const rows = [...agents]
+      if (sort === 'oldest') {
+        rows.sort((left, right) => agentStampOf(left) - agentStampOf(right) || compareAgents(left, right))
+        return rows
+      }
+      if (sort === 'name') {
+        rows.sort(compareAgents)
+        return rows
+      }
+      rows.sort((left, right) => agentStampOf(right) - agentStampOf(left) || compareAgents(left, right))
+      return rows
     }
 
     /**
@@ -2811,6 +2930,9 @@ window.__ModuleLoader__.load({
      */
     function useTeamModel(props, services) {
       const { t } = props
+      // The card order, the agent order and the grouping all follow the view
+      // settings, so the model subscribes to the same browser-local store.
+      const [settings] = useViewSettings()
       // The seat supplies these hooks for session-scoped slots. Fall back to
       // the injected session-list face when a host build does not, so the board
       // still renders instead of failing on an absent prop.
@@ -2966,8 +3088,14 @@ window.__ModuleLoader__.load({
           const group = groups.find(candidate => candidate.key === key) ?? groups[groups.length - 1]
           group.agents.push(agent)
         }
-        return groups
-      }, [stripAgents])
+        // The Lead stays on top of its own column; the rest follow the view
+        // setting, so the freshest agent of a status sits right under it.
+        return groups.map(column => {
+          const leadRow = column.agents.find(agent => agent.isLead === true)
+          const rest = sortAgents(column.agents.filter(agent => agent.isLead !== true), settings.sort)
+          return { ...column, agents: leadRow === undefined ? rest : [leadRow, ...rest] }
+        })
+      }, [stripAgents, settings])
 
       const costIds = useMemo(() => {
         const ids = []
@@ -3109,9 +3237,9 @@ window.__ModuleLoader__.load({
         for (const task of tasks) grouped[columnOf(task)].push(task)
         return COLUMNS.map(column => ({
           ...column,
-          tasks: grouped[column.key].sort((left, right) => String(left.id).localeCompare(String(right.id), undefined, { numeric: true })),
+          tasks: sortTasks(grouped[column.key], settings.sort, ledger),
         }))
-      }, [tasks])
+      }, [tasks, ledger, settings.sort])
 
       const timelines = useMemo(() => {
         const map = {}
