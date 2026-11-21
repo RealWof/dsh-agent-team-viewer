@@ -385,27 +385,30 @@
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row. `showAgentModel` adds
-     * an opt-in ellipsized model line on the bottom-right; `showModelProvider`
-     * decides whether its visible text starts with the provider or only the
-     * model — the tooltip carries the full `provider · model · effort` either
-     * way.
+     * an opt-in ellipsized model line on the bottom-right; `showModelProvider`,
+     * `showModelName` and `showModelEffort` pick its visible parts — the
+     * tooltip carries the full `provider · model · effort` either way.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
      *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
-     *   `showAgentModel` and `showModelProvider` from the view settings.
+     *   and `showAgentModel`, `showModelProvider`, `showModelName`,
+     *   `showModelEffort` from the view settings.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
       const selection = agent.model
       const partsOf = fields => (selection === undefined
         ? []
         : fields.map(field => selection[field]).filter(part => typeof part === 'string' && part !== ''))
-      // The tooltip always names the provider; the visible line drops it unless
-      // the reader asked for it. An unknown selection adds no line at all.
+      // The tooltip always names the full selection; the visible line joins only
+      // the parts the reader left on, in provider · model · effort order. An
+      // unknown selection, or no enabled part, adds no line at all.
       const modelTitle = partsOf(['provider', 'model', 'effort']).join(' · ')
-      const modelLine = partsOf(showModelProvider === true
-        ? ['provider', 'model', 'effort']
-        : ['model', 'effort']).join(' · ')
+      const modelFields = []
+      if (showModelProvider === true) modelFields.push('provider')
+      if (showModelName === true) modelFields.push('model')
+      if (showModelEffort === true) modelFields.push('effort')
+      const modelLine = partsOf(modelFields).join(' · ')
       const modelVisible = showAgentModel === true && modelLine !== ''
       const items = agentMetricLine(stats, t)
       const rosterRead = Array.isArray(jobs)
@@ -749,7 +752,8 @@
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
-      showAgentModel = false, showModelProvider = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
+      showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true,
+      agentGroupingOn = false, onToggleAgentGrouping = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -770,6 +774,8 @@
         hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
         showAgentModel,
         showModelProvider,
+        showModelName,
+        showModelEffort,
       })
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
@@ -1150,6 +1156,8 @@
               onCollapseGroup: showCappedItems,
               showAgentModel: settings.showAgentModel === true,
               showModelProvider: settings.showModelProvider === true,
+              showModelName: settings.showModelName === true,
+              showModelEffort: settings.showModelEffort === true,
               agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
               onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
             })

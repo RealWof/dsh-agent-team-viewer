@@ -154,5 +154,9 @@
       groupingToggleHint: '切换此分区的分组',
       setShowModelProvider: '显示提供商',
       setShowModelProviderHint: '在代理模型行中把提供商放在模型之前；提示中始终保留提供商。',
+      setShowModelName: '显示模型名称',
+      setShowModelNameHint: '在代理模型行中保留模型 ID。',
+      setShowModelEffort: '显示推理等级',
+      setShowModelEffortHint: '在代理模型行中保留推理等级。',
       agentModeHint: '可续代理会保留会话以便后续消息；一次性代理在任务完成后结束；外部代理在此看板之外运行。',
     }

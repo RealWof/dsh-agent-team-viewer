@@ -1943,7 +1943,7 @@ check(settingsGlyph.nodes.some(node => node.props?.d === 'M8 7v9'),
 /* The page is a calm row list: muted group headings, one row per preference
    with its control at the right, and no boxed inspector cards. */
 const settingsRows = settingsView.nodes.filter(node => node.props?.className === 'tk-set-row')
-check(settingsRows.length === 11, 'the Settings page is not a row list, got ' + settingsRows.length + ' rows')
+check(settingsRows.length === 13, 'the Settings page is not a row list, got ' + settingsRows.length + ' rows')
 const settingsRowTitles = settingsRows.map(node => {
   const copy = within(node, child => child.props?.className === 'tk-set-copy')[0]
   return within(copy, child => child.props?.className === 'tk-set-title')[0]?.props?.children
@@ -1952,7 +1952,8 @@ check(settingsRowTitles.includes('setAutoRoleGroups') && settingsRowTitles.inclu
   && settingsRowTitles.includes('setTaskCustomGroups') && settingsRowTitles.includes('setSorting')
   && settingsRowTitles.includes('setAnimateCards') && settingsRowTitles.includes('setAnimationDuration')
   && settingsRowTitles.includes('setAnimateText')
-  && settingsRowTitles.includes('setScale') && settingsRowTitles.includes('setShowAgentModel'),
+  && settingsRowTitles.includes('setScale') && settingsRowTitles.includes('setShowAgentModel')
+  && settingsRowTitles.includes('setShowModelName') && settingsRowTitles.includes('setShowModelEffort'),
 'the settings rows lost a title: ' + settingsRowTitles.join(', '))
 check(settingsRows.every(node => within(node, child => child.props?.className === 'tk-set-control').length === 1),
   'a settings row has no right-aligned control')
@@ -1976,8 +1977,8 @@ for (const [head, label] of [[agentGroupHead, 'agent'], [taskGroupHead, 'task']]
 }
 check(!settingsView.nodes.some(node => node.props?.className === 'tk-sec'),
   'the Settings page still wraps its sections in inspector boxes')
-check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 7,
-  'the Settings page does not render its seven booleans as switches')
+check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 9,
+  'the Settings page does not render its nine booleans as switches')
 check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch-input')
   .every(node => node.props?.type === 'checkbox'),
 'the settings switch no longer wraps a real checkbox')
@@ -2136,7 +2137,7 @@ check(clampedRoot?.props?.style?.zoom === 0.8,
 resetSlots()
 const clampedSettings = surface(settingsSection({ t: key => key }))
 const settingBoxes = clampedSettings.nodes.filter(node => node.props?.type === 'checkbox')
-check(settingBoxes.length === 7, 'the Settings page lost a checkbox')
+check(settingBoxes.length === 9, 'the Settings page lost a checkbox')
 check(settingBoxes[0]?.props?.checked === true && settingBoxes[1]?.props?.checked === true
   && settingBoxes[2]?.props?.checked === false && settingBoxes[3]?.props?.checked === false,
 'the Settings page does not render the sanitized booleans')
@@ -2146,8 +2147,12 @@ check(settingBoxes[5]?.props?.checked === false && settingBoxes[5]?.props?.['ari
   'the agent-model switch is missing or does not default to off')
 check(settingBoxes[6]?.props?.checked === false && settingBoxes[6]?.props?.['aria-label'] === 'setShowModelProvider',
   'the provider switch is missing or does not default to off')
-check(settingBoxes[6]?.props?.disabled === true,
-  'the provider switch is not disabled while the agent model line is off')
+check(settingBoxes[7]?.props?.checked === true && settingBoxes[7]?.props?.['aria-label'] === 'setShowModelName',
+  'the model-name switch is missing or does not default to on')
+check(settingBoxes[8]?.props?.checked === true && settingBoxes[8]?.props?.['aria-label'] === 'setShowModelEffort',
+  'the effort switch is missing or does not default to on')
+check(settingBoxes.slice(6).every(box => box?.props?.disabled === true),
+  'a model-line part switch is enabled while the agent model line is off')
 const settingTextareas = clampedSettings.nodes.filter(node => node.props?.className === 'tk-set-text')
 const settingTextarea = settingTextareas[0]
 check(settingTextareas.length === 2, 'the Settings page lost a custom-groups editor')
@@ -2263,6 +2268,68 @@ check(providerLine?.props?.title === 'deepseek · deepseek-chat · high',
 check(artifact.includes('.tk-agent-model{display:block;width:100%;min-width:0;margin-top:1px;text-align:right;overflow:hidden;'),
   'the model line is not a truncated bottom-right block')
 check(artifact.includes('font-size:9px;line-height:12px'), 'the model line lost its compact type')
+if (settingsBeforeModel === undefined) storage.delete(SETTINGS_STORAGE_KEY)
+else storage.set(SETTINGS_STORAGE_KEY, settingsBeforeModel)
+
+/* --- Model-line parts: provider, model name and effort toggle alone ---- */
+
+const partSwitchOf = (view, label) => view.nodes.find(node => node.props?.type === 'checkbox'
+  && node.props?.['aria-label'] === label)
+const modelLineOf = board => {
+  const row = board.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+    && node.props?.className === 'tk-agent-row')
+  return within(row, node => node.props?.className === 'tk-agent-model')[0]
+}
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ sort: 'newest' }))
+boardFromFreshBundle()
+resetSlots()
+const partDefaults = surface(settingsSection({ t: key => key }))
+check(partSwitchOf(partDefaults, 'setShowModelName')?.props?.checked === true,
+  'the model-name part does not default to on')
+check(partSwitchOf(partDefaults, 'setShowModelEffort')?.props?.checked === true,
+  'the effort part does not default to on')
+check(partSwitchOf(partDefaults, 'setShowModelName')?.props?.disabled === true
+  && partSwitchOf(partDefaults, 'setShowModelEffort')?.props?.disabled === true,
+'the model-line parts are enabled while the master switch is off')
+partSwitchOf(partDefaults, 'setShowAgentModel')?.props?.onChange?.({ target: { checked: true } })
+resetSlots()
+const partMasterOn = surface(settingsSection({ t: key => key }))
+check(partSwitchOf(partMasterOn, 'setShowModelName')?.props?.disabled === false,
+  'the model-name part stays disabled beside an enabled agent model line')
+// Model name off: the visible line keeps only the effort.
+partSwitchOf(partMasterOn, 'setShowModelName')?.props?.onChange?.({ target: { checked: false } })
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).showModelName === false,
+  'the model-name part did not persist')
+const effortOnlyLine = modelLineOf(boardFromFreshBundle())
+check(String(effortOnlyLine?.props?.children) === 'high',
+  'the visible model line did not drop the disabled model name: ' + String(effortOnlyLine?.props?.children))
+check(effortOnlyLine?.props?.title === 'deepseek · deepseek-chat · high',
+  'the model line tooltip lost a hidden part')
+// Provider on and effort off: the visible line keeps only the provider.
+resetSlots()
+partSwitchOf(surface(settingsSection({ t: key => key })), 'setShowModelProvider')
+  ?.props?.onChange?.({ target: { checked: true } })
+resetSlots()
+partSwitchOf(surface(settingsSection({ t: key => key })), 'setShowModelEffort')
+  ?.props?.onChange?.({ target: { checked: false } })
+const providerOnlyWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
+check(providerOnlyWrite.showModelProvider === true && providerOnlyWrite.showModelEffort === false,
+  'the provider and effort parts did not persist: ' + JSON.stringify(providerOnlyWrite))
+const providerOnlyLine = modelLineOf(boardFromFreshBundle())
+check(String(providerOnlyLine?.props?.children) === 'deepseek',
+  'the visible model line did not keep only the provider: ' + String(providerOnlyLine?.props?.children))
+// Turning off the last part hides the line and restores all three parts.
+resetSlots()
+partSwitchOf(surface(settingsSection({ t: key => key })), 'setShowModelProvider')
+  ?.props?.onChange?.({ target: { checked: false } })
+const allPartsOffWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
+check(allPartsOffWrite.showAgentModel === false,
+  'turning off the last model-line part did not hide the whole line')
+check(allPartsOffWrite.showModelProvider === true && allPartsOffWrite.showModelName === true
+  && allPartsOffWrite.showModelEffort === true,
+'turning off the last model-line part did not restore the three parts: ' + JSON.stringify(allPartsOffWrite))
+check(modelLineOf(boardFromFreshBundle()) === undefined,
+  'the model line survived the all-parts-off reset')
 if (settingsBeforeModel === undefined) storage.delete(SETTINGS_STORAGE_KEY)
 else storage.set(SETTINGS_STORAGE_KEY, settingsBeforeModel)
 

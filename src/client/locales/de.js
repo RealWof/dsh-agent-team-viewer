@@ -154,5 +154,9 @@
       groupingToggleHint: 'Gruppierung in diesem Bereich umschalten',
       setShowModelProvider: 'Anbieter anzeigen',
       setShowModelProviderHint: 'Setzt den Anbieter vor das Modell in der Modellzeile des Agenten; der Tooltip enthält ihn immer.',
+      setShowModelName: 'Modellnamen anzeigen',
+      setShowModelNameHint: 'Behält die Modell-ID in der Modellzeile des Agenten.',
+      setShowModelEffort: 'Denkaufwand anzeigen',
+      setShowModelEffortHint: 'Behält die Denkstufe in der Modellzeile des Agenten.',
       agentModeHint: 'Fortsetzbare Agenten behalten ihre Sitzung für Folgenachrichten; Einmal-Agenten enden mit der Aufgabe; externe Agenten laufen außerhalb dieses Boards.',
     }

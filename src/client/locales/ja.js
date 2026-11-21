@@ -154,5 +154,9 @@
       groupingToggleHint: 'このセクションのグループ化を切り替えます',
       setShowModelProvider: 'プロバイダーを表示',
       setShowModelProviderHint: 'エージェントのモデル行でプロバイダーをモデルの前に表示します。ツールチップには常に含まれます。',
+      setShowModelName: 'モデル名を表示',
+      setShowModelNameHint: 'エージェントのモデル行にモデル ID を残します。',
+      setShowModelEffort: '推論レベルを表示',
+      setShowModelEffortHint: 'エージェントのモデル行に推論レベルを残します。',
       agentModeHint: '継続可能なエージェントはフォローアップ用にセッションを保持し、ワンショットはタスク後に終了し、外部エージェントはこのボードの外で動作します。',
     }

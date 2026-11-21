@@ -153,5 +153,9 @@
       groupingToggleHint: 'Toggle grouping in this section',
       setShowModelProvider: 'Show the provider',
       setShowModelProviderHint: 'Puts the provider before the model in the agent model line; the tooltip always keeps it.',
+      setShowModelName: 'Show the model name',
+      setShowModelNameHint: 'Keeps the model id in the agent model line.',
+      setShowModelEffort: 'Show the reasoning effort',
+      setShowModelEffortHint: 'Keeps the reasoning level in the agent model line.',
       agentModeHint: 'Continuable agents keep their session for follow-up messages; one-shot agents finish after the task; external agents run outside this board.',
     }

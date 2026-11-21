@@ -29,10 +29,10 @@
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
      * `showAgentModel` stays off so the agent rows stay as compact as the
-     * Subagents menu's, and the model line is opt-in. `showModelProvider` stays
-     * off too: the line starts at `model · effort`, and the provider joins it
-     * only when the reader asks for it — the tooltip always carries it.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, animateText: boolean, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
+     * Subagents menu's, and the model line is opt-in. `showModelProvider`,
+     * `showModelName` and `showModelEffort` pick the parts of that line; the
+     * provider stays off by default.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, animateText: boolean, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean, showModelName: boolean, showModelEffort: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -48,6 +48,8 @@
       dialogScale: 1,
       showAgentModel: false,
       showModelProvider: false,
+      showModelName: true,
+      showModelEffort: true,
     }
 
     /**
@@ -101,6 +103,8 @@
           VIEW_SETTINGS_DEFAULTS.dialogScale),
         showAgentModel: boolean(read('showAgentModel'), VIEW_SETTINGS_DEFAULTS.showAgentModel),
         showModelProvider: boolean(read('showModelProvider'), VIEW_SETTINGS_DEFAULTS.showModelProvider),
+        showModelName: boolean(read('showModelName'), VIEW_SETTINGS_DEFAULTS.showModelName),
+        showModelEffort: boolean(read('showModelEffort'), VIEW_SETTINGS_DEFAULTS.showModelEffort),
       }
     }
 
@@ -145,6 +149,16 @@
       const valid = patch !== null && typeof patch === 'object' && !Array.isArray(patch)
       const merged = valid ? { ...VIEW_SETTINGS.value, ...patch } : { ...VIEW_SETTINGS.value }
       const next = sanitizeViewSettings(merged)
+      // Turning off the last visible part of the model line hides the whole
+      // line and restores the three part switches, so the master switch and its
+      // parts can never sit in the contradictory "on but nothing to show" state.
+      if (next.showAgentModel === true
+        && next.showModelProvider !== true && next.showModelName !== true && next.showModelEffort !== true) {
+        next.showAgentModel = false
+        next.showModelProvider = true
+        next.showModelName = true
+        next.showModelEffort = true
+      }
       VIEW_SETTINGS.value = next
       try {
         window.localStorage.setItem(VIEW_SETTINGS_KEY, JSON.stringify(next))
@@ -393,6 +407,10 @@
         h(SettingsGroup, { title: t('agentsHeading'), icon: 'users' },
           switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint')),
           switchRow('showModelProvider', t('setShowModelProvider'), t('setShowModelProviderHint'), false,
+            settings.showAgentModel !== true),
+          switchRow('showModelName', t('setShowModelName'), t('setShowModelNameHint'), false,
+            settings.showAgentModel !== true),
+          switchRow('showModelEffort', t('setShowModelEffort'), t('setShowModelEffortHint'), false,
             settings.showAgentModel !== true)),
 
         h(SettingsGroup, { title: t('aboutHeading'), icon: 'link' },

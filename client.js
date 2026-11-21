@@ -284,10 +284,10 @@ window.__ModuleLoader__.load({
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
      * `showAgentModel` stays off so the agent rows stay as compact as the
-     * Subagents menu's, and the model line is opt-in. `showModelProvider` stays
-     * off too: the line starts at `model · effort`, and the provider joins it
-     * only when the reader asks for it — the tooltip always carries it.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, animateText: boolean, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
+     * Subagents menu's, and the model line is opt-in. `showModelProvider`,
+     * `showModelName` and `showModelEffort` pick the parts of that line; the
+     * provider stays off by default.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, animateText: boolean, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean, showModelName: boolean, showModelEffort: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -303,6 +303,8 @@ window.__ModuleLoader__.load({
       dialogScale: 1,
       showAgentModel: false,
       showModelProvider: false,
+      showModelName: true,
+      showModelEffort: true,
     }
 
     /**
@@ -356,6 +358,8 @@ window.__ModuleLoader__.load({
           VIEW_SETTINGS_DEFAULTS.dialogScale),
         showAgentModel: boolean(read('showAgentModel'), VIEW_SETTINGS_DEFAULTS.showAgentModel),
         showModelProvider: boolean(read('showModelProvider'), VIEW_SETTINGS_DEFAULTS.showModelProvider),
+        showModelName: boolean(read('showModelName'), VIEW_SETTINGS_DEFAULTS.showModelName),
+        showModelEffort: boolean(read('showModelEffort'), VIEW_SETTINGS_DEFAULTS.showModelEffort),
       }
     }
 
@@ -400,6 +404,16 @@ window.__ModuleLoader__.load({
       const valid = patch !== null && typeof patch === 'object' && !Array.isArray(patch)
       const merged = valid ? { ...VIEW_SETTINGS.value, ...patch } : { ...VIEW_SETTINGS.value }
       const next = sanitizeViewSettings(merged)
+      // Turning off the last visible part of the model line hides the whole
+      // line and restores the three part switches, so the master switch and its
+      // parts can never sit in the contradictory "on but nothing to show" state.
+      if (next.showAgentModel === true
+        && next.showModelProvider !== true && next.showModelName !== true && next.showModelEffort !== true) {
+        next.showAgentModel = false
+        next.showModelProvider = true
+        next.showModelName = true
+        next.showModelEffort = true
+      }
       VIEW_SETTINGS.value = next
       try {
         window.localStorage.setItem(VIEW_SETTINGS_KEY, JSON.stringify(next))
@@ -648,6 +662,10 @@ window.__ModuleLoader__.load({
         h(SettingsGroup, { title: t('agentsHeading'), icon: 'users' },
           switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint')),
           switchRow('showModelProvider', t('setShowModelProvider'), t('setShowModelProviderHint'), false,
+            settings.showAgentModel !== true),
+          switchRow('showModelName', t('setShowModelName'), t('setShowModelNameHint'), false,
+            settings.showAgentModel !== true),
+          switchRow('showModelEffort', t('setShowModelEffort'), t('setShowModelEffortHint'), false,
             settings.showAgentModel !== true)),
 
         h(SettingsGroup, { title: t('aboutHeading'), icon: 'link' },
@@ -827,6 +845,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Toggle grouping in this section',
       setShowModelProvider: 'Show the provider',
       setShowModelProviderHint: 'Puts the provider before the model in the agent model line; the tooltip always keeps it.',
+      setShowModelName: 'Show the model name',
+      setShowModelNameHint: 'Keeps the model id in the agent model line.',
+      setShowModelEffort: 'Show the reasoning effort',
+      setShowModelEffortHint: 'Keeps the reasoning level in the agent model line.',
       agentModeHint: 'Continuable agents keep their session for follow-up messages; one-shot agents finish after the task; external agents run outside this board.',
     }
 
@@ -986,6 +1008,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Переключить группировку в этом разделе',
       setShowModelProvider: 'Показывать провайдера',
       setShowModelProviderHint: 'Ставит провайдера перед моделью в строке модели агента; в подсказке он есть всегда.',
+      setShowModelName: 'Показывать название модели',
+      setShowModelNameHint: 'Оставляет идентификатор модели в строке модели агента.',
+      setShowModelEffort: 'Показывать уровень рассуждений',
+      setShowModelEffortHint: 'Оставляет уровень рассуждений в строке модели агента.',
       agentModeHint: 'Продолжаемые агенты сохраняют сессию для следующих сообщений; одноразовые завершаются после задачи; внешние работают вне этой доски.',
     }
 
@@ -1145,6 +1171,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: '切换此分区的分组',
       setShowModelProvider: '显示提供商',
       setShowModelProviderHint: '在代理模型行中把提供商放在模型之前；提示中始终保留提供商。',
+      setShowModelName: '显示模型名称',
+      setShowModelNameHint: '在代理模型行中保留模型 ID。',
+      setShowModelEffort: '显示推理等级',
+      setShowModelEffortHint: '在代理模型行中保留推理等级。',
       agentModeHint: '可续代理会保留会话以便后续消息；一次性代理在任务完成后结束；外部代理在此看板之外运行。',
     }
 
@@ -1304,6 +1334,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'このセクションのグループ化を切り替えます',
       setShowModelProvider: 'プロバイダーを表示',
       setShowModelProviderHint: 'エージェントのモデル行でプロバイダーをモデルの前に表示します。ツールチップには常に含まれます。',
+      setShowModelName: 'モデル名を表示',
+      setShowModelNameHint: 'エージェントのモデル行にモデル ID を残します。',
+      setShowModelEffort: '推論レベルを表示',
+      setShowModelEffortHint: 'エージェントのモデル行に推論レベルを残します。',
       agentModeHint: '継続可能なエージェントはフォローアップ用にセッションを保持し、ワンショットはタスク後に終了し、外部エージェントはこのボードの外で動作します。',
     }
 
@@ -1463,6 +1497,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Alternar la agrupación en esta sección',
       setShowModelProvider: 'Mostrar el proveedor',
       setShowModelProviderHint: 'Muestra el proveedor antes del modelo en la línea del agente; la información lo conserva siempre.',
+      setShowModelName: 'Mostrar el nombre del modelo',
+      setShowModelNameHint: 'Mantiene el id del modelo en la línea del agente.',
+      setShowModelEffort: 'Mostrar el esfuerzo de razonamiento',
+      setShowModelEffortHint: 'Mantiene el nivel de razonamiento en la línea del agente.',
       agentModeHint: 'Los agentes continuables conservan su sesión para mensajes posteriores; los de un solo uso terminan con la tarea; los externos se ejecutan fuera de este tablero.',
     }
 
@@ -1622,6 +1660,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Activer ou désactiver le regroupement dans cette section',
       setShowModelProvider: 'Afficher le fournisseur',
       setShowModelProviderHint: 'Place le fournisseur avant le modèle dans la ligne de l\u2019agent ; l\u2019infobulle le garde toujours.',
+      setShowModelName: 'Afficher le nom du modèle',
+      setShowModelNameHint: 'Garde l\u2019identifiant du modèle dans la ligne de l\u2019agent.',
+      setShowModelEffort: 'Afficher l\u2019effort de raisonnement',
+      setShowModelEffortHint: 'Garde le niveau de raisonnement dans la ligne de l\u2019agent.',
       agentModeHint: 'Les agents continuables gardent leur session pour les messages suivants ; les agents ponctuels finissent avec la tâche ; les agents externes travaillent hors de ce tableau.',
     }
 
@@ -1781,6 +1823,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Gruppierung in diesem Bereich umschalten',
       setShowModelProvider: 'Anbieter anzeigen',
       setShowModelProviderHint: 'Setzt den Anbieter vor das Modell in der Modellzeile des Agenten; der Tooltip enthält ihn immer.',
+      setShowModelName: 'Modellnamen anzeigen',
+      setShowModelNameHint: 'Behält die Modell-ID in der Modellzeile des Agenten.',
+      setShowModelEffort: 'Denkaufwand anzeigen',
+      setShowModelEffortHint: 'Behält die Denkstufe in der Modellzeile des Agenten.',
       agentModeHint: 'Fortsetzbare Agenten behalten ihre Sitzung für Folgenachrichten; Einmal-Agenten enden mit der Aufgabe; externe Agenten laufen außerhalb dieses Boards.',
     }
 
@@ -1940,6 +1986,10 @@ window.__ModuleLoader__.load({
       groupingToggleHint: 'Alternar o agrupamento nesta seção',
       setShowModelProvider: 'Mostrar o provedor',
       setShowModelProviderHint: 'Coloca o provedor antes do modelo na linha do agente; a dica sempre o inclui.',
+      setShowModelName: 'Mostrar o nome do modelo',
+      setShowModelNameHint: 'Mantém o id do modelo na linha do agente.',
+      setShowModelEffort: 'Mostrar o esforço de raciocínio',
+      setShowModelEffortHint: 'Mantém o nível de raciocínio na linha do agente.',
       agentModeHint: 'Agentes continuáveis mantêm a sessão para mensagens de seguimento; agentes de uso único terminam com a tarefa; agentes externos rodam fora deste quadro.',
     }
 
@@ -5168,27 +5218,30 @@ window.__ModuleLoader__.load({
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row. `showAgentModel` adds
-     * an opt-in ellipsized model line on the bottom-right; `showModelProvider`
-     * decides whether its visible text starts with the provider or only the
-     * model — the tooltip carries the full `provider · model · effort` either
-     * way.
+     * an opt-in ellipsized model line on the bottom-right; `showModelProvider`,
+     * `showModelName` and `showModelEffort` pick its visible parts — the
+     * tooltip carries the full `provider · model · effort` either way.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
      *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
-     *   `showAgentModel` and `showModelProvider` from the view settings.
+     *   and `showAgentModel`, `showModelProvider`, `showModelName`,
+     *   `showModelEffort` from the view settings.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
       const selection = agent.model
       const partsOf = fields => (selection === undefined
         ? []
         : fields.map(field => selection[field]).filter(part => typeof part === 'string' && part !== ''))
-      // The tooltip always names the provider; the visible line drops it unless
-      // the reader asked for it. An unknown selection adds no line at all.
+      // The tooltip always names the full selection; the visible line joins only
+      // the parts the reader left on, in provider · model · effort order. An
+      // unknown selection, or no enabled part, adds no line at all.
       const modelTitle = partsOf(['provider', 'model', 'effort']).join(' · ')
-      const modelLine = partsOf(showModelProvider === true
-        ? ['provider', 'model', 'effort']
-        : ['model', 'effort']).join(' · ')
+      const modelFields = []
+      if (showModelProvider === true) modelFields.push('provider')
+      if (showModelName === true) modelFields.push('model')
+      if (showModelEffort === true) modelFields.push('effort')
+      const modelLine = partsOf(modelFields).join(' · ')
       const modelVisible = showAgentModel === true && modelLine !== ''
       const items = agentMetricLine(stats, t)
       const rosterRead = Array.isArray(jobs)
@@ -5532,7 +5585,8 @@ window.__ModuleLoader__.load({
     function AgentsStrip({
       boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
-      showAgentModel = false, showModelProvider = false, agentGroupingOn = false, onToggleAgentGrouping = undefined,
+      showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true,
+      agentGroupingOn = false, onToggleAgentGrouping = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -5553,6 +5607,8 @@ window.__ModuleLoader__.load({
         hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
         showAgentModel,
         showModelProvider,
+        showModelName,
+        showModelEffort,
       })
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
@@ -5933,6 +5989,8 @@ window.__ModuleLoader__.load({
               onCollapseGroup: showCappedItems,
               showAgentModel: settings.showAgentModel === true,
               showModelProvider: settings.showModelProvider === true,
+              showModelName: settings.showModelName === true,
+              showModelEffort: settings.showModelEffort === true,
               agentGroupingOn: settings.autoRoleGroups === true || settings.customGroups === true,
               onToggleAgentGrouping: () => { updateSettings(groupingPatch('agents', settings)) },
             })

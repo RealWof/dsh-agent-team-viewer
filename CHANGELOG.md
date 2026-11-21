@@ -8,6 +8,11 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Added
 
+- The agent model line's parts are independently switchable: **Show the provider**, **Show the model
+  name** and **Show the reasoning effort** (provider off, the other two on by default) sit under the
+  master **Show the agent model** switch. The visible line joins only the enabled parts, the tooltip
+  always keeps the full `provider · model · effort` line, and turning off the last part hides the master
+  switch and restores all three parts.
 - Changing metric values — the agent-row figures, the agent-dialog tiles and the totals chips — fade and
   lift briefly when they update. The new **Animate changing values** Motion preference (on by default)
   turns it off, the existing animation duration sets the speed, and reduced-motion disables it.

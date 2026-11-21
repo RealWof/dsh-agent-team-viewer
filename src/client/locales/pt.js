@@ -154,5 +154,9 @@
       groupingToggleHint: 'Alternar o agrupamento nesta seção',
       setShowModelProvider: 'Mostrar o provedor',
       setShowModelProviderHint: 'Coloca o provedor antes do modelo na linha do agente; a dica sempre o inclui.',
+      setShowModelName: 'Mostrar o nome do modelo',
+      setShowModelNameHint: 'Mantém o id do modelo na linha do agente.',
+      setShowModelEffort: 'Mostrar o esforço de raciocínio',
+      setShowModelEffortHint: 'Mantém o nível de raciocínio na linha do agente.',
       agentModeHint: 'Agentes continuáveis mantêm a sessão para mensagens de seguimento; agentes de uso único terminam com a tarefa; agentes externos rodam fora deste quadro.',
     }
