@@ -20,7 +20,7 @@
     /**
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number }}
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -30,6 +30,7 @@
       animateCards: true,
       animationMs: 220,
       uiScale: 1,
+      dialogScale: 1,
     }
 
     /**
@@ -74,6 +75,8 @@
           VIEW_SETTINGS_DEFAULTS.animationMs),
         uiScale: snapSetting(read('uiScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.uiScale),
+        dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
+          VIEW_SETTINGS_DEFAULTS.dialogScale),
       }
     }
 
@@ -283,5 +286,19 @@
               onChange: event => { update({ uiScale: Number(event.target.value) }) },
             }),
             h('span', { className: 'tk-set-value' }, formatScale(settings.uiScale))),
-          h('span', { className: 'tk-set-hint' }, t('setScaleHint'))))
+          h('span', { className: 'tk-set-hint' }, t('setScaleHint')),
+          h('div', { className: 'tk-set-field' },
+            h('span', { className: 'tk-set-label' }, t('setDialogScale')),
+            h('input', {
+              className: 'tk-set-range',
+              type: 'range',
+              min: VIEW_SCALE_MIN,
+              max: VIEW_SCALE_MAX,
+              step: VIEW_SCALE_STEP,
+              value: settings.dialogScale,
+              'aria-label': t('setDialogScale'),
+              onChange: event => { update({ dialogScale: Number(event.target.value) }) },
+            }),
+            h('span', { className: 'tk-set-value' }, formatScale(settings.dialogScale))),
+          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))))
     }

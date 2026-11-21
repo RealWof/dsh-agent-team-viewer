@@ -168,6 +168,9 @@
         return () => { window.removeEventListener('keydown', onKey) }
       }, [onClose])
 
+      // The dialog scale is its own view preference; only the panel zooms.
+      const [viewSettings] = useViewSettings()
+
       // The two lists can grow; each folds away on its own, and the dialog is
       // short-lived, so the choice lives with the open card.
       const [jobsOpen, setJobsOpen] = useState(true)
@@ -269,6 +272,7 @@
           'aria-modal': 'true',
           'aria-label': t('agentHeading'),
           'data-agent-dialog': agent.id,
+          style: { zoom: viewSettings.dialogScale },
         },
         head,
         h('div', { className: 'tk-insp-body' },

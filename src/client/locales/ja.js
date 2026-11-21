@@ -132,4 +132,6 @@
       taskReport: 'レポート',
       reportLoading: 'レポートを読み込み中…',
       reportEmptyNote: 'このエージェントはまだ最終回答を出していません。',
+      setDialogScale: 'ダイアログの拡大率',
+      setDialogScaleHint: '開いたダイアログのみを拡大します。ボードとヘッダーは変わりません。',
     }

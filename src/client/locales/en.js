@@ -131,4 +131,6 @@
       taskReport: 'Report',
       reportLoading: 'Loading the report…',
       reportEmptyNote: 'This agent has not produced a final answer yet.',
+      setDialogScale: 'Dialog scale',
+      setDialogScaleHint: 'Zooms the opened dialogs only; the board and header keep their size.',
     }

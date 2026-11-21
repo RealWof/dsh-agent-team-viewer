@@ -132,4 +132,6 @@
       taskReport: 'Rapport',
       reportLoading: 'Chargement du rapport…',
       reportEmptyNote: 'Cet agent n’a pas encore produit de réponse finale.',
+      setDialogScale: 'Échelle des dialogues',
+      setDialogScaleHint: 'Zoome seulement les dialogues ouverts ; le tableau et la barre gardent leur taille.',
     }

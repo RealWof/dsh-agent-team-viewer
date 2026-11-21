@@ -266,7 +266,7 @@ window.__ModuleLoader__.load({
     /**
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number }}
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -276,6 +276,7 @@ window.__ModuleLoader__.load({
       animateCards: true,
       animationMs: 220,
       uiScale: 1,
+      dialogScale: 1,
     }
 
     /**
@@ -320,6 +321,8 @@ window.__ModuleLoader__.load({
           VIEW_SETTINGS_DEFAULTS.animationMs),
         uiScale: snapSetting(read('uiScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.uiScale),
+        dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
+          VIEW_SETTINGS_DEFAULTS.dialogScale),
       }
     }
 
@@ -529,7 +532,21 @@ window.__ModuleLoader__.load({
               onChange: event => { update({ uiScale: Number(event.target.value) }) },
             }),
             h('span', { className: 'tk-set-value' }, formatScale(settings.uiScale))),
-          h('span', { className: 'tk-set-hint' }, t('setScaleHint'))))
+          h('span', { className: 'tk-set-hint' }, t('setScaleHint')),
+          h('div', { className: 'tk-set-field' },
+            h('span', { className: 'tk-set-label' }, t('setDialogScale')),
+            h('input', {
+              className: 'tk-set-range',
+              type: 'range',
+              min: VIEW_SCALE_MIN,
+              max: VIEW_SCALE_MAX,
+              step: VIEW_SCALE_STEP,
+              value: settings.dialogScale,
+              'aria-label': t('setDialogScale'),
+              onChange: event => { update({ dialogScale: Number(event.target.value) }) },
+            }),
+            h('span', { className: 'tk-set-value' }, formatScale(settings.dialogScale))),
+          h('span', { className: 'tk-set-hint' }, t('setDialogScaleHint'))))
     }
 
 /**
@@ -665,6 +682,8 @@ window.__ModuleLoader__.load({
       taskReport: 'Report',
       reportLoading: 'Loading the report…',
       reportEmptyNote: 'This agent has not produced a final answer yet.',
+      setDialogScale: 'Dialog scale',
+      setDialogScaleHint: 'Zooms the opened dialogs only; the board and header keep their size.',
     }
 
 /**
@@ -801,6 +820,8 @@ window.__ModuleLoader__.load({
       taskReport: 'Отчёт',
       reportLoading: 'Загрузка отчёта…',
       reportEmptyNote: 'У этого агента пока нет итогового ответа.',
+      setDialogScale: 'Масштаб диалогов',
+      setDialogScaleHint: 'Масштабируются только открытые диалоги; доска и шапка не меняются.',
     }
 
 /**
@@ -937,6 +958,8 @@ window.__ModuleLoader__.load({
       taskReport: '报告',
       reportLoading: '正在加载报告…',
       reportEmptyNote: '该代理尚未给出最终答复。',
+      setDialogScale: '对话框缩放',
+      setDialogScaleHint: '仅缩放打开的对话框，看板和顶栏保持原尺寸。',
     }
 
 /**
@@ -1073,6 +1096,8 @@ window.__ModuleLoader__.load({
       taskReport: 'レポート',
       reportLoading: 'レポートを読み込み中…',
       reportEmptyNote: 'このエージェントはまだ最終回答を出していません。',
+      setDialogScale: 'ダイアログの拡大率',
+      setDialogScaleHint: '開いたダイアログのみを拡大します。ボードとヘッダーは変わりません。',
     }
 
 /**
@@ -1209,6 +1234,8 @@ window.__ModuleLoader__.load({
       taskReport: 'Informe',
       reportLoading: 'Cargando el informe…',
       reportEmptyNote: 'Este agente aún no ha producido una respuesta final.',
+      setDialogScale: 'Escala de los diálogos',
+      setDialogScaleHint: 'Solo escala los diálogos abiertos; el tablero y la cabecera no cambian.',
     }
 
 /**
@@ -1345,6 +1372,8 @@ window.__ModuleLoader__.load({
       taskReport: 'Rapport',
       reportLoading: 'Chargement du rapport…',
       reportEmptyNote: 'Cet agent n’a pas encore produit de réponse finale.',
+      setDialogScale: 'Échelle des dialogues',
+      setDialogScaleHint: 'Zoome seulement les dialogues ouverts ; le tableau et la barre gardent leur taille.',
     }
 
 /**
@@ -1481,6 +1510,8 @@ window.__ModuleLoader__.load({
       taskReport: 'Bericht',
       reportLoading: 'Bericht wird geladen…',
       reportEmptyNote: 'Dieser Agent hat noch keine endgültige Antwort geliefert.',
+      setDialogScale: 'Dialog-Skalierung',
+      setDialogScaleHint: 'Skaliert nur die geöffneten Dialoge; Board und Kopfzeile bleiben unverändert.',
     }
 
 /**
@@ -1617,6 +1648,8 @@ window.__ModuleLoader__.load({
       taskReport: 'Relatório',
       reportLoading: 'Carregando o relatório…',
       reportEmptyNote: 'Este agente ainda não produziu uma resposta final.',
+      setDialogScale: 'Escala dos diálogos',
+      setDialogScaleHint: 'Amplia apenas as caixas de diálogo abertas; o quadro e o cabeçalho não mudam.',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1634,6 +1667,10 @@ window.__ModuleLoader__.load({
 .tk-head-title{margin:0;min-width:0;font-size:13px;line-height:18px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-head-sub{min-width:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .tk-head-spacer{flex:1 1 auto;min-width:4px}
+.tk-sort{flex:none;max-width:118px;min-width:0;padding:0 1px;border:0;border-radius:var(--dsw-radius-sm);
+  background:transparent;color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;line-height:14px;cursor:pointer}
+.tk-sort:hover{color:var(--dsw-alias-label-primary)}
+.tk-sort:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-readonly{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
   border-radius:999px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
 .tk-icon-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;
@@ -4093,6 +4130,29 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The compact sort choice both section headers carry. It writes the same
+     * `sort` view setting the Settings page edits, so the board reorders in
+     * place without leaving the tab.
+     * @param props - `sort`, `onChange` and `t`.
+     */
+    function SortSelect({ sort, onChange, t }) {
+      const label = t('setSorting')
+      return h('select', {
+        className: 'tk-sort',
+        'data-sort': 'true',
+        value: sort,
+        title: label,
+        'aria-label': label,
+        onChange: event => {
+          if (typeof onChange === 'function') onChange(event.target.value)
+        },
+      },
+      h('option', { value: 'newest' }, t('setSortNewest')),
+      h('option', { value: 'oldest' }, t('setSortOldest')),
+      h('option', { value: 'name' }, t('setSortName')))
+    }
+
+    /**
      * The whole tree's totals — what all agents of this session burned together.
      * @param props - `totals`, `t`.
      */
@@ -4146,13 +4206,13 @@ window.__ModuleLoader__.load({
      * grouping switch is on, each status column renders custom and role groups
      * with their own foldable headers; otherwise it stays a flat list.
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
-     *   `costState`, `totals`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
-     *   `hoverOwnerId`, `onToggleSection`, `onToggleGroup`, `onExpandGroup`,
-     *   `onCollapseGroup`.
+     *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
+     *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
+     *   `onExpandGroup`, `onCollapseGroup`.
      */
     function AgentsStrip({
-      columns, agentStats, jobsByAgent, now, columnCount, costState, totals, t, tAgent, onOpenAgent, onInspect,
-      hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
+      columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
+      onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -4218,7 +4278,8 @@ window.__ModuleLoader__.load({
           h('span', {
             className: 'tk-note',
             title: costState === 'missing' ? t('costMissingHint') : undefined,
-          }, costState === 'missing' ? t('costMissing') : t('agentOpenHint'))),
+          }, costState === 'missing' ? t('costMissing') : t('agentOpenHint')),
+          h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
           ? null
           : h(React.Fragment, null,
@@ -4289,7 +4350,7 @@ window.__ModuleLoader__.load({
       const services = props.services ?? NO_SERVICES
       // Panel scale is a view preference; the panel root below is the only
       // element it touches — the header action and the dialogs are elsewhere.
-      const [settings] = useViewSettings()
+      const [settings, updateSettings] = useViewSettings()
       const model = useTeamModel(props, services)
       const [selected, setSelected] = useState(null)
       const [inspectedAgent, setInspectedAgent] = useState(null)
@@ -4519,6 +4580,8 @@ window.__ModuleLoader__.load({
               columnCount,
               costState: model.costState,
               totals: model.totals,
+              sort: settings.sort,
+              onSortChange: value => { updateSettings({ sort: value }) },
               t,
               tAgent,
               onOpenAgent: openAgent,
@@ -4543,7 +4606,12 @@ window.__ModuleLoader__.load({
             h(Icon, { name: 'kanban', size: 11 }),
             h('h3', { className: 'tk-sec-title' }, t('tasksHeading')),
             h('span', { className: 'tk-sec-note' }, String(model.tasks.length) + ' ' + countLabel),
-            h('span', { className: 'tk-head-spacer' })),
+            h('span', { className: 'tk-head-spacer' }),
+            h(SortSelect, {
+              sort: settings.sort,
+              onChange: value => { updateSettings({ sort: value }) },
+              t,
+            })),
 
           tasksCollapsed
             ? null
@@ -4736,6 +4804,9 @@ window.__ModuleLoader__.load({
       // The dialog's two pages: the task's own facts (the default) and the
       // owning subagent's final answer. The report is read by the board and
       // handed in; this component only picks which page to draw.
+      // The dialog scale is its own view preference: only the panel zooms, the
+      // backdrop keeps its size and the dialog stays centred.
+      const [viewSettings] = useViewSettings()
       const [activeTab, setActiveTab] = useState('description')
 
       const state = stateOfTask(task)
@@ -4920,6 +4991,7 @@ window.__ModuleLoader__.load({
         'aria-modal': 'true',
         'aria-label': t('inspectorTitle'),
         'data-task-id': task.id,
+        style: { zoom: viewSettings.dialogScale },
       },
       head,
       tabs,
@@ -5102,6 +5174,9 @@ window.__ModuleLoader__.load({
         return () => { window.removeEventListener('keydown', onKey) }
       }, [onClose])
 
+      // The dialog scale is its own view preference; only the panel zooms.
+      const [viewSettings] = useViewSettings()
+
       // The two lists can grow; each folds away on its own, and the dialog is
       // short-lived, so the choice lives with the open card.
       const [jobsOpen, setJobsOpen] = useState(true)
@@ -5203,6 +5278,7 @@ window.__ModuleLoader__.load({
           'aria-modal': 'true',
           'aria-label': t('agentHeading'),
           'data-agent-dialog': agent.id,
+          style: { zoom: viewSettings.dialogScale },
         },
         head,
         h('div', { className: 'tk-insp-body' },

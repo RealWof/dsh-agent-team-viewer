@@ -132,4 +132,6 @@
       taskReport: 'Relatório',
       reportLoading: 'Carregando o relatório…',
       reportEmptyNote: 'Este agente ainda não produziu uma resposta final.',
+      setDialogScale: 'Escala dos diálogos',
+      setDialogScaleHint: 'Amplia apenas as caixas de diálogo abertas; o quadro e o cabeçalho não mudam.',
     }

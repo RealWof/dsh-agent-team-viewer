@@ -417,6 +417,29 @@
     }
 
     /**
+     * The compact sort choice both section headers carry. It writes the same
+     * `sort` view setting the Settings page edits, so the board reorders in
+     * place without leaving the tab.
+     * @param props - `sort`, `onChange` and `t`.
+     */
+    function SortSelect({ sort, onChange, t }) {
+      const label = t('setSorting')
+      return h('select', {
+        className: 'tk-sort',
+        'data-sort': 'true',
+        value: sort,
+        title: label,
+        'aria-label': label,
+        onChange: event => {
+          if (typeof onChange === 'function') onChange(event.target.value)
+        },
+      },
+      h('option', { value: 'newest' }, t('setSortNewest')),
+      h('option', { value: 'oldest' }, t('setSortOldest')),
+      h('option', { value: 'name' }, t('setSortName')))
+    }
+
+    /**
      * The whole tree's totals — what all agents of this session burned together.
      * @param props - `totals`, `t`.
      */
@@ -470,13 +493,13 @@
      * grouping switch is on, each status column renders custom and role groups
      * with their own foldable headers; otherwise it stays a flat list.
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
-     *   `costState`, `totals`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
-     *   `hoverOwnerId`, `onToggleSection`, `onToggleGroup`, `onExpandGroup`,
-     *   `onCollapseGroup`.
+     *   `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
+     *   `onSortChange`, `hoverOwnerId`, `onToggleSection`, `onToggleGroup`,
+     *   `onExpandGroup`, `onCollapseGroup`.
      */
     function AgentsStrip({
-      columns, agentStats, jobsByAgent, now, columnCount, costState, totals, t, tAgent, onOpenAgent, onInspect,
-      hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
+      columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
+      onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -542,7 +565,8 @@
           h('span', {
             className: 'tk-note',
             title: costState === 'missing' ? t('costMissingHint') : undefined,
-          }, costState === 'missing' ? t('costMissing') : t('agentOpenHint'))),
+          }, costState === 'missing' ? t('costMissing') : t('agentOpenHint')),
+          h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
           ? null
           : h(React.Fragment, null,
@@ -613,7 +637,7 @@
       const services = props.services ?? NO_SERVICES
       // Panel scale is a view preference; the panel root below is the only
       // element it touches — the header action and the dialogs are elsewhere.
-      const [settings] = useViewSettings()
+      const [settings, updateSettings] = useViewSettings()
       const model = useTeamModel(props, services)
       const [selected, setSelected] = useState(null)
       const [inspectedAgent, setInspectedAgent] = useState(null)
@@ -843,6 +867,8 @@
               columnCount,
               costState: model.costState,
               totals: model.totals,
+              sort: settings.sort,
+              onSortChange: value => { updateSettings({ sort: value }) },
               t,
               tAgent,
               onOpenAgent: openAgent,
@@ -867,7 +893,12 @@
             h(Icon, { name: 'kanban', size: 11 }),
             h('h3', { className: 'tk-sec-title' }, t('tasksHeading')),
             h('span', { className: 'tk-sec-note' }, String(model.tasks.length) + ' ' + countLabel),
-            h('span', { className: 'tk-head-spacer' })),
+            h('span', { className: 'tk-head-spacer' }),
+            h(SortSelect, {
+              sort: settings.sort,
+              onChange: value => { updateSettings({ sort: value }) },
+              t,
+            })),
 
           tasksCollapsed
             ? null

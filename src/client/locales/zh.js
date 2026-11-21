@@ -132,4 +132,6 @@
       taskReport: '报告',
       reportLoading: '正在加载报告…',
       reportEmptyNote: '该代理尚未给出最终答复。',
+      setDialogScale: '对话框缩放',
+      setDialogScaleHint: '仅缩放打开的对话框，看板和顶栏保持原尺寸。',
     }

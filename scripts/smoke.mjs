@@ -109,6 +109,7 @@ let tabDefinition
 let tabBody
 let actionRegistration
 let titleSeat
+let settingsSection
 let reg
 
 const listState = {
@@ -184,6 +185,7 @@ const ctx = {
       if (options.name === 'sidebar.right.pane.tab') tabBody = component
       if (options.name === 'sidebar.right.pane.tab.title') titleSeat = options
       if (options.name === 'conversation.session.header.actions') actionRegistration = options
+      if (options.name === 'settings.section') settingsSection = component
       return () => {}
     },
   },
@@ -567,6 +569,14 @@ check(activeRows[0]?.props?.['data-lead'] === 'true', 'the lead is not the first
 check(strip.texts.includes('colActive') && strip.texts.includes('colDone') && strip.texts.includes('colAgentIdle'),
   'an agent group header is missing its label')
 
+/* Both section headers carry the sort choice, and it edits the same setting. */
+const sortSelects = strip.nodes.filter(node => node.props?.className === 'tk-sort')
+check(sortSelects.length === 2, 'the section headers do not both carry a sort selector, got ' + sortSelects.length)
+check(sortSelects.every(node => node.props?.value === 'newest'),
+  'the section sort selectors do not show the current view sort')
+check(sortSelects.every(node => node.props?.['aria-label'] === 'setSorting'),
+  'the sort selector has no localized aria label')
+
 /* --- Role grouping: two agents of one role share a nested head -------- */
 
 const sharedRoleState = (() => {
@@ -634,6 +644,8 @@ const taskTree = tabBody(props)
 const withTask = surface(taskTree)
 check(withTask.nodes.some(node => node.props?.['data-task-id'] === 'task-1' && node.props?.role === 'dialog'),
   'clicking a card did not open the task dialog')
+check(withTask.nodes.find(node => node.props?.['data-task-id'] === 'task-1' && node.props?.role === 'dialog')
+  ?.props?.style?.zoom === 1, 'the task dialog does not use the default dialog scale')
 check(withTask.texts.includes('taskTimeline'), 'the task dialog lost its own timeline')
 check(withTask.texts.includes('description'), 'the task dialog lost its description block')
 check(withTask.texts.includes('Draw the columns.'), 'the task dialog lost the description text')
@@ -747,6 +759,7 @@ check(atText('statsHeading') < atText('stateLabel') && atText('stateLabel') < at
 
 /* Both lists scroll inside the dialog and fold from their headers. */
 const dialogNode = withAgent.nodes.find(node => node.props?.['data-agent-dialog'] === 'session-a')
+check(dialogNode?.props?.style?.zoom === 1, 'the agent dialog does not use the default dialog scale')
 const metricTiles = within(dialogNode, node => node.props?.className === 'tk-metric')
 const backgroundTile = metricTiles.find(tile => surface(tile).texts.includes('metricBackground'))
 check(backgroundTile !== undefined, 'the agent dialog has no background-time tile')
@@ -1265,6 +1278,35 @@ check(oldestFlatRows.join(',') === 'session-a,session-b',
 const nameFlatRows = flatIdleRows(setFlatSort('name'))
 check(nameFlatRows.join(',') === 'session-a,session-b',
   'the flat agent strip ignores the name view sort, got: ' + nameFlatRows.join(','))
+
+// The header selector writes the same `sort` preference the Settings page edits.
+const sortable = boardFromFreshBundle()
+sortable.nodes.find(node => node.props?.className === 'tk-sort')
+  ?.props?.onChange?.({ target: { value: 'oldest' } })
+check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).sort === 'oldest',
+  'the header sort selector did not persist the view sort')
+
+// The dialog scale is its own preference: a seeded value zooms only the panel.
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({ sort: 'newest', dialogScale: 1.25 }))
+const scaledBoard = boardFromFreshBundle()
+const scaledCard = scaledBoard.nodes.find(node => typeof node.type === 'function'
+  && node.type.name === 'TaskCard' && node.props?.task?.id === 'task-1')
+scaledCard?.props?.onOpen?.('task-1')
+resetHooks()
+const scaledTree = surface(tabBody(props))
+const scaledInspector = scaledTree.nodes.find(node => node.props?.['data-task-id'] === 'task-1'
+  && node.props?.role === 'dialog')
+check(scaledInspector?.props?.style?.zoom === 1.25,
+  'the dialog scale setting is not applied to the task dialog, got: ' + JSON.stringify(scaledInspector?.props?.style))
+
+// The Settings page exposes both scale sliders.
+resetSlots()
+const settingsView = surface(settingsSection({ t: key => key }))
+const scaleRanges = settingsView.nodes.filter(node => node.props?.className === 'tk-set-range')
+check(scaleRanges.some(node => node.props?.['aria-label'] === 'setScale'),
+  'the Settings page lost the panel scale slider')
+check(scaleRanges.some(node => node.props?.['aria-label'] === 'setDialogScale'),
+  'the Settings page has no dialog scale slider')
 
 /* --- Report ----------------------------------------------------------- */
 

@@ -61,6 +61,9 @@
       // The dialog's two pages: the task's own facts (the default) and the
       // owning subagent's final answer. The report is read by the board and
       // handed in; this component only picks which page to draw.
+      // The dialog scale is its own view preference: only the panel zooms, the
+      // backdrop keeps its size and the dialog stays centred.
+      const [viewSettings] = useViewSettings()
       const [activeTab, setActiveTab] = useState('description')
 
       const state = stateOfTask(task)
@@ -245,6 +248,7 @@
         'aria-modal': 'true',
         'aria-label': t('inspectorTitle'),
         'data-task-id': task.id,
+        style: { zoom: viewSettings.dialogScale },
       },
       head,
       tabs,
