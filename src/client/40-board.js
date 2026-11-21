@@ -256,7 +256,10 @@
 
     /**
      * One agent of the strip: identity on the first line, and on the second its
-     * read-only background-jobs chip plus the session metrics.
+     * read-only background-jobs chip plus the session metrics. The whole row is
+     * a clickable surface that opens the agent dialog, exactly like a task card
+     * opens the task dialog; the name and the two icon buttons keep their own
+     * actions and stop the click from reaching the row.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`,
      *   `onOpenAgent`, `onInspect`.
      */
@@ -280,9 +283,20 @@
           + ' · ' + t('metricBackground') + ' ' + formatSpan(backgroundMs, t)
       return h('div', {
         className: 'tk-agent-row',
+        role: 'button',
+        tabIndex: 0,
+        'aria-label': agent.name,
         'data-activity': agent.activity,
         'data-agent-id': agent.id,
         'data-lead': agent.isLead === true ? 'true' : 'false',
+        onClick: () => { onInspect(agent.id) },
+        onKeyDown: event => {
+          if (event === null || typeof event !== 'object') return
+          if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+          // Space would otherwise scroll the panel under the focused row.
+          if (event.key !== 'Enter' && typeof event.preventDefault === 'function') event.preventDefault()
+          onInspect(agent.id)
+        },
       },
       h('div', { className: 'tk-agent-main' },
         h(StateDot, { state: dot, size: 9 }),
@@ -290,7 +304,10 @@
           type: 'button',
           className: 'tk-agent-name',
           title: activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
-          onClick: () => { onOpenAgent(agent.id, 'main') },
+          onClick: event => {
+            stopEvent(event)
+            onOpenAgent(agent.id, 'main')
+          },
         }, agent.name),
         mode === undefined ? null : h('span', { className: 'tk-agent-mode' }, mode),
         h('span', { className: 'tk-head-spacer' }),
@@ -299,14 +316,20 @@
           className: 'tk-icon-btn tk-agent-info',
           title: t('agentDetails'),
           'aria-label': t('agentDetails'),
-          onClick: () => { onInspect(agent.id) },
+          onClick: event => {
+            stopEvent(event)
+            onInspect(agent.id)
+          },
         }, h(Icon, { name: 'gauge', size: 11 })),
         h('button', {
           type: 'button',
           className: 'tk-icon-btn tk-agent-jump',
           title: t('agentOpenAsideHint'),
           'aria-label': t('agentOpenAsideHint'),
-          onClick: () => { onOpenAgent(agent.id, 'aside') },
+          onClick: event => {
+            stopEvent(event)
+            onOpenAgent(agent.id, 'aside')
+          },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
       agentJobs.length === 0 && items.length === 0
         ? null

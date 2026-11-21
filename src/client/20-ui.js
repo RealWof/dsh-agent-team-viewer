@@ -103,8 +103,11 @@
 .tk-agent-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;min-width:0;align-items:start}
 .tk-agent-board[data-cols="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
 .tk-agent-board[data-cols="1"]{grid-template-columns:minmax(0,1fr)}
-.tk-agent-row{display:flex;flex-direction:column;gap:1px;min-width:0;padding:3px 5px;
-  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1)}
+.tk-agent-row{display:flex;flex-direction:column;gap:1px;min-width:0;padding:3px 5px;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);
+  transition:background .12s ease,border-color .12s ease}
+.tk-agent-row:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent))}
+.tk-agent-row:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-agent-row[data-activity="inactive"]{opacity:.86}
 .tk-agent-row[data-lead="true"]{background:transparent;border-style:dashed}
 .tk-agent-row[data-activity="running"]{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 20%,var(--dsw-alias-border-l1))}
@@ -212,9 +215,23 @@
 .tk-set-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 `
 
-    /** Attach the stylesheet to one surface. */
+    /**
+     * Attach the stylesheet to one surface.
+     */
     function Styles() {
       return h('style', null, CSS)
+    }
+
+    /**
+     * Stop a nested control's event from reaching the clickable surface around
+     * it. An event may be absent — the smoke harness calls handlers directly —
+     * so a missing one is not an error.
+     * @param event - the DOM event, when there is one.
+     */
+    function stopEvent(event) {
+      if (event !== null && typeof event === 'object' && typeof event.stopPropagation === 'function') {
+        event.stopPropagation()
+      }
     }
 
     /**

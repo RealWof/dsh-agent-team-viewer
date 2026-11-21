@@ -1664,8 +1664,11 @@ window.__ModuleLoader__.load({
 .tk-agent-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;min-width:0;align-items:start}
 .tk-agent-board[data-cols="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
 .tk-agent-board[data-cols="1"]{grid-template-columns:minmax(0,1fr)}
-.tk-agent-row{display:flex;flex-direction:column;gap:1px;min-width:0;padding:3px 5px;
-  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1)}
+.tk-agent-row{display:flex;flex-direction:column;gap:1px;min-width:0;padding:3px 5px;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);
+  transition:background .12s ease,border-color .12s ease}
+.tk-agent-row:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent))}
+.tk-agent-row:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-agent-row[data-activity="inactive"]{opacity:.86}
 .tk-agent-row[data-lead="true"]{background:transparent;border-style:dashed}
 .tk-agent-row[data-activity="running"]{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 20%,var(--dsw-alias-border-l1))}
@@ -1773,9 +1776,23 @@ window.__ModuleLoader__.load({
 .tk-set-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 `
 
-    /** Attach the stylesheet to one surface. */
+    /**
+     * Attach the stylesheet to one surface.
+     */
     function Styles() {
       return h('style', null, CSS)
+    }
+
+    /**
+     * Stop a nested control's event from reaching the clickable surface around
+     * it. An event may be absent — the smoke harness calls handlers directly —
+     * so a missing one is not an error.
+     * @param event - the DOM event, when there is one.
+     */
+    function stopEvent(event) {
+      if (event !== null && typeof event === 'object' && typeof event.stopPropagation === 'function') {
+        event.stopPropagation()
+      }
     }
 
     /**
@@ -3661,7 +3678,10 @@ window.__ModuleLoader__.load({
 
     /**
      * One agent of the strip: identity on the first line, and on the second its
-     * read-only background-jobs chip plus the session metrics.
+     * read-only background-jobs chip plus the session metrics. The whole row is
+     * a clickable surface that opens the agent dialog, exactly like a task card
+     * opens the task dialog; the name and the two icon buttons keep their own
+     * actions and stop the click from reaching the row.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`,
      *   `onOpenAgent`, `onInspect`.
      */
@@ -3685,9 +3705,20 @@ window.__ModuleLoader__.load({
           + ' · ' + t('metricBackground') + ' ' + formatSpan(backgroundMs, t)
       return h('div', {
         className: 'tk-agent-row',
+        role: 'button',
+        tabIndex: 0,
+        'aria-label': agent.name,
         'data-activity': agent.activity,
         'data-agent-id': agent.id,
         'data-lead': agent.isLead === true ? 'true' : 'false',
+        onClick: () => { onInspect(agent.id) },
+        onKeyDown: event => {
+          if (event === null || typeof event !== 'object') return
+          if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+          // Space would otherwise scroll the panel under the focused row.
+          if (event.key !== 'Enter' && typeof event.preventDefault === 'function') event.preventDefault()
+          onInspect(agent.id)
+        },
       },
       h('div', { className: 'tk-agent-main' },
         h(StateDot, { state: dot, size: 9 }),
@@ -3695,7 +3726,10 @@ window.__ModuleLoader__.load({
           type: 'button',
           className: 'tk-agent-name',
           title: activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
-          onClick: () => { onOpenAgent(agent.id, 'main') },
+          onClick: event => {
+            stopEvent(event)
+            onOpenAgent(agent.id, 'main')
+          },
         }, agent.name),
         mode === undefined ? null : h('span', { className: 'tk-agent-mode' }, mode),
         h('span', { className: 'tk-head-spacer' }),
@@ -3704,14 +3738,20 @@ window.__ModuleLoader__.load({
           className: 'tk-icon-btn tk-agent-info',
           title: t('agentDetails'),
           'aria-label': t('agentDetails'),
-          onClick: () => { onInspect(agent.id) },
+          onClick: event => {
+            stopEvent(event)
+            onInspect(agent.id)
+          },
         }, h(Icon, { name: 'gauge', size: 11 })),
         h('button', {
           type: 'button',
           className: 'tk-icon-btn tk-agent-jump',
           title: t('agentOpenAsideHint'),
           'aria-label': t('agentOpenAsideHint'),
-          onClick: () => { onOpenAgent(agent.id, 'aside') },
+          onClick: event => {
+            stopEvent(event)
+            onOpenAgent(agent.id, 'aside')
+          },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
       agentJobs.length === 0 && items.length === 0
         ? null

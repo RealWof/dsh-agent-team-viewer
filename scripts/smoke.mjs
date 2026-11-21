@@ -395,6 +395,8 @@ check(rowOf('session-a') !== undefined, 'the subagent row is missing')
 check(rowOf('session-a')?.props['data-activity'] === 'running', 'the running subagent is not marked running')
 check(rowOf('session-b')?.props['data-activity'] === 'completed', 'the completed subagent is not marked completed')
 check(rowOf('root')?.props['data-lead'] === 'true', 'the lead is not marked as the lead row')
+check(rowOf('session-a')?.props?.role === 'button', 'the agent row is not a clickable card surface')
+check(rowOf('session-a')?.props?.tabIndex === 0, 'the agent row is not keyboard reachable')
 
 /** Find one descendant of a node. */
 const within = (node, predicate) => {
