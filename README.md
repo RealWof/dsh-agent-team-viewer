@@ -3,7 +3,7 @@
 <p align="center">Read-only Agent Team board for DeepSeek Harness</p>
 
 <p align="center">
-  <a href="https://github.com/RealWof/dsh-agent-team-viewer/releases/latest"><img src="https://img.shields.io/badge/version-0.1.0-4176E6?style=flat-square" alt="version"></a>
+  <a href="https://github.com/RealWof/dsh-agent-team-viewer/releases/latest"><img src="https://img.shields.io/badge/version-0.2.0-4176E6?style=flat-square" alt="version"></a>
   <a href="https://github.com/RealWof/dsh-agent-team-viewer/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/RealWof/dsh-agent-team-viewer/ci.yml?branch=main&amp;label=CI&amp;style=flat-square" alt="CI"></a>
   <a href="https://www.npmjs.com/package/dsh-agent-team-viewer"><img src="https://img.shields.io/npm/v/dsh-agent-team-viewer?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT license"></a>
@@ -42,6 +42,23 @@ reading of the same data: a board docked beside a session, plus the numbers a ta
 Then open a session and click the board button immediately left of **Subagents** in the session header,
 or the board card on the right panel's start page, or the **Board** tab. Team mode is only needed for
 task changes; retained tasks and the subagent tree stay visible without it.
+
+## Configuration
+
+One optional setting, either in the profile row's `config` or in **Settings → Plugins**:
+
+```yaml
+- id: agent-team-viewer
+  name: dsh-agent-team-viewer
+  config:
+    agentsLimit: 128
+```
+
+`agentsLimit` caps how many subagents the board walks and draws. The default is `-1` — no limit, so the
+board follows the tree to the end. A session appends every new agent to the end of its catalog, so a cap
+always hides the newest agents, which are the ones most likely to be working; set a positive number only
+when a very large tree must bound the walk. The field is volatile, so the board reads the live value from
+the settings document and an edit applies on the next board refresh.
 
 ## What you get
 

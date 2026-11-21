@@ -76,7 +76,8 @@ liveness, so a renamed screenshot must be updated here in the same commit.
 ## Notes
 
 - The agent dialog shows five metric tiles (run time, background time, tokens, agent-hours, API
-  equivalent), the foldable background-process block and the task list.
+  equivalent), then the task list and the background-process block, tasks first; each list is its own
+  scroll box.
 - The mocks always render the block sections expanded; the fold controls and the scroll boxes are in
   the markup, but a short list shows no scrollbar.
 - The native column count is breakpoint-driven; the mock pins the four-column layout and widens the

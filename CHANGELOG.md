@@ -4,6 +4,59 @@ All notable changes to this plugin are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] - 2026-11-21
+
+### Added
+
+- A dedicated **Agent Team Viewer** page in DSH Settings with browser-local preferences: grouping,
+  sorting, motion, panel and dialog zoom, and agent model display. The page ends with an About block
+  linking the repository, the README and this changelog.
+- **Grouping**
+  - Agents group by a repeated name base (the part before the first `-`, trailing digits dropped) or by
+    user-defined groups; tasks group by user rules.
+  - Group headers fold with a count, long groups cap and scroll, and agents with a unique base collect
+    under a localized **Ungrouped** group whenever Roles is on.
+  - The Agents and Tasks headers carry the same individual grouping switches as Settings.
+- **Sorting**: newest first by default, oldest first or by name, from either section header or Settings;
+  tasks follow their first-seen time and agents their creation time.
+- Clicking anywhere on an agent row, not only its name or button, opens the agent dialog; hovering a
+  card's owner highlights that agent, and the assignee chip opens the owning agent.
+- The task dialog gains **Description** and **Report** tabs. Report reads the owning agent's final
+  answer, waits briefly for a never-opened agent instead of showing an empty report, and offers a jump
+  to that chat.
+- A compact line with the agent's model, provider and reasoning effort, with separate part switches;
+  it shares the statistics row when it fits and wraps only when needed.
+- Safe Markdown in task descriptions and reports: headings, emphasis, lists, code, quotes, links,
+  images and autolinks. Bare workspace paths and folders become links too.
+- Local links are checked against the workspace before they become clickable; missing files stay plain
+  text, and the result is cached for as long as the task dialog is open.
+- File references in text appear as attachment chips, and write scopes in the task dialog are links.
+- Background wall time keeps a lifetime total after jobs finish, and the background-jobs chip stays on
+  the agent row after its jobs settle.
+- Agent cards highlight sessions whose last turn failed and show the error on hover.
+- **Animations**
+  - Cards glide between columns instead of jumping.
+  - Changing values — time, tokens, totals, cost — fade and update smoothly.
+  - One Motion preference controls both, with a duration slider and reduced-motion support.
+- Separate panel zoom and dialog zoom sliders.
+- A profile option for the maximum number of agents the board draws, with no limit by default.
+
+### Changed
+
+- The task dialog is two columns now: its agent statistics moved into the header, secondary notes wrap
+  below their headings (an empty section's note always does), and its **Open** and **Aside** actions sit
+  in the header instead of a footer.
+- The agent dialog's **Open** and **Aside** actions moved into its header, and its lists now show tasks
+  before background processes.
+- Cost figures now explain both the real API spend and the subscription-equivalent value.
+- The static open-chat hint in the agents header was removed; the action lives on each agent row.
+
+### Fixed
+
+- Working agents no longer appear idle.
+- Folding a group on one board no longer changes another board's folds.
+- Observation pruning keeps a task's first-seen order.
+
 ## [0.1.0] - 2026-11-20
 
 ### Added

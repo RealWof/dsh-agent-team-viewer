@@ -3,7 +3,7 @@
 <p align="center">DeepSeek Harness 的 Agent Team 看板只读查看器</p>
 
 <p align="center">
-  <a href="https://github.com/RealWof/dsh-agent-team-viewer/releases/latest"><img src="https://img.shields.io/badge/version-0.1.0-4176E6?style=flat-square" alt="version"></a>
+  <a href="https://github.com/RealWof/dsh-agent-team-viewer/releases/latest"><img src="https://img.shields.io/badge/version-0.2.0-4176E6?style=flat-square" alt="version"></a>
   <a href="https://github.com/RealWof/dsh-agent-team-viewer/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/RealWof/dsh-agent-team-viewer/ci.yml?branch=main&amp;label=CI&amp;style=flat-square" alt="CI"></a>
   <a href="https://www.npmjs.com/package/dsh-agent-team-viewer"><img src="https://img.shields.io/npm/v/dsh-agent-team-viewer?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT license"></a>
@@ -33,6 +33,19 @@ Subagents 菜单本身就会绘制团队任务看板，而改写任务的唯一�
 - **GitHub**：用同样的方式从 `github:RealWof/dsh-agent-team-viewer` 安装。
 
 然后打开一个会话，点击会话头部紧挨着 **Subagents** 左侧的看板按钮，或右侧面板起始页上的看板卡片，或 **看板** 标签页。Team 模式只影响任务变更；已保留的任务和子代理树在关闭时仍然可见。
+
+## 配置
+
+只有一项可选设置，写在配置行的 `config` 里，或在 **设置 → 插件** 中修改：
+
+```yaml
+- id: agent-team-viewer
+  name: dsh-agent-team-viewer
+  config:
+    agentsLimit: 128
+```
+
+`agentsLimit` 是看板遍历并绘制的子代理上限。默认 `-1` 表示不限制，看板会一直走到树的末端；会话总是把新代理追加到目录末尾，所以任何上限都会隐藏最新的、通常正在工作的代理。只有当树非常大、确实需要限制时才设置正数。该字段是 volatile 的，看板会从设置文档读取实时值，修改后在下次刷新看板时生效。
 
 ## 你能看到什么
 

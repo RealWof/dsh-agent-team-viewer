@@ -26,6 +26,32 @@ uses the checkout as-is and is the one case where `files` does not filter.
 
 `npm run check:pack` prints the exact packed list and fails if a development path leaks.
 
+## Version branches
+
+Every release target lives on one branch, `release/x.y.z`, cut from an up-to-date `main`. Fixes and
+features for that version accumulate there as separate commits, so `main` stays at the last published
+version and a half-finished batch never reaches an installer.
+
+```powershell
+git switch main
+git pull --ff-only
+git switch -c release/0.1.1
+# one commit per fix or feature; npm run check after each change
+```
+
+Nothing is pushed until the maintainer confirms. On that confirmation the branch receives its release
+commit:
+
+1. `CHANGELOG.md`: rename `## [Unreleased]` to `## [x.y.z] - <YYYY-MM-DD>`.
+2. `npm run set-version -- x.y.z` — sets `package.json` and the `version-x.y.z-` badge in the three
+   READMEs without tagging or publishing.
+3. `npm run check`, commit `chore(release): x.y.z`, push the branch.
+4. Open the pull request against `main`, wait for CI, merge with **Squash and merge**.
+
+Publishing is a separate, explicit act: tag the merged commit `vX.Y.Z` and push the tag for
+`.github/workflows/release.yml` (trusted publishing), or run the documented `npm run release:publish`
+path. A merged pull request never publishes anything.
+
 ## 1. Verify before publishing
 
 ```powershell
@@ -119,9 +145,8 @@ workflow gets a 403/OIDC error, check the workflow filename and the allowed acti
 
 Future release flow:
 
-1. On a `release/x.y.z` branch, add the `## [x.y.z]` CHANGELOG section, bump `package.json` (for
-   example `npm version patch --no-git-tag-version`), and update the version badge in the three
-   READMEs.
+1. On a `release/x.y.z` branch, add the `## [x.y.z]` CHANGELOG section, then run
+   `npm run set-version -- x.y.z` to stamp `package.json` and the three README badges.
 2. Open a pull request, let CI pass, and merge with **Squash and merge**.
 3. On an up-to-date `main`, tag the merge commit and push the tag:
    ```sh

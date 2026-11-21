@@ -14,6 +14,7 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const fragments = [
   'src/client/00-header.js',
   'src/client/07-icons.js',
+  'src/client/10-settings.js',
   'src/client/locales/en.js',
   'src/client/locales/ru.js',
   'src/client/locales/zh.js',

@@ -30,8 +30,18 @@
     const AGENT_PRESET = 'agentPreset'
     /** The shipped subagent plugin's locale namespace, reused for its labels. */
     const AGENT_NS = 'subagent'
-    /** Hard cap on the agent tree walk, so a huge tree cannot stall the board. */
-    const AGENTS_CAP = 64
+    /**
+     * How many subagents the tree walk keeps when the row's config names no
+     * limit. `-1` — the shipped default — means no limit, because a session
+     * appends each new agent to the end of its catalog: a cap always hides the
+     * newest agents, which are the ones most likely to be working. The field
+     * exists for a profile that needs to bound the walk of a huge tree.
+     */
+    const AGENTS_LIMIT_DEFAULT = -1
+    /** Profile entry id of this plugin's Host row: the settings namespace and its config key. */
+    const SETTINGS_NAMESPACE = 'agent-team-viewer'
+    /** The row's Config field carrying the agent limit; `-1` means no limit. */
+    const AGENTS_LIMIT_FIELD = 'agentsLimit'
     /** Per-session token counters published for every listed session. */
     const TOKENS_PROJECTION = 'tokenUsage'
     /** Per-session wall-clock agent stats; summary-excluded, so it needs a refresh. */
@@ -45,9 +55,41 @@
     const TICK_MS = 15000
     /** Session-list refresh cadence while the board is open, in milliseconds. */
     const REFRESH_MS = 20000
+    /**
+     * How long the task dialog waits for a never-opened agent's Chat target to
+     * publish its final answer. The retained session opens its history in the
+     * background, so the first snapshot is empty; subscribing to the target and
+     * waiting briefly is what lets the Report tab show the real answer instead
+     * of its empty state. The bound keeps a slow or failed open from pinning
+     * the dialog.
+     */
+    const REPORT_WAIT_MS = 2000
+    /**
+     * How many settled agents one board mount may check for a failed last turn.
+     * Each check opens the session's durable event window cheaply, but a huge
+     * tree must not open one history per row.
+     */
+    const SESSION_ERROR_CHECK_CAP = 24
+    /**
+     * How long one error check waits for a never-opened session's history to
+     * publish its first window. The board must never hang on a slow open.
+     */
+    const SESSION_ERROR_WAIT_MS = 1500
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
+    /**
+     * Identity of the browser-local background-time store. The jobs service
+     * only publishes the live roster: a settled JobView stays until its owner
+     * session is disposed and is then gone, so no API can total the lifetime
+     * background time. The board merges the roster's intervals into this store
+     * per agent and totals their union.
+     */
+    const BACKGROUND_KEY = 'dsh.agent-team-viewer.background.v1'
+    /** Merged intervals one agent keeps; the newest win when the cap is hit. */
+    const BACKGROUND_INTERVALS_LIMIT = 300
+    /** Agents the background store keeps; the freshest win when the cap is hit. */
+    const BACKGROUND_AGENTS_LIMIT = 200
     /** Items one expanded group shows before the "show all" control. */
     const VISIBLE_LIMIT = 5
     /** A group bigger than this folds itself the first time it is seen that big. */

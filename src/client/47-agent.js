@@ -51,7 +51,12 @@
       }
       const money = moneyOf(stats.cost)
       if (money !== undefined) {
-        items.push(h(Stat, { key: 'cost', icon: 'coin', value: money.text, title: t('metricCostEquivalent') }))
+        items.push(h(Stat, {
+          key: 'cost',
+          icon: 'coin',
+          value: money.text,
+          title: costSpendTitle(stats.cost, t) ?? t('metricCostEquivalent'),
+        }))
       }
       return items
     }
@@ -80,9 +85,11 @@
         : String(value.steps) + ' ' + t('stepsLabel') + ' · ' + String(value.turns ?? 0) + ' ' + t('turnsLabel')
       const costSub = money === undefined
         ? (costState === 'missing' ? t('costMissing') : t('agentNoData'))
-        : (money.realUsd !== undefined && money.equivalentUsd !== undefined && money.realUsd < money.equivalentUsd
-          ? t('costPlanNote') + ' · ' + formatMoney(money.realUsd, '$')
-          : 'API · ' + money.currency)
+        : (() => {
+          const spend = costSpendTitle(value.cost, t)
+          const plan = costOnPlan(value.cost) ? t('costPlanNote') + ' · ' : ''
+          return plan + (spend === undefined ? t('metricCostEquivalent') : spend)
+        })()
 
       return h('div', { className: 'tk-metrics' },
         h(Metric, {
@@ -145,13 +152,14 @@
     }
 
     /**
-     * The agent dialog: what this agent did, the background jobs it is running
-     * and the tasks it owns — the two lists fold and scroll on their own.
-     * @param props - `agent`, `stats`, `jobs`, `tasks`, `whoById`, `now`, `t`,
-     *   `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
+     * The agent dialog: what this agent did, the tasks it owns and the
+     * background jobs it is running — the two lists fold and scroll on their
+     * own, and the tasks come first.
+     * @param props - `agent`, `stats`, `jobs`, `error`, `tasks`, `whoById`, `now`,
+     *   `t`, `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
      */
     function AgentDialog({
-      agent, stats, jobs, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
+      agent, stats, jobs, error = undefined, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
     }) {
       useEffect(() => {
         const onKey = event => {
@@ -160,6 +168,9 @@
         window.addEventListener('keydown', onKey)
         return () => { window.removeEventListener('keydown', onKey) }
       }, [onClose])
+
+      // The dialog scale is its own view preference; only the panel zooms.
+      const [viewSettings] = useViewSettings()
 
       // The two lists can grow; each folds away on its own, and the dialog is
       // short-lived, so the choice lives with the open card.
@@ -171,6 +182,30 @@
       const mode = modeOf(agent, tAgent)
       const parent = agent.parentId === undefined ? undefined : whoById[agent.parentId]
       const sessionId = String(agent.id).replace(/^session-/, '')
+      // The row marks a failed last turn; the dialog repeats the text when the
+      // failure is still the agent's current state.
+      const errorText = error === null || error === undefined
+        ? undefined
+        : (typeof error.message === 'string' && error.message !== '' ? error.message : t('errorTurnFailed'))
+
+      // The agent's actions sit in the header's right corner, left of the
+      // close control, exactly like the task dialog's; the body below stays
+      // facts and lists only.
+      const headActions = h('span', { className: 'tk-insp-actions' },
+        h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenHint'),
+          'aria-label': t('agentOpenHint'),
+          onClick: () => { onOpenAgent(agent.id, 'main') },
+        }, h(Icon, { name: 'chevron-right', size: 13 })),
+        agent.isLead === true ? null : h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenAsideHint'),
+          'aria-label': t('agentOpenAsideHint'),
+          onClick: () => { onOpenAgent(agent.id, 'aside') },
+        }, h(Icon, { name: 'panel-right', size: 13 })))
 
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
@@ -182,6 +217,7 @@
               ? h(Chip, { tone: 'info', icon: 'users' }, t('leadLabel'))
               : (mode === undefined ? null : h(Chip, { icon: 'users' }, mode)))),
         h('span', { className: 'tk-head-spacer' }),
+        headActions,
         h('button', {
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
@@ -198,6 +234,13 @@
         KeyRow({ name: 'session', label: t('agentSession'), children: h('span', { className: 'tk-mono' }, sessionId) }),
         KeyRow({ name: 'created', label: t('agentCreated'), children: formatStamp(agent.createdAt) }),
         KeyRow({ name: 'activity', label: t('agentLastActivity'), children: formatStamp(agent.updatedAt ?? agent.startedAt) }),
+        errorText === undefined
+          ? null
+          : KeyRow({
+            name: 'error',
+            label: t('sessionError'),
+            children: h('span', { className: 'tk-error-note' }, errorText),
+          }),
         agent.model === undefined ? null : KeyRow({ name: 'model', label: t('agentModel'), children: modelValue }),
         effortValue === undefined ? null : KeyRow({ name: 'effort', label: t('agentEffort'), children: effortValue }),
         agent.preset === undefined ? null : KeyRow({
@@ -224,11 +267,22 @@
             note: String(jobItems.length),
             target: 'agent-jobs',
             expanded: jobsOpen,
+            scroll: false,
             label: (jobsOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('jobsHeading'),
             onToggle: () => { setJobsOpen(value => !value) },
-          }, h('ul', { className: 'tk-jobs' }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
+          }, h('ul', {
+            className: 'tk-jobs',
+            tabIndex: 0,
+            role: 'group',
+            'aria-label': t('jobsHeading'),
+          }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
 
-      const taskList = h('ul', { className: 'tk-list' }, tasks.map(task => h('li', { key: task.id },
+      const taskList = h('ul', {
+        className: 'tk-list',
+        tabIndex: 0,
+        role: 'group',
+        'aria-label': t('agentTasksHeading'),
+      }, tasks.map(task => h('li', { key: task.id },
         h('button', {
           type: 'button',
           className: 'tk-task-link',
@@ -247,6 +301,7 @@
           note: String(tasks.length),
           target: 'agent-tasks',
           expanded: tasksOpen,
+          scroll: false,
           label: (tasksOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('agentTasksHeading'),
           onToggle: () => { setTasksOpen(value => !value) },
         }, taskList)
@@ -262,25 +317,13 @@
           'aria-modal': 'true',
           'aria-label': t('agentHeading'),
           'data-agent-dialog': agent.id,
+          style: { zoom: viewSettings.dialogScale },
         },
         head,
         h('div', { className: 'tk-insp-body' },
           h(Section, { title: t('statsHeading'), icon: 'gauge', note: agent.running ? t('statsNoteActive') : undefined },
             h(AgentMetrics, { stats, agent, costState, t })),
           h(Section, { title: t('stateLabel'), icon: 'layers' }, facts),
-          jobsBlock,
           tasksBlock,
-          h('div', { className: 'tk-actions' },
-            h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenHint'),
-              onClick: () => { onOpenAgent(agent.id, 'main') },
-            }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen')),
-            agent.isLead === true ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenAsideHint'),
-              onClick: () => { onOpenAgent(agent.id, 'aside') },
-            }, h(Icon, { name: 'panel-right', size: 11 }), t('agentOpenAside')))))))
+          jobsBlock))))
     }

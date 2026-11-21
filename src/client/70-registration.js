@@ -130,6 +130,35 @@
         }
 
         /**
+         * The agent limit the profile row's Config asks for, read from the
+         * settings document the Host serves. `agentsLimit` is declared volatile,
+         * so the Host projects the live value into that document; the settings
+         * surface is optional for a viewer, and an unanswered read keeps the
+         * built-in default.
+         * @returns the configured limit, or undefined when the profile supplies none.
+         */
+        const pluginLimit = async () => {
+          try {
+            const remote = ctx.get('remote')
+            const settings = remote?.settings ?? ctx.get('remote.settings')
+            if (settings === null || settings === undefined || typeof settings.describe !== 'function') return undefined
+            const answer = await settings.describe()
+            if (answer === null || typeof answer !== 'object' || answer.ok !== true) return undefined
+            const namespaces = answer.value?.namespaces
+            if (!Array.isArray(namespaces)) return undefined
+            // The namespace is this bundle's own row id; a profile that renames
+            // the row is still found by the field the row declares.
+            const row = namespaces.find(entry => entry?.ns === SETTINGS_NAMESPACE)
+              ?? namespaces.find(entry => typeof entry?.value?.[AGENTS_LIMIT_FIELD] === 'number')
+            const value = row?.value?.[AGENTS_LIMIT_FIELD]
+            return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+          } catch {
+            // Without the settings surface the board keeps its built-in limit.
+            return undefined
+          }
+        }
+
+        /**
          * The client jobs service installed by the job controller, when the
          * profile has it. The board only attributes jobs — it never kills one
          * and never opens an output observation — so the service is a soft
@@ -201,6 +230,139 @@
           + '&mode=' + encodeURIComponent(address.mode)
 
         /**
+         * The file resource address the workspace file provider parses. The
+         * shipped builder exports no client helper, so the format is spelled
+         * here: `dsh-resource://file/session/<sessionId>/<path>`, every id and
+         * path segment component-encoded, `:` literal for a Windows drive.
+         * @param sessionId - the session whose workspace root resolves the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @returns the resource address string.
+         */
+        const fileAddress = (sessionId, path) => 'dsh-resource://file/session/'
+          + encodeURIComponent(sessionId)
+          + '/'
+          + String(path)
+            .replace(/\\/g, '/')
+            .replace(/^(?:\.\/)+/, '')
+            .split('/')
+            .map(segment => encodeURIComponent(segment).replace(/%3A/gi, ':'))
+            .join('/')
+
+        /**
+         * Whether one workspace path exists, for the links the board draws.
+         * A trailing separator names a folder, which is listed (folder
+         * existence is workspace-scoped); every other path is `stat`ed as a
+         * file, and a file miss is retried through `list` because an API may
+         * not expose the directory kind on `stat`. The Remote answers with
+         * `{ ok }` instead of throwing, so a missing path is `false`. An
+         * absent namespace, an aborted call or an error that does not prove
+         * absence is `undefined`: the caller then keeps its link, because a
+         * viewer without the file API must not lose every link.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @param signal - optional abort signal from the caller.
+         * @returns `true` when the file or folder exists, `false` when the
+         *   Remote says it is missing, and `undefined` otherwise.
+         */
+        const checkLocalPath = async (sessionId, path, signal) => {
+          try {
+            if (typeof sessionId !== 'string' || sessionId === '') return undefined
+            if (typeof path !== 'string') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const normalized = path.trim().replace(/\\/g, '/')
+            if (normalized === '') return undefined
+            let service
+            try {
+              service = ctx.get('remote.workspaceFiles')
+            } catch {
+              service = undefined
+            }
+            if (service === null || service === undefined) {
+              try {
+                const remote = ctx.get('remote')
+                service = remote?.workspaceFiles
+              } catch {
+                service = undefined
+              }
+            }
+            if (service === null || service === undefined) return undefined
+            const folder = normalized.endsWith('/')
+            const target = folder ? normalized.replace(/\/+$/, '') : normalized
+            if (target === '') return undefined
+            const method = folder ? 'list' : 'stat'
+            if (typeof service[method] !== 'function') return undefined
+            const answer = await service[method](sessionId, target, signal)
+            if (answer === null || typeof answer !== 'object') return undefined
+            if (answer.ok === true) return true
+            const code = answer.error?.code
+            if (code === 'workspace-file/not-found') {
+              // A file API may not expose the directory kind on `stat`, so a
+              // file miss is only final for a trailing-slash folder; for a
+              // bare path, a successful listing proves the folder exists.
+              if (folder || typeof service.list !== 'function') return false
+              const listing = await service.list(sessionId, target, signal)
+              if (listing === null || typeof listing !== 'object') return undefined
+              if (listing.ok === true) return true
+              if (listing.error?.code === 'workspace-file/not-found') return false
+              return undefined
+            }
+            // The path exists as the other kind, so its link still resolves.
+            if (code === 'workspace-file/not-regular-file') {
+              return answer.error?.details?.kind === 'directory' ? true : undefined
+            }
+            if (code === 'workspace-file/not-directory') {
+              return answer.error?.details?.kind === 'file' ? true : undefined
+            }
+            // `outside-workspace`, `too-large`, `gateway/*` and a carrier
+            // failure prove nothing about the path, so the link stays.
+            return undefined
+          } catch {
+            // An aborted or failed call proves nothing about the path.
+            return undefined
+          }
+        }
+
+        /**
+         * Open one write scope of a task in the workspace. A file opens the
+         * shipped file resource; a folder opens the Files page, because that
+         * page accepts no path. Navigation is best-effort: a missing sidebar
+         * or a resource the installed types cannot open falls back to the
+         * Files page and never throws into the read-only board.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - the task's write scope.
+         * @returns nothing.
+         */
+        const openFileLink = (sessionId, path) => {
+          if (typeof sessionId !== 'string' || sessionId === '') return
+          if (typeof path !== 'string' || path === '') return
+          const folder = path.endsWith('/') || path.endsWith('\\')
+          const openFilesTab = () => {
+            try {
+              const sidebar = ctx.get('sidebarRight')
+              if (sidebar !== null && sidebar !== undefined && typeof sidebar.openTab === 'function') {
+                sidebar.openTab('files')
+              }
+            } catch {
+              // The Files page is a convenience; a closed panel is not an error.
+            }
+          }
+          if (folder) {
+            openFilesTab()
+            return
+          }
+          try {
+            const sidebar = ctx.get('sidebarRight')
+            if (sidebar !== null && sidebar !== undefined && typeof sidebar.openResource === 'function') {
+              sidebar.openResource(fileAddress(sessionId, path))
+              return
+            }
+          } catch {
+            // An unopenable address falls back to the workspace page below.
+          }
+          openFilesTab()
+        }
+
+        /**
          * Go to a subagent: open its chat beside the board, or switch the main
          * column to it. This only navigates — the board is still a viewer.
          * @param agentId - the subagent's Session id.
@@ -260,17 +422,365 @@
           }
         })()
 
-        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */
-        const services = {
+        /**
+         * The final answer inside one Chat snapshot: the last non-empty
+         * Assistant text row, in anchor order. Assistant rows are
+         * `kind: 'assistant-step'` and their prose is the `text` blocks; the
+         * last one is the answer the turn closed with. The navigation preview
+         * is deliberately not used — it is bounded and loses the answer.
+         * @param snapshot - a ChatSnapshot from `uiConversation.target('chat')`.
+         * @returns the trimmed answer text, or undefined when there is none.
+         */
+        const finalAnswerOf = (snapshot) => {
+          const store = snapshot?.nodes
+          if (store === null || store === undefined || typeof store.values !== 'function') return undefined
+          let rows
+          try {
+            rows = Array.from(store.values())
+          } catch {
+            return undefined
+          }
+          const answers = []
+          for (const row of rows) {
+            if (row === null || row === undefined || row.kind !== 'assistant-step') continue
+            const blocks = row.data?.blocks
+            if (!Array.isArray(blocks)) continue
+            const text = blocks
+              .filter(block => block !== null && typeof block === 'object'
+                && block.kind === 'text' && typeof block.text === 'string')
+              .map(block => block.text)
+              .join('')
+              .trim()
+            if (text === '') continue
+            answers.push({ anchor: num(row.anchorSeq), text })
+          }
+          if (answers.length === 0) return undefined
+          answers.sort((left, right) => left.anchor - right.anchor)
+          return answers[answers.length - 1].text
+        }
+
+        /**
+         * The final answer inside one Chat target, read without throwing.
+         * @param chat - the Chat target source from `assembly.target('chat')`.
+         * @returns the answer text, or undefined when the target is absent,
+         *   unreadable or still empty.
+         */
+        const chatAnswerOf = (chat) => {
+          try {
+            return finalAnswerOf(chat?.getSnapshot?.())
+          } catch {
+            return undefined
+          }
+        }
+
+        /**
+         * Wait for one Chat target to publish a non-empty answer.
+         *
+         * Retaining a never-opened agent starts its history opening in the
+         * background, so the first synchronous snapshot is empty. Subscribing
+         * to the target activates its view builder and wakes the caller on the
+         * first conversation publication; the caller therefore settles on the
+         * first answer, the initial open's failure, or the bounded timeout. The
+         * wait is one-shot and never rejects; the caller releases the retained
+         * reference in its own `finally`.
+         * @param chat - the Chat target source.
+         * @param reference - the retained Session reference; its `ready` may fail.
+         * @returns the answer text, or undefined.
+         */
+        const waitForChatAnswer = (chat, reference) => new Promise(resolve => {
+          let settled = false
+          let off
+          let timer
+          const finish = (value) => {
+            if (settled) return
+            settled = true
+            if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer)
+            try {
+              if (typeof off === 'function') off()
+            } catch {
+              // A source that already ended needs no unsubscribe.
+            }
+            resolve(value)
+          }
+          const read = () => {
+            const answer = chatAnswerOf(chat)
+            if (answer !== undefined) finish(answer)
+            return answer
+          }
+          try {
+            off = chat.subscribe(read)
+          } catch {
+            finish(undefined)
+            return
+          }
+          // The builder may publish an answer from inside subscribe, before
+          // the unsubscribe handle was assigned; release it now.
+          if (settled) {
+            try {
+              if (typeof off === 'function') off()
+            } catch {
+              // A source that already ended needs no unsubscribe.
+            }
+            return
+          }
+          // A builder may fill synchronously inside subscribe.
+          if (read() !== undefined) return
+          if (typeof setTimeout === 'function') {
+            timer = setTimeout(() => { finish(chatAnswerOf(chat)) }, REPORT_WAIT_MS)
+          }
+          const ready = reference === undefined || reference === null ? undefined : reference.ready
+          if (ready !== null && typeof ready === 'object' && typeof ready.then === 'function') {
+            ready.then(
+              () => { read() },
+              () => { finish(undefined) },
+            )
+          } else if (timer === undefined) {
+            // No clock to bound the wait: report the empty state now.
+            finish(undefined)
+          }
+        })
+
+        /**
+         * Read a subagent's final answer from its chat, without opening a tab.
+         * The task record carries no report, so the answer is read from the
+         * live conversation: retain the session, resolve its Chat target, read
+         * the snapshot once, and — because a never-opened session's history is
+         * still opening, so that first snapshot is empty — wait briefly for the
+         * target to publish its first non-empty answer. The retained reference
+         * is released in `finally`. A missing service, an unopened session, an
+         * open that fails or a timeout resolves to undefined rather than
+         * rejecting, so the dialog shows its empty state.
+         * @param agentId - the owner session id.
+         * @returns the final answer text, or undefined.
+         */
+        const loadAgentReport = async (agentId) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            // A Lead owner has no subagent address, but its identity is a
+            // valid retain target too.
+            reference = sessions.retain(address ?? agentId, { source: 'agent-team-viewer' })
+            const binding = reference?.binding
+            if (binding === null || binding === undefined) return undefined
+            const conversation = ctx.get('uiConversation')
+            if (conversation === null || conversation === undefined
+              || typeof conversation.binding !== 'function') return undefined
+            const assembly = conversation.binding(binding)
+            if (assembly === null || assembly === undefined || typeof assembly.target !== 'function') return undefined
+            const chat = assembly.target('chat')
+            if (chat === null || chat === undefined || typeof chat.getSnapshot !== 'function') return undefined
+            const immediate = chatAnswerOf(chat)
+            if (immediate !== undefined) return immediate
+            if (typeof chat.subscribe !== 'function') return undefined
+            return await waitForChatAnswer(chat, reference)
+          } catch {
+            // The report is optional context; a failure is an empty tab.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
+        /**
+         * The newest `turn/end` event in one durable session window. The event
+         * log is the only place a failed turn is durably recorded; a later
+         * successful turn closes the turn and therefore clears the mark.
+         * @param entries - `SessionEventWindow.entries` from a binding.
+         * @returns the newest `turn/end` event, or undefined when the window
+         *   is empty or still opening.
+         */
+        const lastTurnEndOf = (entries) => {
+          if (!Array.isArray(entries)) return undefined
+          for (let index = entries.length - 1; index >= 0; index -= 1) {
+            const entry = entries[index]
+            const event = entry?.type === 'event' ? entry.event : undefined
+            if (event?.type === 'turn/end') return event
+          }
+          return undefined
+        }
+
+        /**
+         * The user-facing text of one turn failure. A provider's `AUTH` message
+         * may echo a credential fragment, so the shipped Chat projection drops
+         * it; this board mirrors that and shows the localized label instead.
+         * @param failure - the `LlmFailure` on a turn/end error reason.
+         * @returns the message text, never empty.
+         */
+        const errorMessageOf = (failure) => {
+          const rawCode = typeof failure?.code === 'string' ? failure.code : ''
+          const code = rawCode.toUpperCase()
+          if (code !== 'AUTH') {
+            const raw = typeof failure?.message === 'string' ? failure.message.trim() : ''
+            if (raw !== '') return raw
+          }
+          if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA') return t('errorQuota')
+          if (code === 'AUTH') return t('errorAuth')
+          return t('errorTurnFailed')
+        }
+
+        /**
+         * Wait for a retained session's initial open, bounded by a short timer
+         * so a slow or failed open cannot pin the board. The caller releases
+         * the reference in its own `finally`.
+         * @param reference - the retained session reference.
+         * @param signal - optional caller abort signal.
+         * @returns nothing; never rejects.
+         */
+        const waitForSessionReady = (reference, signal) => new Promise(resolve => {
+          const ready = reference?.ready
+          if (ready === null || typeof ready !== 'object' || typeof ready.then !== 'function') {
+            resolve()
+            return
+          }
+          let settled = false
+          let timer
+          let onAbort
+          const finish = () => {
+            if (settled) return
+            settled = true
+            if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer)
+            if (onAbort !== undefined && signal !== undefined && signal !== null
+              && typeof signal.removeEventListener === 'function') {
+              signal.removeEventListener('abort', onAbort)
+            }
+            resolve()
+          }
+          if (typeof setTimeout === 'function') timer = setTimeout(finish, SESSION_ERROR_WAIT_MS)
+          if (signal !== undefined && signal !== null && typeof signal.addEventListener === 'function') {
+            onAbort = finish
+            if (signal.aborted === true) finish()
+            else signal.addEventListener('abort', onAbort, { once: true })
+          }
+          // Without a clock there is nothing to bound the wait, so read the
+          // first snapshot now instead of holding the reference indefinitely.
+          if (timer === undefined) finish()
+          else ready.then(finish, finish)
+        })
+
+        /**
+         * Read the newest failed turn of one agent session from its durable
+         * event log. The session is retained only for this read, so its history
+         * opens in the background; a never-opened session's first snapshot is
+         * empty, and the read then waits briefly for `reference.ready`. No
+         * projection carries the error, and the session's chat tree is not
+         * activated.
+         * @param agentId - the agent's Session id.
+         * @param signal - optional abort signal from the board mount.
+         * @returns `{ message, code, at }`, or undefined when the last turn did
+         *   not fail, or when the read is aborted or unavailable.
+         */
+        const loadSessionError = async (agentId, signal) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            const retainOptions = { source: 'agent-team-viewer' }
+            if (signal !== undefined && signal !== null) retainOptions.signal = signal
+            reference = sessions.retain(address ?? agentId, retainOptions)
+            const binding = reference?.binding
+            const source = binding?.eventSource
+            if (source === null || source === undefined || typeof source.getSnapshot !== 'function') return undefined
+            let entries = source.getSnapshot()?.entries
+            if (lastTurnEndOf(entries) === undefined) {
+              await waitForSessionReady(reference, signal)
+              if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+              entries = source.getSnapshot()?.entries
+            }
+            const event = lastTurnEndOf(entries)
+            const reason = event?.data?.reason
+            if (reason === null || reason === undefined || reason.kind !== 'error') return undefined
+            const failure = reason.error
+            if (failure === null || typeof failure !== 'object') return undefined
+            return {
+              message: errorMessageOf(failure),
+              code: typeof failure.code === 'string' && failure.code !== '' ? failure.code.toUpperCase() : undefined,
+              at: typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : Date.now(),
+            }
+          } catch {
+            // A missing service, an unopened session, a failed open or an abort
+            // proves nothing about the turn, so the card stays unmarked.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
+        /**
+         * Subscribe to the live `api-session/error` push. The payload carries
+         * the message only and has no replay, so a mount backfills what it
+         * missed while this subscription keeps new failures current.
+         * @param listener - called with `{ sessionId, message, at }`.
+         * @returns the unsubscribe function; a no-op when the Remote is absent.
+         */
+        const subscribeSessionErrors = (listener) => {
+          try {
+            if (typeof listener !== 'function') return () => {}
+            const remote = ctx.get('remote')
+            if (remote === null || remote === undefined) return () => {}
+            const subscribe = typeof remote.$on === 'function'
+              ? remote.$on
+              : (typeof remote.on === 'function' ? remote.on : undefined)
+            if (typeof subscribe !== 'function') return () => {}
+            const off = subscribe.call(remote, 'api-session/error', (sessionId, message) => {
+              try {
+                if (typeof sessionId !== 'string' || sessionId === '') return
+                listener({
+                  sessionId,
+                  message: typeof message === 'string' ? message : String(message ?? ''),
+                  at: Date.now(),
+                })
+              } catch {
+                // One board listener must not break the shared Remote dispatcher.
+              }
+            })
+            if (typeof off !== 'function') return () => {}
+            return () => {
+              try {
+                off()
+              } catch {
+                // The Remote may already be gone with the page.
+              }
+            }
+          } catch {
+            // Forwarded events need an answering connection; the board still reads history.
+            return () => {}
+          }
+        }
+
+        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */        const services = {
           faceOf,
           refreshProjections,
           loadCosts,
+          pluginLimit,
           listState,
           subscribeList,
           jobsSnapshot,
           watchJobs,
           subscribeJobs,
           openAgent,
+          openFileLink,
+          checkLocalPath,
+          loadAgentReport,
+          loadSessionError,
+          subscribeSessionErrors,
           agentLabel,
         }
 
@@ -325,6 +835,29 @@
           locale: NS,
           inject: () => ({ open: openBoard }),
         }, HeaderBoardAction))
+
+        // The Settings page of the board. Its preferences are browser-local
+        // view state, so the page writes localStorage and never the Host
+        // settings document. The nav label is the plugin's literal name and
+        // stays untranslated in every language; the page content is localized.
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'agent-team-viewer',
+          order: 80,
+          label: () => 'Agent Team Viewer',
+          locale: NS,
+          inject: () => ({}),
+        }, SettingsSection))
+
+        // The Settings navigation row carries the same mark as the board tab
+        // instead of the settings shell's generic gear; the shared id pairs
+        // this icon with the section above.
+        ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+          name: 'settings.section.icon',
+          id: 'agent-team-viewer',
+          locale: NS,
+          inject: () => ({}),
+        }, KanbanArtwork))
 
         // The task record keeps no timestamps, so the elapsed labels come from
         // watching the board. This watcher runs for as long as the page does,

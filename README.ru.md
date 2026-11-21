@@ -3,7 +3,7 @@
 <p align="center">Доска Agent Team для DeepSeek Harness только для чтения</p>
 
 <p align="center">
-  <a href="https://github.com/RealWof/dsh-agent-team-viewer/releases/latest"><img src="https://img.shields.io/badge/version-0.1.0-4176E6?style=flat-square" alt="version"></a>
+  <a href="https://github.com/RealWof/dsh-agent-team-viewer/releases/latest"><img src="https://img.shields.io/badge/version-0.2.0-4176E6?style=flat-square" alt="version"></a>
   <a href="https://github.com/RealWof/dsh-agent-team-viewer/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/RealWof/dsh-agent-team-viewer/ci.yml?branch=main&amp;label=CI&amp;style=flat-square" alt="CI"></a>
   <a href="https://www.npmjs.com/package/dsh-agent-team-viewer"><img src="https://img.shields.io/npm/v/dsh-agent-team-viewer?style=flat-square" alt="npm"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green?style=flat-square" alt="MIT license"></a>
@@ -42,6 +42,23 @@
 Затем откройте сессию и нажмите кнопку доски сразу слева от **Subagents** в заголовке сессии, либо
 карточку доски на стартовой странице правой панели, либо вкладку **Доска**. Режим Team нужен только для
 изменения задач; сохранённые задачи и дерево субагентов видны и без него.
+
+## Настройка
+
+Одна необязательная настройка — в `config` строки профиля или в **Настройки → Плагины**:
+
+```yaml
+- id: agent-team-viewer
+  name: dsh-agent-team-viewer
+  config:
+    agentsLimit: 128
+```
+
+`agentsLimit` — сколько субагентов доска обходит и рисует. По умолчанию `-1` — без лимита: доска идёт
+по дереву до конца. Сессия дописывает каждого нового агента в конец каталога, поэтому любой потолок
+скрывает самых новых агентов — тех, что чаще всего и работают; положительное число имеет смысл, только
+если очень большое дерево нужно ограничить. Поле volatile, поэтому доска читает живое значение из
+документа настроек, и правка применяется при следующем обновлении доски.
 
 ## Что вы получаете
 

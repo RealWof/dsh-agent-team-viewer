@@ -41,8 +41,18 @@ window.__ModuleLoader__.load({
     const AGENT_PRESET = 'agentPreset'
     /** The shipped subagent plugin's locale namespace, reused for its labels. */
     const AGENT_NS = 'subagent'
-    /** Hard cap on the agent tree walk, so a huge tree cannot stall the board. */
-    const AGENTS_CAP = 64
+    /**
+     * How many subagents the tree walk keeps when the row's config names no
+     * limit. `-1` — the shipped default — means no limit, because a session
+     * appends each new agent to the end of its catalog: a cap always hides the
+     * newest agents, which are the ones most likely to be working. The field
+     * exists for a profile that needs to bound the walk of a huge tree.
+     */
+    const AGENTS_LIMIT_DEFAULT = -1
+    /** Profile entry id of this plugin's Host row: the settings namespace and its config key. */
+    const SETTINGS_NAMESPACE = 'agent-team-viewer'
+    /** The row's Config field carrying the agent limit; `-1` means no limit. */
+    const AGENTS_LIMIT_FIELD = 'agentsLimit'
     /** Per-session token counters published for every listed session. */
     const TOKENS_PROJECTION = 'tokenUsage'
     /** Per-session wall-clock agent stats; summary-excluded, so it needs a refresh. */
@@ -56,9 +66,41 @@ window.__ModuleLoader__.load({
     const TICK_MS = 15000
     /** Session-list refresh cadence while the board is open, in milliseconds. */
     const REFRESH_MS = 20000
+    /**
+     * How long the task dialog waits for a never-opened agent's Chat target to
+     * publish its final answer. The retained session opens its history in the
+     * background, so the first snapshot is empty; subscribing to the target and
+     * waiting briefly is what lets the Report tab show the real answer instead
+     * of its empty state. The bound keeps a slow or failed open from pinning
+     * the dialog.
+     */
+    const REPORT_WAIT_MS = 2000
+    /**
+     * How many settled agents one board mount may check for a failed last turn.
+     * Each check opens the session's durable event window cheaply, but a huge
+     * tree must not open one history per row.
+     */
+    const SESSION_ERROR_CHECK_CAP = 24
+    /**
+     * How long one error check waits for a never-opened session's history to
+     * publish its first window. The board must never hang on a slow open.
+     */
+    const SESSION_ERROR_WAIT_MS = 1500
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
+    /**
+     * Identity of the browser-local background-time store. The jobs service
+     * only publishes the live roster: a settled JobView stays until its owner
+     * session is disposed and is then gone, so no API can total the lifetime
+     * background time. The board merges the roster's intervals into this store
+     * per agent and totals their union.
+     */
+    const BACKGROUND_KEY = 'dsh.agent-team-viewer.background.v1'
+    /** Merged intervals one agent keeps; the newest win when the cap is hit. */
+    const BACKGROUND_INTERVALS_LIMIT = 300
+    /** Agents the background store keeps; the freshest win when the cap is hit. */
+    const BACKGROUND_AGENTS_LIMIT = 200
     /** Items one expanded group shows before the "show all" control. */
     const VISIBLE_LIMIT = 5
     /** A group bigger than this folds itself the first time it is seen that big. */
@@ -222,6 +264,443 @@ window.__ModuleLoader__.load({
       }, glyph.map((shape, index) => h(shape.tag, { key: index, ...shape.attrs })))
     }
 
+/* ------------------------------------------------------------------ *
+ * View settings: the browser-local preferences of the board and the
+ * Settings page that edits them. Nothing here reaches the Host — the
+ * profile row keeps its own Config, and the view preferences live in
+ * localStorage beside the observation ledger and the fold state.
+ * ------------------------------------------------------------------ */
+
+    /** Identity of the browser-local view settings. */
+    const VIEW_SETTINGS_KEY = 'dsh.agent-team-viewer.settings.v1'
+    /** The longest and shortest card animation the slider offers, in ms. */
+    const VIEW_ANIMATION_MAX = 1000
+    const VIEW_ANIMATION_STEP = 20
+    /** The panel scale bounds and its slider step. */
+    const VIEW_SCALE_MIN = 0.8
+    const VIEW_SCALE_MAX = 1.4
+    const VIEW_SCALE_STEP = 0.05
+    /** The task orders the board offers; the first one is the default. */
+    const VIEW_SORTS = ['newest', 'oldest', 'name']
+    /**
+     * The project's public pages, linked from the Settings page's About block.
+     * The base is package.json's repository URL without the `git+` prefix and
+     * the trailing `.git`, so the three links cannot drift apart.
+     */
+    const ABOUT_REPOSITORY = 'https://github.com/RealWof/dsh-agent-team-viewer'
+    const ABOUT_README = ABOUT_REPOSITORY + '/blob/main/README.md'
+    const ABOUT_CHANGELOG = ABOUT_REPOSITORY + '/blob/main/CHANGELOG.md'
+
+    /**
+     * Every view preference and its shipped default. `newest` keeps the board
+     * in the order a session appends tasks: the newest work stays on top.
+     * `showAgentModel` stays off so the agent rows stay as compact as the
+     * Subagents menu's, and the model line is opt-in. `showModelProvider`,
+     * `showModelName` and `showModelEffort` pick the parts of that line; the
+     * provider stays off by default.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, animateText: boolean, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean, showModelName: boolean, showModelEffort: boolean }}
+     */
+    const VIEW_SETTINGS_DEFAULTS = {
+      autoRoleGroups: true,
+      customGroups: false,
+      customGroupsText: '',
+      taskCustomGroups: false,
+      taskCustomGroupsText: '',
+      sort: 'newest',
+      animateCards: true,
+      animationMs: 220,
+      animateText: true,
+      uiScale: 1,
+      dialogScale: 1,
+      showAgentModel: false,
+      showModelProvider: false,
+      showModelName: true,
+      showModelEffort: true,
+    }
+
+    /**
+     * Clamp one number to a range and snap it to a step.
+     * @param value - anything the store may hold.
+     * @param min - lower bound.
+     * @param max - upper bound.
+     * @param step - increment.
+     * @param fallback - used when the value is not numeric.
+     * @returns the sanitized number.
+     */
+    function snapSetting(value, min, max, step, fallback) {
+      const number = typeof value === 'number' ? value : Number(value)
+      if (!Number.isFinite(number)) return fallback
+      const snapped = Math.round(number / step) * step
+      const clamped = Math.min(max, Math.max(min, snapped))
+      // A step like 0.05 drifts in binary floating point; four decimals is
+      // exact for every value this slider can produce.
+      return Number(clamped.toFixed(4))
+    }
+
+    /**
+     * Reduce any stored shape to a complete, valid view settings record.
+     * @param input - whatever localStorage or a patch supplied.
+     * @returns the sanitized record, always with every field.
+     */
+    function sanitizeViewSettings(input) {
+      const source = input !== null && typeof input === 'object' && !Array.isArray(input) ? input : {}
+      const has = key => Object.prototype.hasOwnProperty.call(source, key)
+      const read = key => (has(key) ? source[key] : undefined)
+      const boolean = (value, fallback) => (typeof value === 'boolean' ? value : fallback)
+      const sort = VIEW_SORTS.includes(read('sort')) ? read('sort') : VIEW_SETTINGS_DEFAULTS.sort
+      return {
+        autoRoleGroups: boolean(read('autoRoleGroups'), VIEW_SETTINGS_DEFAULTS.autoRoleGroups),
+        customGroups: boolean(read('customGroups'), VIEW_SETTINGS_DEFAULTS.customGroups),
+        customGroupsText: typeof read('customGroupsText') === 'string'
+          ? read('customGroupsText')
+          : VIEW_SETTINGS_DEFAULTS.customGroupsText,
+        taskCustomGroups: boolean(read('taskCustomGroups'), VIEW_SETTINGS_DEFAULTS.taskCustomGroups),
+        taskCustomGroupsText: typeof read('taskCustomGroupsText') === 'string'
+          ? read('taskCustomGroupsText')
+          : VIEW_SETTINGS_DEFAULTS.taskCustomGroupsText,
+        sort,
+        animateCards: boolean(read('animateCards'), VIEW_SETTINGS_DEFAULTS.animateCards),
+        animationMs: snapSetting(read('animationMs'), 0, VIEW_ANIMATION_MAX, VIEW_ANIMATION_STEP,
+          VIEW_SETTINGS_DEFAULTS.animationMs),
+        animateText: boolean(read('animateText'), VIEW_SETTINGS_DEFAULTS.animateText),
+        uiScale: snapSetting(read('uiScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
+          VIEW_SETTINGS_DEFAULTS.uiScale),
+        dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
+          VIEW_SETTINGS_DEFAULTS.dialogScale),
+        showAgentModel: boolean(read('showAgentModel'), VIEW_SETTINGS_DEFAULTS.showAgentModel),
+        showModelProvider: boolean(read('showModelProvider'), VIEW_SETTINGS_DEFAULTS.showModelProvider),
+        showModelName: boolean(read('showModelName'), VIEW_SETTINGS_DEFAULTS.showModelName),
+        showModelEffort: boolean(read('showModelEffort'), VIEW_SETTINGS_DEFAULTS.showModelEffort),
+      }
+    }
+
+    /**
+     * Read the stored view settings.
+     * @returns the sanitized record; the defaults on a blocked or corrupt store.
+     */
+    function readViewSettings() {
+      try {
+        const raw = window.localStorage.getItem(VIEW_SETTINGS_KEY)
+        if (raw === null || raw === '') return { ...VIEW_SETTINGS_DEFAULTS }
+        return sanitizeViewSettings(JSON.parse(raw))
+      } catch {
+        // A blocked store only costs the remembered preferences.
+        return { ...VIEW_SETTINGS_DEFAULTS }
+      }
+    }
+
+    /** Module-wide view settings: the stored record plus this page's listeners. */
+    const VIEW_SETTINGS = {
+      value: readViewSettings(),
+      listeners: new Set(),
+    }
+
+    /** Tell every mounted surface that the preferences moved. */
+    function notifyViewSettings() {
+      for (const listener of VIEW_SETTINGS.listeners) {
+        try {
+          listener()
+        } catch {
+          // One broken listener must not stop the others.
+        }
+      }
+    }
+
+    /**
+     * Merge a patch into the view settings, sanitize, persist and notify.
+     * @param patch - the fields to change.
+     * @returns the new record.
+     */
+    function writeViewSettings(patch) {
+      const valid = patch !== null && typeof patch === 'object' && !Array.isArray(patch)
+      const merged = valid ? { ...VIEW_SETTINGS.value, ...patch } : { ...VIEW_SETTINGS.value }
+      const next = sanitizeViewSettings(merged)
+      // Turning off the last visible part of the model line hides the whole
+      // line and restores the three part switches, so the master switch and its
+      // parts can never sit in the contradictory "on but nothing to show" state.
+      if (next.showAgentModel === true
+        && next.showModelProvider !== true && next.showModelName !== true && next.showModelEffort !== true) {
+        next.showAgentModel = false
+        next.showModelProvider = true
+        next.showModelName = true
+        next.showModelEffort = true
+      }
+      VIEW_SETTINGS.value = next
+      try {
+        window.localStorage.setItem(VIEW_SETTINGS_KEY, JSON.stringify(next))
+      } catch {
+        // A blocked store keeps the change for this page only.
+      }
+      notifyViewSettings()
+      return next
+    }
+
+    /**
+     * Subscribe one surface to the view settings.
+     * @param listener - called after every accepted write.
+     * @returns the disposer.
+     */
+    function subscribeViewSettings(listener) {
+      if (typeof listener !== 'function') return () => {}
+      VIEW_SETTINGS.listeners.add(listener)
+      return () => { VIEW_SETTINGS.listeners.delete(listener) }
+    }
+
+    /**
+     * The view settings and a writer, as a hook.
+     * @returns `[settings, update]`, where `update(patch)` writes one change.
+     */
+    function useViewSettings() {
+      const [settings, setSettings] = useState(() => VIEW_SETTINGS.value)
+      useEffect(() => subscribeViewSettings(() => { setSettings(VIEW_SETTINGS.value) }), [])
+      const update = useCallback(patch => { writeViewSettings(patch) }, [])
+      return [settings, update]
+    }
+
+    /**
+     * Parse the custom-group editor into groups.
+     *
+     * One group per line, `Group name: pattern, pattern`; blank lines are
+     * skipped and a later line reusing a name (case-insensitive) is dropped.
+     * @param text - the editor's text.
+     * @returns `[{ name, patterns }]`, in editor order.
+     */
+    function parseCustomGroups(text) {
+      const groups = []
+      const seen = new Set()
+      if (typeof text !== 'string') return groups
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim()
+        if (trimmed === '') continue
+        const colon = trimmed.indexOf(':')
+        if (colon < 0) continue
+        const name = trimmed.slice(0, colon).trim()
+        if (name === '') continue
+        const key = name.toLowerCase()
+        if (seen.has(key)) continue
+        const patterns = trimmed.slice(colon + 1).split(',').map(part => part.trim()).filter(part => part !== '')
+        if (patterns.length === 0) continue
+        seen.add(key)
+        groups.push({ name, patterns })
+      }
+      return groups
+    }
+
+    /**
+     * Format the panel scale for the slider: `x1.00`.
+     * @param value - the scale factor.
+     * @returns the label.
+     */
+    function formatScale(value) {
+      const scale = typeof value === 'number' && Number.isFinite(value) ? value : VIEW_SETTINGS_DEFAULTS.uiScale
+      return 'x' + scale.toFixed(2)
+    }
+
+    /**
+     * One titled block of the Settings page: a small muted heading over a calm
+     * list of rows, with no card around it.
+     * @param props - `title`, optional `icon`, and the rows.
+     */
+    function SettingsGroup({ title, icon = undefined, children }) {
+      return h('section', { className: 'tk-set-group' },
+        h('h3', { className: 'tk-set-group-title' },
+          icon === undefined ? null : h(Icon, { name: icon, size: 11 }),
+          h('span', null, title)),
+        children)
+    }
+
+    /**
+     * One row of the Settings page: the title and its short description on the
+     * left, the control on the right, closed by a hairline rule. `stacked`
+     * drops the rule because the full-width editor of the row follows it, and
+     * `disabled` mutes a row whose control only applies under another switch.
+     * @param props - `title`, optional `description`, optional `control`,
+     *   `stacked` and `disabled`.
+     */
+    function SettingsRow({ title, description = undefined, control = undefined, stacked = false, disabled = false }) {
+      return h('div', {
+        className: 'tk-set-row',
+        'data-stacked': stacked === true ? 'true' : undefined,
+        'data-disabled': disabled === true ? 'true' : undefined,
+      },
+      h('div', { className: 'tk-set-copy' },
+        h('span', { className: 'tk-set-title' }, title),
+        description === undefined || description === null ? null : h('span', { className: 'tk-set-desc' }, description)),
+      control === undefined ? null : h('div', { className: 'tk-set-control' }, control))
+    }
+
+    /**
+     * A boolean row control: the real checkbox behind a CSS track and knob, so
+     * `checked` and `onChange` keep the native contract while the row reads as
+     * one of the product's own switches.
+     * @param props - the `label` (also the accessible name), `checked`, an
+     *   optional `disabled`, and `onChange`.
+     */
+    function SettingsSwitch({ label, checked, disabled = false, onChange }) {
+      return h('label', { className: 'tk-set-switch' },
+        h('input', {
+          type: 'checkbox',
+          className: 'tk-set-switch-input',
+          checked: checked === true,
+          'aria-label': label,
+          disabled,
+          onChange,
+        }),
+        h('span', { className: 'tk-set-switch-track', 'aria-hidden': true }))
+    }
+
+    /**
+     * The full-width editor that follows a stacked row.
+     * @param props - the editor and its note.
+     */
+    function SettingsTextBlock({ children }) {
+      return h('div', { className: 'tk-set-text-block' }, children)
+    }
+
+    /**
+     * The view settings page of the Settings panel. The preferences are
+     * browser-local, so every control writes localStorage directly and the
+     * board picks the change up through the shared store.
+     * @param props - `t` from the slot's locale register, plus the shell's `close`.
+     */
+    function SettingsSection(props) {
+      const { t } = props
+      const [settings, update] = useViewSettings()
+
+      /** A boolean row: title and hint on the left, a switch on the right. */
+      const switchRow = (key, title, description, stacked = false, disabled = false) => h(SettingsRow, {
+        title,
+        description,
+        stacked,
+        disabled,
+        control: h(SettingsSwitch, {
+          label: title,
+          checked: settings[key] === true,
+          disabled,
+          onChange: event => { update({ [key]: event.target.checked }) },
+        }),
+      })
+      /** A full-width text editor below its own row. */
+      const textBlock = (label, key, value, placeholder, disabled) => h(SettingsTextBlock, null,
+        h('textarea', {
+          className: 'tk-set-text',
+          rows: 3,
+          value,
+          placeholder,
+          'aria-label': label,
+          disabled,
+          onChange: event => { update({ [key]: event.target.value }) },
+        }),
+        h('span', { className: 'tk-set-desc tk-set-example' }, t('setCustomGroupsNote')))
+      /** A slider row: its value sits at the right of the track. */
+      const sliderRow = (key, title, description, min, max, step, format, disabled = false) => h(SettingsRow, {
+        title,
+        description,
+        disabled,
+        control: h(React.Fragment, null,
+          h('input', {
+            className: 'tk-set-range',
+            type: 'range',
+            min,
+            max,
+            step,
+            value: settings[key],
+            'aria-label': title,
+            disabled,
+            onChange: event => { update({ [key]: Number(event.target.value) }) },
+          }),
+          h('span', { className: 'tk-set-value' }, format(settings[key]))),
+      })
+
+      // The stylesheet normally arrives with the board; the Settings page may
+      // be the only surface mounted, so it carries its own copy.
+      return h('div', { className: 'tk-set', 'data-view-settings': 'true' },
+        h(Styles, null),
+        h('p', { className: 'tk-set-note' }, t('settingsNote')),
+
+        h(SettingsGroup, { title: t('setAgentGroups'), icon: 'layers' },
+          switchRow('autoRoleGroups', t('setAutoRoleGroups'), t('setAutoRoleGroupsHint')),
+          switchRow('customGroups', t('setCustomGroups'), t('setCustomGroupsHint'), true),
+          textBlock(t('setCustomGroups'), 'customGroupsText', settings.customGroupsText,
+            t('setCustomGroupsExample'), settings.customGroups !== true)),
+
+        h(SettingsGroup, { title: t('setTaskGroups'), icon: 'layers' },
+          switchRow('taskCustomGroups', t('setTaskCustomGroups'), t('setTaskCustomGroupsHint'), true),
+          textBlock(t('setTaskCustomGroups'), 'taskCustomGroupsText', settings.taskCustomGroupsText,
+            t('setTaskCustomGroupsExample'), settings.taskCustomGroups !== true)),
+
+        h(SettingsGroup, { title: t('setSorting'), icon: 'hash' },
+          h(SettingsRow, {
+            title: t('setSorting'),
+            control: h('select', {
+              className: 'tk-set-select',
+              'aria-label': t('setSorting'),
+              value: settings.sort,
+              onChange: event => { update({ sort: event.target.value }) },
+            },
+            h('option', { value: 'newest' }, t('setSortNewest')),
+            h('option', { value: 'oldest' }, t('setSortOldest')),
+            h('option', { value: 'name' }, t('setSortName'))),
+          })),
+
+        h(SettingsGroup, { title: t('setMotion'), icon: 'activity' },
+          switchRow('animateCards', t('setAnimateCards'), t('setAnimateCardsHint')),
+          h(SettingsRow, {
+            title: t('setAnimationDuration'),
+            disabled: settings.animateCards !== true,
+            control: h(React.Fragment, null,
+              h('input', {
+                className: 'tk-set-range',
+                type: 'range',
+                min: 0,
+                max: VIEW_ANIMATION_MAX,
+                step: VIEW_ANIMATION_STEP,
+                value: settings.animationMs,
+                'aria-label': t('setAnimationDuration'),
+                disabled: settings.animateCards !== true,
+                onChange: event => { update({ animationMs: Number(event.target.value) }) },
+              }),
+              h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs'))),
+          })),
+          switchRow('animateText', t('setAnimateText'), t('setAnimateTextHint')),
+
+        h(SettingsGroup, { title: t('setScale'), icon: 'gauge' },
+          sliderRow('uiScale', t('setScale'), t('setScaleHint'),
+            VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale),
+          sliderRow('dialogScale', t('setDialogScale'), t('setDialogScaleHint'),
+            VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP, formatScale)),
+
+        h(SettingsGroup, { title: t('agentsHeading'), icon: 'users' },
+          switchRow('showAgentModel', t('setShowAgentModel'), t('setShowAgentModelHint')),
+          switchRow('showModelProvider', t('setShowModelProvider'), t('setShowModelProviderHint'), false,
+            settings.showAgentModel !== true),
+          switchRow('showModelName', t('setShowModelName'), t('setShowModelNameHint'), false,
+            settings.showAgentModel !== true),
+          switchRow('showModelEffort', t('setShowModelEffort'), t('setShowModelEffortHint'), false,
+            settings.showAgentModel !== true)),
+
+        h(SettingsGroup, { title: t('aboutHeading'), icon: 'link' },
+          h('div', { className: 'tk-set-about' },
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_REPOSITORY,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'link', size: 11 }), t('aboutRepository')),
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_README,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'eye', size: 11 }), t('aboutReadme')),
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_CHANGELOG,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'pen', size: 11 }), t('aboutChangelog')))))
+    }
+
 /**
  * English copy for the Team board. Keys must match locales/ru.js exactly.
  * @type {Record<string, string>}
@@ -254,6 +733,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Task',
       description: 'Description',
       noDescription: 'The task has no description.',
+      attachments: 'Attachments',
       dependencies: 'Dependencies',
       noDependencies: 'No dependencies',
       writeScopes: 'Write scopes',
@@ -270,7 +750,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Background time',
       metricTokens: 'Tokens',
       metricAgentHours: 'Agent-hours',
-      metricCostEquivalent: 'API equivalent',
+      metricCostEquivalent: 'Subscription equivalent',
       costPlanNote: 'on subscription',
       tokensIn: 'in',
       tokensOut: 'out',
@@ -299,11 +779,14 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agent',
       agentMode: 'Mode',
       agentOpen: 'Open',
-      agentOpenAside: 'Beside',
       agentOpenHint: 'Open the agent chat in the main view',
       agentOpenAsideHint: 'Open the agent chat beside the board',
       agentTasksHint: 'Tasks this agent owns on the board',
       leadLabel: 'lead',
+      sessionError: 'Session error',
+      errorQuota: 'Quota exhausted',
+      errorAuth: 'Authentication failed',
+      errorTurnFailed: 'The last turn failed',
       agentDetails: 'Details',
       agentTasksHeading: 'Agent tasks',
       agentNoTasks: 'No tasks',
@@ -329,6 +812,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Running',
       jobsLongest: 'longest',
       jobsEmpty: 'No background processes',
+      settingsNote: 'These preferences are stored in this browser only.',
+      setAgentGroups: 'Agent groups',
+      setTaskGroups: 'Task groups',
+      setAutoRoleGroups: 'Automatic grouping by roles',
+      setAutoRoleGroupsHint: 'Files agents under their role: lead, subagents and executors.',
+      setCustomGroups: 'Custom groups',
+      setCustomGroupsHint: 'Group agents by the name patterns below instead of by role.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'One group per line: Group name: pattern, pattern',
+      setTaskCustomGroups: 'Custom task groups',
+      setTaskCustomGroupsHint: 'Group tasks by the patterns below instead of one flat list.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: 'Task order',
+      setSortNewest: 'Newest first',
+      setSortOldest: 'Oldest first',
+      setSortName: 'By name',
+      setMotion: 'Motion',
+      setAnimateCards: 'Animate cards',
+      setAnimateCardsHint: 'Fade a card in when it appears or changes status.',
+      setAnimationDuration: 'Duration',
+      setMs: 'ms',
+      setAnimateText: 'Animate changing values',
+      setAnimateTextHint: 'Fades and lifts a metric whenever its value updates.',
+      setScale: 'Panel scale',
+      setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
+      openFileHint: 'Open this file in the workspace',
+      openFolderHint: 'Open the workspace files page',
+      fileMissingHint: 'File not found',
+      metricCostApiSpend: 'API spend',
+      taskReport: 'Report',
+      reportLoading: 'Loading the report…',
+      reportEmptyNote: 'This agent has not produced a final answer yet.',
+      setDialogScale: 'Dialog scale',
+      setDialogScaleHint: 'Zooms the opened dialogs only; the board and header keep their size.',
+      setShowAgentModel: 'Show the agent model',
+      setShowAgentModelHint: 'Adds a compact provider · model · effort line under each agent name.',
+      aboutHeading: 'About',
+      aboutRepository: 'Repository',
+      aboutReadme: 'README',
+      aboutChangelog: 'Changelog',
+      ungrouped: 'Ungrouped',
+      groupRoles: 'Roles',
+      groupCustom: 'Custom',
+      setShowModelProvider: 'Show the provider',
+      setShowModelProviderHint: 'Puts the provider before the model in the agent model line; the tooltip always keeps it.',
+      setShowModelName: 'Show the model name',
+      setShowModelNameHint: 'Keeps the model id in the agent model line.',
+      setShowModelEffort: 'Show the reasoning effort',
+      setShowModelEffortHint: 'Keeps the reasoning level in the agent model line.',
+      agentModeHint: 'Continuable agents keep their session for follow-up messages; one-shot agents finish after the task; external agents run outside this board.',
     }
 
 /**
@@ -364,6 +897,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Задача',
       description: 'Описание',
       noDescription: 'У задачи нет описания.',
+      attachments: 'Вложения',
       dependencies: 'Зависимости',
       noDependencies: 'Зависимостей нет',
       writeScopes: 'Область записи',
@@ -380,7 +914,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Время в фоне',
       metricTokens: 'Токены',
       metricAgentHours: 'Агент-часы',
-      metricCostEquivalent: 'Эквивалент API',
+      metricCostEquivalent: 'Эквивалент подписки',
       costPlanNote: 'по подписке',
       tokensIn: 'вход',
       tokensOut: 'выход',
@@ -409,11 +943,14 @@ window.__ModuleLoader__.load({
       agentLabel: 'Агент',
       agentMode: 'Режим',
       agentOpen: 'Открыть',
-      agentOpenAside: 'Рядом',
       agentOpenHint: 'Открыть чат агента в основном окне',
       agentOpenAsideHint: 'Открыть чат агента рядом с доской',
       agentTasksHint: 'Задачи этого агента на доске',
       leadLabel: 'лид',
+      sessionError: 'Ошибка сессии',
+      errorQuota: 'Квота исчерпана',
+      errorAuth: 'Ошибка аутентификации',
+      errorTurnFailed: 'Последний ход завершился ошибкой',
       agentDetails: 'Подробнее',
       agentTasksHeading: 'Задачи агента',
       agentNoTasks: 'Задач нет',
@@ -439,6 +976,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Выполняется',
       jobsLongest: 'дольше всех',
       jobsEmpty: 'Фоновых процессов нет',
+      settingsNote: 'Эти настройки хранятся только в этом браузере.',
+      setAgentGroups: 'Группы агентов',
+      setTaskGroups: 'Группы задач',
+      setAutoRoleGroups: 'Автоматическая группировка по ролям',
+      setAutoRoleGroupsHint: 'Агенты группируются по роли: лид, субагенты и исполнители.',
+      setCustomGroups: 'Пользовательские группы',
+      setCustomGroupsHint: 'Группировать агентов по шаблонам имён ниже, а не по роли.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Одна группа на строку: Имя группы: шаблон, шаблон',
+      setTaskCustomGroups: 'Группы задач',
+      setTaskCustomGroupsHint: 'Группировать задачи по шаблонам ниже, а не одним списком.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: 'Порядок задач',
+      setSortNewest: 'Сначала новые',
+      setSortOldest: 'Сначала старые',
+      setSortName: 'По имени',
+      setMotion: 'Анимация',
+      setAnimateCards: 'Анимировать карточки',
+      setAnimateCardsHint: 'Карточка плавно появляется и при смене статуса.',
+      setAnimationDuration: 'Длительность',
+      setMs: 'мс',
+      setAnimateText: 'Анимировать изменяющиеся значения',
+      setAnimateTextHint: 'Плавно выделять метрику при обновлении значения.',
+      setScale: 'Масштаб панели',
+      setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
+      openFileHint: 'Открыть файл в рабочей области',
+      openFolderHint: 'Открыть страницу файлов рабочей области',
+      fileMissingHint: 'Файл не найден',
+      metricCostApiSpend: 'Расходы по API',
+      taskReport: 'Отчёт',
+      reportLoading: 'Загрузка отчёта…',
+      reportEmptyNote: 'У этого агента пока нет итогового ответа.',
+      setDialogScale: 'Масштаб диалогов',
+      setDialogScaleHint: 'Масштабируются только открытые диалоги; доска и шапка не меняются.',
+      setShowAgentModel: 'Показывать модель агента',
+      setShowAgentModelHint: 'Добавляет компактную строку «провайдер · модель · усилие» под именем агента.',
+      aboutHeading: 'О плагине',
+      aboutRepository: 'Репозиторий',
+      aboutReadme: 'README',
+      aboutChangelog: 'Журнал изменений',
+      ungrouped: 'Без группы',
+      groupRoles: 'Роли',
+      groupCustom: 'Свои',
+      setShowModelProvider: 'Показывать провайдера',
+      setShowModelProviderHint: 'Ставит провайдера перед моделью в строке модели агента; в подсказке он есть всегда.',
+      setShowModelName: 'Показывать название модели',
+      setShowModelNameHint: 'Оставляет идентификатор модели в строке модели агента.',
+      setShowModelEffort: 'Показывать уровень рассуждений',
+      setShowModelEffortHint: 'Оставляет уровень рассуждений в строке модели агента.',
+      agentModeHint: 'Продолжаемые агенты сохраняют сессию для следующих сообщений; одноразовые завершаются после задачи; внешние работают вне этой доски.',
     }
 
 /**
@@ -474,6 +1061,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: '任务',
       description: '描述',
       noDescription: '此任务没有描述。',
+      attachments: '附件',
       dependencies: '依赖',
       noDependencies: '无依赖',
       writeScopes: '写入范围',
@@ -490,7 +1078,7 @@ window.__ModuleLoader__.load({
       metricBackground: '后台耗时',
       metricTokens: 'Token',
       metricAgentHours: 'Agent 小时',
-      metricCostEquivalent: 'API 等值',
+      metricCostEquivalent: '订阅等效价',
       costPlanNote: '订阅内',
       tokensIn: '输入',
       tokensOut: '输出',
@@ -519,11 +1107,14 @@ window.__ModuleLoader__.load({
       agentLabel: '代理',
       agentMode: '模式',
       agentOpen: '打开',
-      agentOpenAside: '旁边',
       agentOpenHint: '在主视图中打开代理会话',
       agentOpenAsideHint: '在看板旁打开代理会话',
       agentTasksHint: '该代理在看板上的任务',
       leadLabel: '主代理',
+      sessionError: '会话错误',
+      errorQuota: '配额已用尽',
+      errorAuth: '身份验证失败',
+      errorTurnFailed: '上一轮执行失败',
       agentDetails: '详情',
       agentTasksHeading: '代理任务',
       agentNoTasks: '无任务',
@@ -549,6 +1140,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: '运行中',
       jobsLongest: '最久',
       jobsEmpty: '没有后台进程',
+      settingsNote: '这些设置仅保存在当前浏览器中。',
+      setAgentGroups: '代理分组',
+      setTaskGroups: '任务分组',
+      setAutoRoleGroups: '按角色自动分组',
+      setAutoRoleGroupsHint: '按角色分组：主控、子代理和执行者。',
+      setCustomGroups: '自定义分组',
+      setCustomGroupsHint: '改为按下方名称模式分组，而不是按角色。',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: '每行一个分组：分组名：模式，模式',
+      setTaskCustomGroups: '自定义任务分组',
+      setTaskCustomGroupsHint: '按下方模式对任务分组，而不是一个平铺列表。',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: '任务顺序',
+      setSortNewest: '最新优先',
+      setSortOldest: '最早优先',
+      setSortName: '按名称',
+      setMotion: '动效',
+      setAnimateCards: '卡片动画',
+      setAnimateCardsHint: '卡片出现或状态变化时淡入。',
+      setAnimationDuration: '持续时间',
+      setMs: '毫秒',
+      setAnimateText: '为变化的值添加动画',
+      setAnimateTextHint: '指标值更新时淡入并轻微上移。',
+      setScale: '面板缩放',
+      setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
+      openFileHint: '在工作区中打开此文件',
+      openFolderHint: '打开工作区文件页面',
+      fileMissingHint: '文件不存在',
+      metricCostApiSpend: 'API 花费',
+      taskReport: '报告',
+      reportLoading: '正在加载报告…',
+      reportEmptyNote: '该代理尚未给出最终答复。',
+      setDialogScale: '对话框缩放',
+      setDialogScaleHint: '仅缩放打开的对话框，看板和顶栏保持原尺寸。',
+      setShowAgentModel: '显示代理模型',
+      setShowAgentModelHint: '在代理名称下方显示提供商 · 模型 · 推理强度的紧凑一行。',
+      aboutHeading: '关于',
+      aboutRepository: '仓库',
+      aboutReadme: 'README',
+      aboutChangelog: '更新日志',
+      ungrouped: '未分组',
+      groupRoles: '角色',
+      groupCustom: '自定义',
+      setShowModelProvider: '显示提供商',
+      setShowModelProviderHint: '在代理模型行中把提供商放在模型之前；提示中始终保留提供商。',
+      setShowModelName: '显示模型名称',
+      setShowModelNameHint: '在代理模型行中保留模型 ID。',
+      setShowModelEffort: '显示推理等级',
+      setShowModelEffortHint: '在代理模型行中保留推理等级。',
+      agentModeHint: '可续代理会保留会话以便后续消息；一次性代理在任务完成后结束；外部代理在此看板之外运行。',
     }
 
 /**
@@ -584,6 +1225,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'タスク',
       description: '説明',
       noDescription: 'このタスクには説明がありません。',
+      attachments: '添付ファイル',
       dependencies: '依存関係',
       noDependencies: '依存関係なし',
       writeScopes: '書き込みスコープ',
@@ -600,7 +1242,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'バックグラウンド時間',
       metricTokens: 'トークン',
       metricAgentHours: 'エージェント時間',
-      metricCostEquivalent: 'API 換算',
+      metricCostEquivalent: 'サブスク換算',
       costPlanNote: 'サブスク内',
       tokensIn: '入力',
       tokensOut: '出力',
@@ -629,11 +1271,14 @@ window.__ModuleLoader__.load({
       agentLabel: 'エージェント',
       agentMode: 'モード',
       agentOpen: '開く',
-      agentOpenAside: 'となり',
       agentOpenHint: 'メインビューでエージェントのチャットを開きます',
       agentOpenAsideHint: 'ボードの隣でエージェントのチャットを開きます',
       agentTasksHint: 'このエージェントが担当するボード上のタスク',
       leadLabel: 'リード',
+      sessionError: 'セッションエラー',
+      errorQuota: 'クォータを使い切りました',
+      errorAuth: '認証に失敗しました',
+      errorTurnFailed: '前回のターンが失敗しました',
       agentDetails: '詳細',
       agentTasksHeading: 'エージェントのタスク',
       agentNoTasks: 'タスクなし',
@@ -659,6 +1304,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: '実行中',
       jobsLongest: '最長',
       jobsEmpty: 'バックグラウンドプロセスはありません',
+      settingsNote: 'これらの設定はこのブラウザにのみ保存されます。',
+      setAgentGroups: 'エージェントのグループ',
+      setTaskGroups: 'タスクのグループ',
+      setAutoRoleGroups: 'ロールによる自動グループ化',
+      setAutoRoleGroupsHint: 'エージェントをロール（リード、サブエージェント、実行者）ごとにまとめます。',
+      setCustomGroups: 'カスタムグループ',
+      setCustomGroupsHint: 'ロールではなく、下の名前パターンでエージェントをグループ化します。',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: '1 行に 1 グループ：グループ名：パターン、パターン',
+      setTaskCustomGroups: 'タスクのカスタムグループ',
+      setTaskCustomGroupsHint: '下のパターンでタスクをグループ化します（単一リストの代わり）。',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: 'タスクの並び順',
+      setSortNewest: '新しい順',
+      setSortOldest: '古い順',
+      setSortName: '名前順',
+      setMotion: 'モーション',
+      setAnimateCards: 'カードをアニメーション',
+      setAnimateCardsHint: 'カードの表示時やステータス変更時にフェードします。',
+      setAnimationDuration: '再生時間',
+      setMs: 'ms',
+      setAnimateText: '値の変化をアニメーション',
+      setAnimateTextHint: '指標の値が変わるとフェードして少し浮き上がります。',
+      setScale: 'パネルの拡大率',
+      setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
+      openFileHint: 'ワークスペースでこのファイルを開く',
+      openFolderHint: 'ワークスペースのファイルページを開く',
+      fileMissingHint: 'ファイルが見つかりません',
+      metricCostApiSpend: 'API 支出',
+      taskReport: 'レポート',
+      reportLoading: 'レポートを読み込み中…',
+      reportEmptyNote: 'このエージェントはまだ最終回答を出していません。',
+      setDialogScale: 'ダイアログの拡大率',
+      setDialogScaleHint: '開いたダイアログのみを拡大します。ボードとヘッダーは変わりません。',
+      setShowAgentModel: 'エージェントのモデルを表示',
+      setShowAgentModelHint: 'エージェント名の下にプロバイダー · モデル · 推論強度を 1 行で表示します。',
+      aboutHeading: 'このプラグインについて',
+      aboutRepository: 'リポジトリ',
+      aboutReadme: 'README',
+      aboutChangelog: '変更履歴',
+      ungrouped: '未分類',
+      groupRoles: 'ロール',
+      groupCustom: 'カスタム',
+      setShowModelProvider: 'プロバイダーを表示',
+      setShowModelProviderHint: 'エージェントのモデル行でプロバイダーをモデルの前に表示します。ツールチップには常に含まれます。',
+      setShowModelName: 'モデル名を表示',
+      setShowModelNameHint: 'エージェントのモデル行にモデル ID を残します。',
+      setShowModelEffort: '推論レベルを表示',
+      setShowModelEffortHint: 'エージェントのモデル行に推論レベルを残します。',
+      agentModeHint: '継続可能なエージェントはフォローアップ用にセッションを保持し、ワンショットはタスク後に終了し、外部エージェントはこのボードの外で動作します。',
     }
 
 /**
@@ -694,6 +1389,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Tarea',
       description: 'Descripción',
       noDescription: 'La tarea no tiene descripción.',
+      attachments: 'Adjuntos',
       dependencies: 'Dependencias',
       noDependencies: 'Sin dependencias',
       writeScopes: 'Ámbitos de escritura',
@@ -710,7 +1406,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Tiempo en segundo plano',
       metricTokens: 'Tokens',
       metricAgentHours: 'Horas-agente',
-      metricCostEquivalent: 'Equivalente API',
+      metricCostEquivalent: 'Equivalente de suscripción',
       costPlanNote: 'por suscripción',
       tokensIn: 'entrada',
       tokensOut: 'salida',
@@ -739,11 +1435,14 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agente',
       agentMode: 'Modo',
       agentOpen: 'Abrir',
-      agentOpenAside: 'Al lado',
       agentOpenHint: 'Abrir el chat del agente en la vista principal',
       agentOpenAsideHint: 'Abrir el chat del agente junto al tablero',
       agentTasksHint: 'Tareas de este agente en el tablero',
       leadLabel: 'lead',
+      sessionError: 'Error de sesión',
+      errorQuota: 'Cuota agotada',
+      errorAuth: 'Error de autenticación',
+      errorTurnFailed: 'El último turno falló',
       agentDetails: 'Detalles',
       agentTasksHeading: 'Tareas del agente',
       agentNoTasks: 'Sin tareas',
@@ -769,6 +1468,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'En ejecución',
       jobsLongest: 'más largo',
       jobsEmpty: 'No hay procesos en segundo plano',
+      settingsNote: 'Estas preferencias se guardan solo en este navegador.',
+      setAgentGroups: 'Grupos de agentes',
+      setTaskGroups: 'Grupos de tareas',
+      setAutoRoleGroups: 'Agrupación automática por roles',
+      setAutoRoleGroupsHint: 'Agrupa los agentes por su rol: líder, subagentes y ejecutores.',
+      setCustomGroups: 'Grupos personalizados',
+      setCustomGroupsHint: 'Agrupa los agentes por los patrones de nombre de abajo en lugar del rol.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Un grupo por línea: Nombre del grupo: patrón, patrón',
+      setTaskCustomGroups: 'Grupos de tareas personalizados',
+      setTaskCustomGroupsHint: 'Agrupa las tareas por los patrones de abajo en lugar de una lista plana.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: 'Orden de las tareas',
+      setSortNewest: 'Más recientes primero',
+      setSortOldest: 'Más antiguas primero',
+      setSortName: 'Por nombre',
+      setMotion: 'Movimiento',
+      setAnimateCards: 'Animar las tarjetas',
+      setAnimateCardsHint: 'Fundido al aparecer una tarjeta o cambiar de estado.',
+      setAnimationDuration: 'Duración',
+      setMs: 'ms',
+      setAnimateText: 'Animar valores cambiantes',
+      setAnimateTextHint: 'Atenúa y eleva una métrica cuando cambia su valor.',
+      setScale: 'Escala del panel',
+      setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
+      openFileHint: 'Abrir este archivo en el espacio de trabajo',
+      openFolderHint: 'Abrir la página de archivos del espacio de trabajo',
+      fileMissingHint: 'Archivo no encontrado',
+      metricCostApiSpend: 'Gasto de API',
+      taskReport: 'Informe',
+      reportLoading: 'Cargando el informe…',
+      reportEmptyNote: 'Este agente aún no ha producido una respuesta final.',
+      setDialogScale: 'Escala de los diálogos',
+      setDialogScaleHint: 'Solo escala los diálogos abiertos; el tablero y la cabecera no cambian.',
+      setShowAgentModel: 'Mostrar el modelo del agente',
+      setShowAgentModelHint: 'Añade una línea compacta de proveedor · modelo · esfuerzo bajo el nombre del agente.',
+      aboutHeading: 'Acerca de',
+      aboutRepository: 'Repositorio',
+      aboutReadme: 'README',
+      aboutChangelog: 'Registro de cambios',
+      ungrouped: 'Sin grupo',
+      groupRoles: 'Roles',
+      groupCustom: 'Propios',
+      setShowModelProvider: 'Mostrar el proveedor',
+      setShowModelProviderHint: 'Muestra el proveedor antes del modelo en la línea del agente; la información lo conserva siempre.',
+      setShowModelName: 'Mostrar el nombre del modelo',
+      setShowModelNameHint: 'Mantiene el id del modelo en la línea del agente.',
+      setShowModelEffort: 'Mostrar el esfuerzo de razonamiento',
+      setShowModelEffortHint: 'Mantiene el nivel de razonamiento en la línea del agente.',
+      agentModeHint: 'Los agentes continuables conservan su sesión para mensajes posteriores; los de un solo uso terminan con la tarea; los externos se ejecutan fuera de este tablero.',
     }
 
 /**
@@ -804,6 +1553,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Tâche',
       description: 'Description',
       noDescription: 'La tâche n\u2019a pas de description.',
+      attachments: 'Pièces jointes',
       dependencies: 'Dépendances',
       noDependencies: 'Aucune dépendance',
       writeScopes: 'Portées d\u2019écriture',
@@ -820,7 +1570,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Temps en arrière-plan',
       metricTokens: 'Tokens',
       metricAgentHours: 'Heures-agent',
-      metricCostEquivalent: 'Équivalent API',
+      metricCostEquivalent: 'Équivalent abonnement',
       costPlanNote: 'par abonnement',
       tokensIn: 'entrée',
       tokensOut: 'sortie',
@@ -849,11 +1599,14 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agent',
       agentMode: 'Mode',
       agentOpen: 'Ouvrir',
-      agentOpenAside: 'À côté',
       agentOpenHint: 'Ouvrir le chat de l\u2019agent dans la vue principale',
       agentOpenAsideHint: 'Ouvrir le chat de l\u2019agent à côté du tableau',
       agentTasksHint: 'Tâches de cet agent sur le tableau',
       leadLabel: 'lead',
+      sessionError: 'Erreur de session',
+      errorQuota: 'Quota épuisé',
+      errorAuth: 'Échec de l’authentification',
+      errorTurnFailed: 'Le dernier tour a échoué',
       agentDetails: 'Détails',
       agentTasksHeading: 'Tâches de l\u2019agent',
       agentNoTasks: 'Aucune tâche',
@@ -879,6 +1632,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'En cours',
       jobsLongest: 'le plus long',
       jobsEmpty: 'Aucun processus en arrière-plan',
+      settingsNote: 'Ces préférences sont enregistrées uniquement dans ce navigateur.',
+      setAgentGroups: 'Groupes d’agents',
+      setTaskGroups: 'Groupes de tâches',
+      setAutoRoleGroups: 'Regroupement automatique par rôles',
+      setAutoRoleGroupsHint: 'Regroupe les agents par rôle : responsable, sous-agents et exécutants.',
+      setCustomGroups: 'Groupes personnalisés',
+      setCustomGroupsHint: 'Regroupe les agents selon les motifs de nom ci-dessous plutôt que selon le rôle.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Un groupe par ligne : Nom du groupe : motif, motif',
+      setTaskCustomGroups: 'Groupes de tâches personnalisés',
+      setTaskCustomGroupsHint: 'Regroupez les tâches selon les motifs ci-dessous au lieu d’une liste plate.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: 'Ordre des tâches',
+      setSortNewest: 'Plus récentes en premier',
+      setSortOldest: 'Plus anciennes en premier',
+      setSortName: 'Par nom',
+      setMotion: 'Animation',
+      setAnimateCards: 'Animer les cartes',
+      setAnimateCardsHint: 'Fondu quand une carte apparaît ou change de statut.',
+      setAnimationDuration: 'Durée',
+      setMs: 'ms',
+      setAnimateText: 'Animer les valeurs changeantes',
+      setAnimateTextHint: 'Une métrique s’estompe et se soulève quand sa valeur change.',
+      setScale: 'Échelle du panneau',
+      setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
+      openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
+      openFolderHint: 'Ouvrir la page des fichiers de l’espace de travail',
+      fileMissingHint: 'Fichier introuvable',
+      metricCostApiSpend: 'Dépense API',
+      taskReport: 'Rapport',
+      reportLoading: 'Chargement du rapport…',
+      reportEmptyNote: 'Cet agent n’a pas encore produit de réponse finale.',
+      setDialogScale: 'Échelle des dialogues',
+      setDialogScaleHint: 'Zoome seulement les dialogues ouverts ; le tableau et la barre gardent leur taille.',
+      setShowAgentModel: 'Afficher le modèle de l\u2019agent',
+      setShowAgentModelHint: 'Ajoute une ligne compacte fournisseur · modèle · effort sous le nom de l\u2019agent.',
+      aboutHeading: 'À propos',
+      aboutRepository: 'Dépôt',
+      aboutReadme: 'README',
+      aboutChangelog: 'Journal des modifications',
+      ungrouped: 'Sans groupe',
+      groupRoles: 'Rôles',
+      groupCustom: 'Perso',
+      setShowModelProvider: 'Afficher le fournisseur',
+      setShowModelProviderHint: 'Place le fournisseur avant le modèle dans la ligne de l\u2019agent ; l\u2019infobulle le garde toujours.',
+      setShowModelName: 'Afficher le nom du modèle',
+      setShowModelNameHint: 'Garde l\u2019identifiant du modèle dans la ligne de l\u2019agent.',
+      setShowModelEffort: 'Afficher l\u2019effort de raisonnement',
+      setShowModelEffortHint: 'Garde le niveau de raisonnement dans la ligne de l\u2019agent.',
+      agentModeHint: 'Les agents continuables gardent leur session pour les messages suivants ; les agents ponctuels finissent avec la tâche ; les agents externes travaillent hors de ce tableau.',
     }
 
 /**
@@ -914,6 +1717,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Aufgabe',
       description: 'Beschreibung',
       noDescription: 'Die Aufgabe hat keine Beschreibung.',
+      attachments: 'Anhänge',
       dependencies: 'Abhängigkeiten',
       noDependencies: 'Keine Abhängigkeiten',
       writeScopes: 'Schreibbereiche',
@@ -930,7 +1734,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Hintergrundzeit',
       metricTokens: 'Tokens',
       metricAgentHours: 'Agentenstunden',
-      metricCostEquivalent: 'API-Äquivalent',
+      metricCostEquivalent: 'Abo-Äquivalent',
       costPlanNote: 'im Abo',
       tokensIn: 'ein',
       tokensOut: 'aus',
@@ -959,11 +1763,14 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agent',
       agentMode: 'Modus',
       agentOpen: 'Öffnen',
-      agentOpenAside: 'Daneben',
       agentOpenHint: 'Agent-Chat in der Hauptansicht öffnen',
       agentOpenAsideHint: 'Agent-Chat neben dem Board öffnen',
       agentTasksHint: 'Aufgaben dieses Agenten auf dem Board',
       leadLabel: 'Lead',
+      sessionError: 'Sitzungsfehler',
+      errorQuota: 'Kontingent erschöpft',
+      errorAuth: 'Anmeldung fehlgeschlagen',
+      errorTurnFailed: 'Der letzte Durchlauf ist fehlgeschlagen',
       agentDetails: 'Details',
       agentTasksHeading: 'Aufgaben des Agenten',
       agentNoTasks: 'Keine Aufgaben',
@@ -989,6 +1796,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Läuft',
       jobsLongest: 'am längsten',
       jobsEmpty: 'Keine Hintergrundprozesse',
+      settingsNote: 'Diese Einstellungen werden nur in diesem Browser gespeichert.',
+      setAgentGroups: 'Agentengruppen',
+      setTaskGroups: 'Aufgabengruppen',
+      setAutoRoleGroups: 'Automatische Gruppierung nach Rollen',
+      setAutoRoleGroupsHint: 'Gruppiert Agenten nach ihrer Rolle: Lead, Subagenten und Ausführende.',
+      setCustomGroups: 'Eigene Gruppen',
+      setCustomGroupsHint: 'Gruppiert Agenten nach den Mustern unten statt nach der Rolle.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Eine Gruppe pro Zeile: Gruppenname: Muster, Muster',
+      setTaskCustomGroups: 'Benutzerdefinierte Aufgabengruppen',
+      setTaskCustomGroupsHint: 'Gruppiert Aufgaben nach den Mustern unten statt in einer flachen Liste.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: 'Aufgabenreihenfolge',
+      setSortNewest: 'Neueste zuerst',
+      setSortOldest: 'Älteste zuerst',
+      setSortName: 'Nach Name',
+      setMotion: 'Bewegung',
+      setAnimateCards: 'Karten animieren',
+      setAnimateCardsHint: 'Karten blenden beim Erscheinen oder Statuswechsel weich ein.',
+      setAnimationDuration: 'Dauer',
+      setMs: 'ms',
+      setAnimateText: 'Ändernde Werte animieren',
+      setAnimateTextHint: 'Eine Kennzahl blendet kurz auf und hebt sich, wenn ihr Wert wechselt.',
+      setScale: 'Panel-Skalierung',
+      setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
+      openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
+      openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
+      fileMissingHint: 'Datei nicht gefunden',
+      metricCostApiSpend: 'API-Ausgaben',
+      taskReport: 'Bericht',
+      reportLoading: 'Bericht wird geladen…',
+      reportEmptyNote: 'Dieser Agent hat noch keine endgültige Antwort geliefert.',
+      setDialogScale: 'Dialog-Skalierung',
+      setDialogScaleHint: 'Skaliert nur die geöffneten Dialoge; Board und Kopfzeile bleiben unverändert.',
+      setShowAgentModel: 'Agentenmodell anzeigen',
+      setShowAgentModelHint: 'Zeigt eine kompakte Zeile Anbieter · Modell · Aufwand unter dem Agentennamen.',
+      aboutHeading: 'Über',
+      aboutRepository: 'Repository',
+      aboutReadme: 'README',
+      aboutChangelog: 'Änderungsprotokoll',
+      ungrouped: 'Ohne Gruppe',
+      groupRoles: 'Rollen',
+      groupCustom: 'Eigene',
+      setShowModelProvider: 'Anbieter anzeigen',
+      setShowModelProviderHint: 'Setzt den Anbieter vor das Modell in der Modellzeile des Agenten; der Tooltip enthält ihn immer.',
+      setShowModelName: 'Modellnamen anzeigen',
+      setShowModelNameHint: 'Behält die Modell-ID in der Modellzeile des Agenten.',
+      setShowModelEffort: 'Denkaufwand anzeigen',
+      setShowModelEffortHint: 'Behält die Denkstufe in der Modellzeile des Agenten.',
+      agentModeHint: 'Fortsetzbare Agenten behalten ihre Sitzung für Folgenachrichten; Einmal-Agenten enden mit der Aufgabe; externe Agenten laufen außerhalb dieses Boards.',
     }
 
 /**
@@ -1024,6 +1881,7 @@ window.__ModuleLoader__.load({
       inspectorTitle: 'Tarefa',
       description: 'Descrição',
       noDescription: 'A tarefa não tem descrição.',
+      attachments: 'Anexos',
       dependencies: 'Dependências',
       noDependencies: 'Sem dependências',
       writeScopes: 'Escopos de escrita',
@@ -1040,7 +1898,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Tempo em segundo plano',
       metricTokens: 'Tokens',
       metricAgentHours: 'Horas-agente',
-      metricCostEquivalent: 'Equivalente de API',
+      metricCostEquivalent: 'Equivalente da assinatura',
       costPlanNote: 'na assinatura',
       tokensIn: 'entrada',
       tokensOut: 'saída',
@@ -1069,11 +1927,14 @@ window.__ModuleLoader__.load({
       agentLabel: 'Agente',
       agentMode: 'Modo',
       agentOpen: 'Abrir',
-      agentOpenAside: 'Ao lado',
       agentOpenHint: 'Abrir o chat do agente na visão principal',
       agentOpenAsideHint: 'Abrir o chat do agente ao lado do painel',
       agentTasksHint: 'Tarefas deste agente no painel',
       leadLabel: 'lead',
+      sessionError: 'Erro de sessão',
+      errorQuota: 'Cota esgotada',
+      errorAuth: 'Falha na autenticação',
+      errorTurnFailed: 'A última rodada falhou',
       agentDetails: 'Detalhes',
       agentTasksHeading: 'Tarefas do agente',
       agentNoTasks: 'Sem tarefas',
@@ -1099,6 +1960,56 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Em execução',
       jobsLongest: 'mais longo',
       jobsEmpty: 'Nenhum processo em segundo plano',
+      settingsNote: 'Estas preferências são salvas apenas neste navegador.',
+      setAgentGroups: 'Grupos de agentes',
+      setTaskGroups: 'Grupos de tarefas',
+      setAutoRoleGroups: 'Agrupamento automático por funções',
+      setAutoRoleGroupsHint: 'Agrupa os agentes por função: líder, subagentes e executores.',
+      setCustomGroups: 'Grupos personalizados',
+      setCustomGroupsHint: 'Agrupa os agentes pelos padrões de nome abaixo em vez da função.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Um grupo por linha: Nome do grupo: padrão, padrão',
+      setTaskCustomGroups: 'Grupos de tarefas personalizados',
+      setTaskCustomGroupsHint: 'Agrupe as tarefas pelos padrões abaixo em vez de uma lista plana.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
+      setSorting: 'Ordem das tarefas',
+      setSortNewest: 'Mais recentes primeiro',
+      setSortOldest: 'Mais antigas primeiro',
+      setSortName: 'Por nome',
+      setMotion: 'Movimento',
+      setAnimateCards: 'Animar os cartões',
+      setAnimateCardsHint: 'Fusão quando um cartão aparece ou muda de estado.',
+      setAnimationDuration: 'Duração',
+      setMs: 'ms',
+      setAnimateText: 'Animar valores variáveis',
+      setAnimateTextHint: 'Uma métrica esmaece e sobe quando o valor muda.',
+      setScale: 'Escala do painel',
+      setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
+      openFileHint: 'Abrir este arquivo no espaço de trabalho',
+      openFolderHint: 'Abrir a página de arquivos do espaço de trabalho',
+      fileMissingHint: 'Arquivo não encontrado',
+      metricCostApiSpend: 'Gasto de API',
+      taskReport: 'Relatório',
+      reportLoading: 'Carregando o relatório…',
+      reportEmptyNote: 'Este agente ainda não produziu uma resposta final.',
+      setDialogScale: 'Escala dos diálogos',
+      setDialogScaleHint: 'Amplia apenas as caixas de diálogo abertas; o quadro e o cabeçalho não mudam.',
+      setShowAgentModel: 'Mostrar o modelo do agente',
+      setShowAgentModelHint: 'Adiciona uma linha compacta de provedor · modelo · esforço sob o nome do agente.',
+      aboutHeading: 'Sobre',
+      aboutRepository: 'Repositório',
+      aboutReadme: 'README',
+      aboutChangelog: 'Registro de alterações',
+      ungrouped: 'Sem grupo',
+      groupRoles: 'Papéis',
+      groupCustom: 'Próprios',
+      setShowModelProvider: 'Mostrar o provedor',
+      setShowModelProviderHint: 'Coloca o provedor antes do modelo na linha do agente; a dica sempre o inclui.',
+      setShowModelName: 'Mostrar o nome do modelo',
+      setShowModelNameHint: 'Mantém o id do modelo na linha do agente.',
+      setShowModelEffort: 'Mostrar o esforço de raciocínio',
+      setShowModelEffortHint: 'Mantém o nível de raciocínio na linha do agente.',
+      agentModeHint: 'Agentes continuáveis mantêm a sessão para mensagens de seguimento; agentes de uso único terminam com a tarefa; agentes externos rodam fora deste quadro.',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1116,8 +2027,40 @@ window.__ModuleLoader__.load({
 .tk-head-title{margin:0;min-width:0;font-size:13px;line-height:18px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-head-sub{min-width:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .tk-head-spacer{flex:1 1 auto;min-width:4px}
+.tk-sort{position:relative;flex:none;max-width:132px;min-width:0}
+.tk-sort-btn{display:inline-flex;align-items:center;gap:3px;max-width:132px;min-width:0;padding:1px 3px;
+  border:1px solid transparent;border-radius:var(--dsw-radius-sm);background:transparent;
+  color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;line-height:14px;cursor:pointer}
+.tk-sort-btn:hover{color:var(--dsw-alias-label-primary);
+  background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent))}
+.tk-sort-btn:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-sort-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-sort-chevron{flex:none;transition:transform .12s ease}
+.tk-sort-btn[aria-expanded="true"] .tk-sort-chevron{transform:rotate(180deg)}
+@media (prefers-reduced-motion: reduce){.tk-sort-chevron{transition:none}}
+.tk-sort-menu{position:absolute;right:0;top:calc(100% + 4px);z-index:6;min-width:132px;padding:3px;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);
+  background:var(--dsw-alias-bg-layer-2);box-shadow:0 6px 18px rgba(0,0,0,.28)}
+.tk-sort-option{display:flex;align-items:center;gap:5px;width:100%;min-width:0;padding:3px 6px;border:0;
+  border-radius:3px;background:transparent;color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;
+  line-height:15px;text-align:left;white-space:nowrap;cursor:pointer}
+.tk-sort-option:hover,.tk-sort-option:focus-visible,.tk-sort-option[data-active="true"]{background:var(--dsw-alias-interactive-bg-hover,
+  color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent));outline:none}
+.tk-sort-option[aria-checked="true"]{background:var(--dsw-alias-interactive-bg-hover,
+  color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent))}
+.tk-sort-check{flex:none;visibility:hidden;color:var(--dsw-alias-brand-primary)}
+.tk-sort-option[aria-checked="true"] .tk-sort-check{visibility:visible}
 .tk-readonly{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
   border-radius:999px;font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary);background:var(--dsw-alias-bg-layer-1)}
+.tk-group-toggle{display:inline-flex;align-items:center;gap:3px;flex:none;padding:1px 6px;border:1px solid var(--dsw-alias-border-l1);
+  border-radius:999px;background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-secondary);font:inherit;
+  font-size:10px;line-height:14px;white-space:nowrap;cursor:pointer}
+.tk-group-toggle:hover{color:var(--dsw-alias-label-primary);border-color:var(--dsw-alias-border-l2)}
+.tk-group-toggle[data-on="true"]{color:var(--dsw-alias-brand-primary);
+  border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent);
+  background:color-mix(in srgb,var(--dsw-alias-brand-primary) 10%,transparent)}
+.tk-group-toggle:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-group-toggle[data-on="false"]{opacity:.8}
 .tk-icon-btn{display:inline-flex;align-items:center;justify-content:center;flex:none;width:22px;height:22px;padding:0;
   border:1px solid transparent;border-radius:var(--dsw-radius-sm);background:transparent;color:var(--dsw-alias-label-secondary);cursor:pointer}
 .tk-icon-btn:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 8%,transparent));
@@ -1128,12 +2071,15 @@ window.__ModuleLoader__.load({
 .tk-board[data-cols="1"]{grid-template-columns:minmax(0,1fr)}
 .tk-col{display:flex;flex-direction:column;gap:5px;min-width:0}
 .tk-col-head{display:flex;align-items:center;gap:3px;min-width:0;padding:0 1px}
+.tk-col-head>.tk-state{margin-top:0;flex:none}
 .tk-col-title{margin:0;min-width:0;font-size:10px;line-height:14px;font-weight:600;text-transform:uppercase;letter-spacing:.2px;
   color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .tk-col-count{flex:none;padding:0 5px;border:1px solid var(--dsw-alias-border-l1);border-radius:999px;
   font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;line-height:14px;font-variant-numeric:tabular-nums;
   color:var(--dsw-alias-label-secondary)}
 .tk-col-body{display:flex;flex-direction:column;gap:5px;min-width:0;min-height:24px}
+.tk-col-items{display:flex;flex-direction:column;gap:5px;min-width:0;max-height:min(340px,52vh);
+  overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
 .tk-col-empty{font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
   padding:5px 6px;border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm)}
 .tk-chevron{flex:none;transition:transform .12s ease}
@@ -1147,6 +2093,9 @@ window.__ModuleLoader__.load({
   color:inherit;font:inherit;text-align:left;cursor:pointer}
 .tk-col-fold:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent))}
 .tk-col-fold:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-col [data-subgroup="true"]{padding-left:3px}
+.tk-col [data-subgroup="true"] .tk-col-title{font-size:9px;letter-spacing:.1px;text-transform:none}
+.tk-col [data-subgroup="true"] .tk-col-count{padding:0 4px;font-size:9px}
 .tk-more{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;min-width:0;padding:2px 6px;
   border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:transparent;
   color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;line-height:14px;cursor:pointer}
@@ -1191,26 +2140,40 @@ window.__ModuleLoader__.load({
 .tk-chip[data-tone="info"]{color:var(--dsw-alias-brand-primary);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent)}
 .tk-chip[data-tone="error"]{color:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent)}
 .tk-chip[data-tone="warn"]{color:var(--dsw-alias-state-warn-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 40%,transparent)}
-.tk-stats{display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-width:0;margin-top:1px}
+.tk-insp-stats{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0;max-width:100%}
 .tk-stat{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .tk-stat[data-live="true"]{color:var(--dsw-alias-brand-primary)}
+.tk-text-anim{display:inline-block;animation:tk-text-in var(--tk-text-ms,220ms) ease-out}
+@keyframes tk-text-in{from{opacity:.35;transform:translateY(1px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.tk-text-anim{animation:none}}
 .tk-agents{display:flex;flex-direction:column;gap:4px;min-width:0}
-.tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;min-width:0}
+.tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;row-gap:3px;min-width:0}
 .tk-totals-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
 .tk-divider{border-top:1px solid var(--dsw-alias-border-l1);margin:1px 0 0}
 .tk-totals{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
 .tk-agent-board{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;min-width:0;align-items:start}
 .tk-agent-board[data-cols="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}
 .tk-agent-board[data-cols="1"]{grid-template-columns:minmax(0,1fr)}
-.tk-agent-row{display:flex;flex-direction:column;gap:1px;min-width:0;padding:3px 5px;
-  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1)}
+.tk-agent-row{display:flex;flex-direction:column;gap:1px;min-width:0;padding:3px 5px;cursor:pointer;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);
+  transition:background .12s ease,border-color .12s ease}
+.tk-agent-row:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent))}
+.tk-agent-row:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-agent-row[data-activity="inactive"]{opacity:.86}
 .tk-agent-row[data-lead="true"]{background:transparent;border-style:dashed}
 .tk-agent-row[data-activity="running"]{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 20%,var(--dsw-alias-border-l1))}
+.tk-agent-row[data-hover="true"]{border-color:var(--dsw-alias-brand-primary);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
+.tk-agent-row[data-error="true"]{border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 55%,transparent);
+  border-left:3px solid var(--dsw-alias-state-error-primary);padding-left:3px;
+  background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 7%,var(--dsw-alias-bg-layer-1))}
+.tk-agent-row[data-error="true"]:hover{background:color-mix(in srgb,var(--dsw-alias-state-error-primary) 12%,var(--dsw-alias-bg-layer-1))}
+.tk-agent-error{display:inline-flex;align-items:center;justify-content:center;flex:none;cursor:help;
+  color:var(--dsw-alias-state-error-primary)}
 .tk-agent-main{display:flex;align-items:center;gap:4px;min-width:0}
-.tk-agent-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;padding-left:13px}
-.tk-agent-jobs{flex:none;cursor:default;font-variant-numeric:tabular-nums}
+.tk-agent-meta{display:flex;align-items:center;flex-wrap:wrap;row-gap:2px;column-gap:5px;min-width:0;padding-left:13px}
+.tk-agent-jobs{flex:none;min-width:24px;justify-content:center;cursor:default;font-variant-numeric:tabular-nums}
 .tk-agent-jobs[data-live="true"]{color:var(--dsw-alias-brand-primary);
   border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent)}
 .tk-agent-name{min-width:0;max-width:100%;padding:0;border:0;background:transparent;color:var(--dsw-alias-label-primary);
@@ -1218,11 +2181,18 @@ window.__ModuleLoader__.load({
 .tk-agent-name:hover{text-decoration:underline}
 .tk-agent-name:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px;border-radius:3px}
 .tk-agent-mode{flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
-.tk-agent-info,.tk-agent-jump{width:18px;height:18px}
+.tk-agent-model{flex:none;margin-left:auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:9px;line-height:12px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.tk-agent-jump{width:18px;height:18px}
 .tk-task-link{display:flex;align-items:center;gap:5px;width:100%;min-width:0;padding:3px 4px;border:0;border-radius:4px;
   background:transparent;color:inherit;font:inherit;font-size:11px;line-height:15px;text-align:left;cursor:pointer}
 .tk-task-link:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent))}
 .tk-task-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-file-link{display:inline-flex;align-items:center;gap:5px;min-width:0;max-width:100%;padding:0;border:0;
+  background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;border-radius:3px}
+.tk-file-link:hover{color:var(--dsw-alias-brand-primary);text-decoration:underline}
+.tk-file-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-file-link>.tk-mono{min-width:0;overflow-wrap:anywhere}
 .tk-btn{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border:1px solid var(--dsw-alias-border-l2);
   border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);
   font:inherit;font-size:11px;line-height:15px;cursor:pointer}
@@ -1235,11 +2205,16 @@ window.__ModuleLoader__.load({
 .tk-owner-link>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-owner-link:hover{color:var(--dsw-alias-brand-primary);text-decoration:underline}
 .tk-owner-link:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px;border-radius:3px}
+.tk-owner-chip{font-family:inherit;min-width:0;max-width:100%;padding:0 5px;overflow:hidden;cursor:pointer}
+.tk-owner-chip>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tk-owner-chip:hover{color:var(--dsw-alias-brand-primary);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
+.tk-owner-chip:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 .tk-empty{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 12px;text-align:center;
   border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-md);color:var(--dsw-alias-label-secondary);font-size:11px;line-height:16px}
 .tk-error{display:flex;align-items:flex-start;gap:6px;padding:6px 8px;border:1px solid var(--dsw-alias-state-error-primary);
   border-radius:var(--dsw-radius-sm);color:var(--dsw-alias-state-error-primary);font-size:11px;line-height:16px;overflow-wrap:anywhere}
 .tk-note{font-size:10px;line-height:14px;color:var(--dsw-alias-label-secondary)}
+.tk-error-note{min-width:0;overflow-wrap:anywhere;color:var(--dsw-alias-state-error-primary)}
 .tk-foot{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;font-size:10px;line-height:14px;
   color:var(--dsw-alias-label-secondary);border-top:1px solid var(--dsw-alias-border-l1);padding-top:7px}
 .tk-backdrop{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:center;justify-content:center;
@@ -1248,20 +2223,51 @@ window.__ModuleLoader__.load({
   border:0;border-radius:var(--dsw-radius-panel,16px);background:var(--dsw-alias-bg-layer-2);
   box-shadow:var(--dsw-elevation-prominent,0 18px 48px rgba(0,0,0,.35));color:var(--dsw-alias-label-primary);overflow:hidden}
 .tk-insp-head{display:flex;align-items:flex-start;gap:8px;padding:12px 14px 10px;border-bottom:1px solid var(--dsw-alias-border-l1)}
+.tk-insp-actions{display:inline-flex;align-items:center;gap:2px;flex:none}
 .tk-insp-heading{display:flex;flex-direction:column;gap:3px;min-width:0}
 .tk-insp-title{margin:0;font-size:14px;line-height:20px;font-weight:600;overflow-wrap:anywhere}
 .tk-insp-meta{display:flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0}
 .tk-insp-body{display:flex;flex-direction:column;gap:10px;min-height:0;overflow:auto;padding:12px 14px 16px}
+.tk-insp[data-layout="task"]{width:min(860px,100%);max-width:min(860px,96vw)}
+.tk-insp[data-layout="task"] .tk-insp-body{padding:10px 12px 12px}
+.tk-insp-split{display:grid;grid-template-columns:minmax(0,240px) minmax(0,1fr);gap:14px;align-items:start;
+  flex:0 1 auto;min-height:0}
+.tk-insp-aside{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;max-height:min(54vh,460px);overflow:auto;
+  overscroll-behavior:contain;padding-right:14px;border-right:1px solid var(--dsw-alias-border-l1)}
+.tk-insp[data-layout="task"] .tk-insp-aside,.tk-insp[data-layout="task"] .tk-insp-main{gap:8px}
+.tk-insp-main{display:flex;flex-direction:column;gap:10px;min-width:0;min-height:0;overflow:hidden}
+.tk-insp-main .tk-tabs{padding:0}
+.tk-insp-prose{flex:1 1 auto;min-width:0;min-height:0;max-height:min(54vh,460px);overflow:auto;
+  overscroll-behavior:contain;padding-right:2px}
+.tk-insp-aside:focus-visible,.tk-insp-prose:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));
+  outline-offset:2px;border-radius:var(--dsw-radius-sm)}
+@media (max-width:640px){
+  .tk-insp-split{display:flex;flex-direction:column;overflow:auto}
+  .tk-insp-aside,.tk-insp-main{overflow:visible;max-height:none}
+  .tk-insp-aside{border-right:0;padding-right:0}
+  .tk-insp-prose{max-height:none;overflow:visible}
+}
+.tk-tabs{display:flex;align-items:center;gap:2px;padding:0 12px;border-bottom:1px solid var(--dsw-alias-border-l1);flex:none}
+.tk-tab{position:relative;padding:6px 8px;border:0;border-bottom:2px solid transparent;background:transparent;
+  color:var(--dsw-alias-label-secondary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
+.tk-tab:hover{color:var(--dsw-alias-label-primary)}
+.tk-tab[aria-selected="true"]{color:var(--dsw-alias-label-primary);border-bottom-color:var(--dsw-alias-brand-primary);
+  font-weight:600}
+.tk-tab:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:-2px;border-radius:3px}
+.tk-report{display:flex;flex-direction:column;gap:6px;min-width:0}
 .tk-sec{display:flex;flex-direction:column;gap:4px;min-width:0}
-.tk-sec-head{display:flex;align-items:center;gap:5px;min-width:0}
+.tk-sec-head{display:flex;align-items:center;gap:5px;flex-wrap:wrap;row-gap:2px;min-width:0}
+.tk-sec-head>.tk-sec-title{flex:1 1 auto;min-width:0}
 .tk-sec-title{margin:0;font-size:10px;line-height:14px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;
-  color:var(--dsw-alias-label-secondary)}
-.tk-sec-note{font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+  color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.tk-sec-note{min-width:0;flex:0 1 auto;max-width:100%;margin-left:auto;font-size:10px;line-height:14px;
+  color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));overflow-wrap:anywhere}
+.tk-sec-note-below{display:block;width:100%;flex:0 0 auto;margin-left:0;text-align:left}
 .tk-body-text{margin:0;font-size:12px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere}
 .tk-body-text[data-empty="true"]{color:var(--dsw-alias-label-secondary);font-style:italic}
 .tk-kv{display:grid;grid-template-columns:minmax(0,132px) minmax(0,1fr);gap:3px 10px;margin:0;font-size:11px;line-height:16px}
 .tk-kv dt{min-width:0;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
-.tk-kv dd{min-width:0;margin:0;overflow-wrap:anywhere;font-variant-numeric:tabular-nums}
+.tk-kv dd{min-width:0;margin:0;overflow-wrap:anywhere;word-break:break-word;font-variant-numeric:tabular-nums}
 .tk-metrics{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:6px}
 .tk-metric{display:flex;flex-direction:column;gap:1px;min-width:0;padding:7px 8px;border:1px solid var(--dsw-alias-border-l1);
   border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1)}
@@ -1274,6 +2280,10 @@ window.__ModuleLoader__.load({
 .tk-sec-scroll{max-height:168px;overflow:auto;overscroll-behavior:contain;min-width:0;padding-right:2px}
 .tk-sec-scroll:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));
   outline-offset:2px;border-radius:var(--dsw-radius-sm)}
+.tk-insp[data-agent-dialog] .tk-jobs,.tk-insp[data-agent-dialog] .tk-list{max-height:min(38vh,300px);overflow:auto;
+  overscroll-behavior:contain;padding-right:2px}
+.tk-insp[data-agent-dialog] .tk-jobs:focus-visible,.tk-insp[data-agent-dialog] .tk-list:focus-visible{
+  outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px;border-radius:var(--dsw-radius-sm)}
 .tk-jobs{display:flex;flex-direction:column;gap:4px;margin:0;padding:0;list-style:none;min-width:0}
 .tk-job{display:flex;align-items:flex-start;gap:5px;min-width:0}
 .tk-job-main{display:flex;flex-direction:column;gap:1px;flex:1 1 auto;min-width:0}
@@ -1284,25 +2294,121 @@ window.__ModuleLoader__.load({
   overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tk-job-time{flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
 .tk-job-note{min-width:0;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
-.tk-mono{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;font-variant-numeric:tabular-nums}
+.tk-mono{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;font-variant-numeric:tabular-nums;
+  min-width:0;overflow-wrap:anywhere}
 .tk-warn{display:flex;align-items:flex-start;gap:5px;font-size:10px;line-height:15px;color:var(--dsw-alias-state-warn-primary);overflow-wrap:anywhere}
+.tk-set{display:flex;flex-direction:column;gap:2px;min-width:0;width:100%;max-width:760px;color:var(--dsw-alias-label-primary);
+  font-size:12px;line-height:17px}
+.tk-set-note{margin:0 0 6px;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.tk-set-group{display:flex;flex-direction:column;min-width:0;margin-top:10px}
+.tk-set-group-title{display:flex;align-items:center;gap:5px;margin:0 0 2px;font-size:10px;line-height:14px;font-weight:600;
+  text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
+.tk-set-row{display:flex;align-items:flex-start;justify-content:space-between;gap:24px;min-width:0;padding:10px 0;
+  border-bottom:1px solid var(--dsw-alias-border-l1)}
+.tk-set-row[data-stacked="true"]{border-bottom:0;padding-bottom:4px}
+.tk-set-row[data-disabled="true"]{opacity:.55}
+.tk-set-copy{display:flex;flex-direction:column;gap:2px;flex:1 1 auto;min-width:0}
+.tk-set-title{font-size:12px;line-height:17px;font-weight:500;color:var(--dsw-alias-label-primary);overflow-wrap:anywhere}
+.tk-set-desc{margin:0;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
+.tk-set-control{display:flex;align-items:center;justify-content:flex-end;gap:8px;flex:none;min-width:0;padding-top:1px}
+.tk-set-text-block{display:flex;flex-direction:column;gap:5px;min-width:0;padding:0 0 10px;
+  border-bottom:1px solid var(--dsw-alias-border-l1)}
+.tk-set-example{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace)}
+.tk-set-about{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.tk-set-about .tk-btn{text-decoration:none}
+.tk-set-switch{position:relative;display:inline-flex;align-items:center;flex:none;cursor:pointer}
+.tk-set-switch-input{appearance:none;-webkit-appearance:none;position:absolute;inset:0;width:100%;height:100%;margin:0;
+  opacity:0;cursor:pointer}
+.tk-set-switch-input:disabled{cursor:not-allowed}
+.tk-set-switch-track{position:relative;display:block;flex:none;width:30px;height:17px;box-sizing:border-box;
+  border:1px solid var(--dsw-alias-border-l2);border-radius:999px;background:var(--dsw-alias-bg-layer-1);
+  transition:background .12s ease,border-color .12s ease}
+.tk-set-switch-track:after{content:'';position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;
+  background:var(--dsw-alias-label-secondary);transition:transform .12s ease,background .12s ease}
+.tk-set-switch-input:checked + .tk-set-switch-track{background:color-mix(in srgb,var(--dsw-alias-brand-primary) 22%,transparent);
+  border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 60%,transparent)}
+.tk-set-switch-input:checked + .tk-set-switch-track:after{transform:translateX(13px);background:var(--dsw-alias-brand-primary)}
+.tk-set-switch-input:focus-visible + .tk-set-switch-track{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));
+  outline-offset:2px}
+.tk-set-switch-input:disabled + .tk-set-switch-track{opacity:.5}
+@media (prefers-reduced-motion: reduce){.tk-set-switch-track,.tk-set-switch-track:after{transition:none}}
+.tk-set-range{flex:0 1 200px;min-width:110px;margin:0;accent-color:var(--dsw-alias-brand-primary)}
+.tk-set-range:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}
+.tk-set-range:disabled{cursor:not-allowed}
+.tk-set-value{flex:none;min-width:52px;text-align:right;font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);
+  font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.tk-set-text{width:100%;min-height:58px;box-sizing:border-box;resize:vertical;padding:6px 8px;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);
+  color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:16px}
+.tk-set-text:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-set-text:disabled{cursor:not-allowed;opacity:.6}
+.tk-set-select{min-width:0;padding:3px 6px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);
+  background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
+.tk-set-select option{background:var(--dsw-alias-bg-layer-2);color:var(--dsw-alias-label-primary)}
+.tk-set-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-md{display:flex;flex-direction:column;gap:5px;min-width:0;font-size:12px;line-height:18px;color:var(--dsw-alias-label-primary)}
+.tk-md-p{margin:0;white-space:pre-wrap;overflow-wrap:anywhere}
+.tk-md-h1,.tk-md-h2,.tk-md-h3{margin:2px 0 0;font-weight:600;overflow-wrap:anywhere}
+.tk-md-h1{font-size:14px;line-height:20px}
+.tk-md-h2{font-size:13px;line-height:19px}
+.tk-md-h3{font-size:12px;line-height:18px;color:var(--dsw-alias-label-secondary);text-transform:uppercase;letter-spacing:.2px}
+.tk-md-list{margin:0;padding-left:17px;display:flex;flex-direction:column;gap:2px}
+.tk-md-list li{min-width:0;overflow-wrap:anywhere}
+.tk-md-quote{margin:0;padding:1px 8px;border-left:2px solid var(--dsw-alias-border-l2);color:var(--dsw-alias-label-secondary)}
+.tk-md-hr{align-self:stretch;border:0;border-top:1px solid var(--dsw-alias-border-l1);margin:3px 0}
+.tk-md-pre{margin:0;max-width:100%;overflow:auto;padding:6px 8px;border:1px solid var(--dsw-alias-border-l1);
+  border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1)}
+.tk-md code,.tk-md-code{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;line-height:15px}
+.tk-md-pre code{white-space:pre;display:block}
+.tk-md :not(pre)>code{padding:0 3px;border-radius:3px;background:var(--dsw-alias-bg-layer-1)}
+.tk-md a,.tk-md-a{color:var(--dsw-alias-brand-primary);text-decoration:underline;overflow-wrap:anywhere}
+.tk-md-img{max-width:100%;max-height:320px;border-radius:var(--dsw-radius-sm);object-fit:contain;background:var(--dsw-alias-bg-layer-1)}
+.tk-md-plain{overflow-wrap:anywhere}
+.tk-md-missing,.tk-file-missing{color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));text-decoration:none}
+.tk-md-file{max-width:100%}
+.tk-attach{display:flex;flex-direction:column;align-items:flex-start;gap:3px;min-width:0;width:100%;margin-top:2px}
+.tk-attach-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
+.tk-attach-list{display:flex;flex-wrap:wrap;align-items:center;gap:4px;min-width:0;width:100%}
+.tk-attach .tk-file-link{max-width:100%}
 `
 
-    /** Attach the stylesheet to one surface. */
+    /**
+     * Attach the stylesheet to one surface.
+     */
     function Styles() {
       return h('style', null, CSS)
     }
 
     /**
-     * One titled block of the inspector or the board.
-     * @param props - `title`, optional `note`, and the block content.
+     * Stop a nested control's event from reaching the clickable surface around
+     * it. An event may be absent — the smoke harness calls handlers directly —
+     * so a missing one is not an error.
+     * @param event - the DOM event, when there is one.
      */
-    function Section({ title, note = undefined, icon = undefined, children }) {
+    function stopEvent(event) {
+      if (event !== null && typeof event === 'object' && typeof event.stopPropagation === 'function') {
+        event.stopPropagation()
+      }
+    }
+
+    /**
+     * One titled block of the inspector or the board. A `noteBelow` note is
+     * the block's own leading line, full width under the heading row, for a
+     * section whose only content is its absence message; the default keeps
+     * the note beside the title.
+     * @param props - `title`, optional `note`, `noteBelow` and `icon`, and the
+     *   block content.
+     */
+    function Section({ title, note = undefined, noteBelow = false, icon = undefined, children }) {
+      const noteNode = note === undefined || note === null
+        ? null
+        : h('span', { className: noteBelow === true ? 'tk-sec-note tk-sec-note-below' : 'tk-sec-note' }, note)
       return h('section', { className: 'tk-sec' },
         h('div', { className: 'tk-sec-head' },
           icon === undefined ? null : h(Icon, { name: icon, size: 11 }),
           h('h3', { className: 'tk-sec-title' }, title),
-          note === undefined || note === null ? null : h('span', { className: 'tk-sec-note' }, note)),
+          noteBelow === true ? null : noteNode),
+        noteBelow === true ? noteNode : null,
         children)
     }
 
@@ -1316,17 +2422,35 @@ window.__ModuleLoader__.load({
         children)
     }
 
+    /**
+     * One metric value that plays a short fade-and-rise whenever it changes.
+     * The element is keyed by the text, so React replaces it and the CSS
+     * animation restarts on each new value; with the preference off the value
+     * is a plain span. The stylesheet honours `prefers-reduced-motion`.
+     * @param props - `text` to show.
+     */
+    function AnimatedText({ text }) {
+      const value = String(text)
+      if (VIEW_SETTINGS.value.animateText !== true) return h('span', null, value)
+      return h('span', {
+        key: value,
+        className: 'tk-text-anim',
+        style: { '--tk-text-ms': String(VIEW_SETTINGS.value.animationMs) + 'ms' },
+      }, value)
+    }
+
     /** One metric tile of the inspector. */
     function Metric({ label, value, sub = undefined, icon = undefined }) {
       return h('div', { className: 'tk-metric' },
         h('span', { className: 'tk-metric-label' }, icon === undefined ? null : h(Icon, { name: icon, size: 10 }), label),
-        h('span', { className: 'tk-metric-value' }, value),
+        h('span', { className: 'tk-metric-value' }, h(AnimatedText, { text: value })),
         sub === undefined || sub === null ? null : h('span', { className: 'tk-metric-sub' }, sub))
     }
 
     /** A card-level statistic: icon + short value. */
     function Stat({ icon, value, live = false, title = undefined }) {
-      return h('span', { className: 'tk-stat', 'data-live': live, title }, h(Icon, { name: icon, size: 10 }), value)
+      return h('span', { className: 'tk-stat', 'data-live': live, title },
+        h(Icon, { name: icon, size: 10 }), h(AnimatedText, { text: value }))
     }
 
     /**
@@ -1358,6 +2482,466 @@ window.__ModuleLoader__.load({
         note === undefined ? null : h('span', { className: 'tk-note' }, note))
     }
 
+    /* ------------------------------------------------------------------ *
+     * Safe Markdown: a self-contained renderer for task descriptions and
+     * agent reports. It builds React nodes only — raw HTML is never parsed —
+     * and every URL is classified before it becomes an anchor or an image.
+     * ------------------------------------------------------------------ */
+
+    /** A URL scheme prefix, e.g. `javascript:`. */
+    const MD_SCHEME = /^[a-z][a-z0-9+.-]*:/i
+    /** An autolinkable URL inside running text. */
+    const MD_AUTOLINK = /^https?:\/\/[^\s<>"']+/i
+    /** A bare workspace path: at least one `/`, optional trailing `/` and `:line`. */
+    const MD_WORKSPACE_PATH = /^[\w.@+-]+(?:\/[\w.@+-]+)*\/?(?::\d+)?/
+    /** A character that would make a path match only part of a longer token. */
+    const MD_PATH_EDGE = /[\w./@+:-]/
+
+    /**
+     * The workspace path inside one `dsh-resource://file/session/<id>/<path>` address.
+     * @param href - the candidate address.
+     * @returns the decoded path, or undefined when it is not a file resource.
+     */
+    function markdownFilePathOf(href) {
+      const prefix = 'dsh-resource://file/session/'
+      if (href.length <= prefix.length || href.slice(0, prefix.length).toLowerCase() !== prefix) return undefined
+      const rest = href.slice(prefix.length)
+      const slash = rest.indexOf('/')
+      if (slash < 0) return undefined
+      try {
+        return rest.slice(slash + 1).split('/').map(segment => decodeURIComponent(segment)).join('/')
+      } catch {
+        return undefined
+      }
+    }
+
+    /**
+     * Classify one link or image target before rendering it.
+     * @param raw - the target text.
+     * @returns `{ kind, href?, path? }` with kind `web`, `mailto`, `file`, `plain` or `unsafe`.
+     */
+    function markdownTargetOf(raw) {
+      const href = typeof raw === 'string' ? raw.trim() : ''
+      if (href === '' || /[\u0000-\u001f]/.test(href)) return { kind: 'unsafe' }
+      const resource = markdownFilePathOf(href)
+      if (resource !== undefined) return { kind: 'file', path: resource, resource: true, href }
+      // A Windows drive (`C:\…`) looks like a scheme but is a path.
+      if (/^[a-z]:[\\/]/i.test(href) || href.startsWith('\\\\')) {
+        return { kind: 'file', path: href.replace(/\\/g, '/') }
+      }
+      if (/^https?:\/\//i.test(href)) return { kind: 'web', href }
+      if (/^mailto:/i.test(href)) return { kind: 'mailto', href }
+      // Protocol-relative URLs are remote, not workspace paths; every other
+      // scheme (javascript:, data:, file:, …) is refused outright.
+      if (MD_SCHEME.test(href) || href.startsWith('//')) return { kind: 'unsafe' }
+      if (/[\\/]/.test(href)) return { kind: 'file', path: href }
+      return { kind: 'plain', href }
+    }
+
+    /**
+     * Remember one file reference for the attachment chips.
+     * @param context - the render context.
+     * @param path - the workspace path.
+     */
+    function markdownRemember(context, path) {
+      if (typeof path !== 'string' || path === '' || context.seen.has(path)) return
+      context.seen.add(path)
+      context.attachments.push(path)
+    }
+
+    /**
+     * The existence of one workspace path, asked through the task dialog's
+     * per-open cache. A renderer without a checker (the Settings page, an
+     * older host) keeps every link, which is also the fallback for an answer
+     * the dialog cannot classify.
+     * @param context - the render context.
+     * @param path - the workspace path.
+     * @returns `yes`, `no`, `pending` or `unknown`.
+     */
+    function markdownPathStatus(context, path) {
+      if (typeof context.statusOf !== 'function') return 'unknown'
+      try {
+        const status = context.statusOf(path)
+        return status === 'yes' || status === 'no' || status === 'pending' ? status : 'unknown'
+      } catch {
+        return 'unknown'
+      }
+    }
+
+    /**
+     * One workspace file reference as a button, so a click opens it in the
+     * shipped resource viewer instead of navigating the page. A path the
+     * dialog knows to be missing stays plain text, and one still being
+     * checked is plain until the answer arrives — a dead link never flashes
+     * in as clickable.
+     * @param path - the workspace path.
+     * @param label - the visible label.
+     * @param context - the render context.
+     * @param key - the React key.
+     * @returns the button node, or the plain-text node.
+     */
+    function markdownFileNode(path, label, context, key) {
+      const status = markdownPathStatus(context, path)
+      if (status === 'no' || status === 'pending') {
+        return h('span', {
+          key,
+          className: status === 'no' ? 'tk-mono tk-md-missing' : 'tk-mono',
+          title: status === 'no' ? context.t('fileMissingHint') : undefined,
+        }, label)
+      }
+      const folder = isFolderScope(path)
+      const hint = folder ? context.t('openFolderHint') : context.t('openFileHint')
+      return h('button', {
+        key,
+        type: 'button',
+        className: 'tk-file-link tk-md-file',
+        'data-scope': path,
+        title: hint,
+        'aria-label': hint + ': ' + path,
+        onClick: () => { if (typeof context.onOpenFile === 'function') context.onOpenFile(path) },
+      }, h(Icon, { name: folder ? 'folder' : 'pen', size: 10 }), h('span', { className: 'tk-mono' }, label))
+    }
+
+    /**
+     * Render one image target. Only `https:` and the workspace file resource
+     * become an `<img>`; every other target degrades to a link or plain text.
+     * @param alt - the alt text.
+     * @param rawSrc - the image source.
+     * @param context - the render context.
+     * @param key - the React key.
+     * @returns the node.
+     */
+    function markdownImageNode(alt, rawSrc, context, key) {
+      const target = markdownTargetOf(rawSrc)
+      if (target.kind === 'web') {
+        return h('img', { key, className: 'tk-md-img', src: target.href, alt, loading: 'lazy' })
+      }
+      if (target.kind === 'file' && target.resource === true) {
+        markdownRemember(context, target.path)
+        const status = markdownPathStatus(context, target.path)
+        if (status === 'no' || status === 'pending') {
+          return h('span', {
+            key,
+            className: status === 'no' ? 'tk-md-plain tk-md-missing' : 'tk-md-plain',
+            title: status === 'no' ? context.t('fileMissingHint') : undefined,
+          }, alt !== '' ? alt : target.path)
+        }
+        return h('img', { key, className: 'tk-md-img', src: target.href, alt, loading: 'lazy' })
+      }
+      if (target.kind === 'file') {
+        markdownRemember(context, target.path)
+        return markdownFileNode(target.path, alt !== '' ? alt : target.path, context, key)
+      }
+      return h('span', { key, className: 'tk-md-plain' }, alt !== '' ? alt : rawSrc)
+    }
+
+    /**
+     * Render one link target, allowing only http(s), mailto and workspace
+     * paths; anything else keeps its text and drops the target. The label is
+     * rendered without autolinks: an anchor cannot contain a nested link or
+     * file button.
+     * @param label - the link label Markdown.
+     * @param rawHref - the link target.
+     * @param context - the render context.
+     * @param key - the React key.
+     * @returns the node.
+     */
+    function markdownLinkNode(label, rawHref, context, key) {
+      const target = markdownTargetOf(rawHref)
+      if (target.kind === 'web' || target.kind === 'mailto') {
+        return h('a', {
+          key,
+          className: 'tk-md-a',
+          href: target.href,
+          target: '_blank',
+          rel: 'noreferrer noopener',
+        }, markdownInline(label, { ...context, noAutoLinks: true }))
+      }
+      if (target.kind === 'file') {
+        markdownRemember(context, target.path)
+        return markdownFileNode(target.path, label, context, key)
+      }
+      return h('span', { key, className: 'tk-md-plain' }, markdownInline(label, { ...context, noAutoLinks: true }))
+    }
+
+    /**
+     * Find a bare workspace path that starts at `index` in running prose.
+     *
+     * A path needs at least one `/`; a domain followed by a slash stays a URL
+     * and a version string has no slash at all. A trailing `/` names a folder
+     * and stays in both the label and the open path, so the link uses the
+     * folder icon and the Files page. The `:line` suffix belongs to the
+     * visible label only, so the click opens the file itself. Trailing
+     * sentence punctuation is left outside the link.
+     * @param text - the inline source.
+     * @param index - the candidate offset.
+     * @returns `{ label, path }`, or undefined when no path starts here.
+     */
+    function markdownWorkspacePathAt(text, index) {
+      const match = MD_WORKSPACE_PATH.exec(text.slice(index))
+      if (match === null) return undefined
+      const previous = index === 0 ? '' : text[index - 1]
+      if (previous !== '' && MD_PATH_EDGE.test(previous)) return undefined
+      const label = match[0].replace(/[.,;!?]+$/, '')
+      const slash = label.indexOf('/')
+      if (label === '' || slash < 0) return undefined
+      // A domain with a path (`example.com/readme`) is a URL, not a file.
+      const firstSegment = label.slice(0, slash)
+      if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(firstSegment)) return undefined
+      return { label, path: label.replace(/:\d+$/, '') }
+    }
+
+    /**
+     * Render inline Markdown: bold, italic, code, links, images and autolinks.
+     * The returned children are strings or React elements, so React escapes
+     * every piece of text and no HTML is ever injected.
+     * @param text - the inline source.
+     * @param context - the render context; `noAutoLinks` keeps a link label
+     *   free of nested links and file buttons.
+     * @returns the child nodes.
+     */
+    function markdownInline(text, context) {
+      const nodes = []
+      let plain = ''
+      let index = 0
+      let key = 0
+      const flush = () => {
+        if (plain === '') return
+        nodes.push(plain)
+        plain = ''
+      }
+      const push = node => {
+        flush()
+        nodes.push(node)
+        key += 1
+      }
+      while (index < text.length) {
+        const char = text[index]
+        if (char === '\\' && index + 1 < text.length) {
+          plain += text[index + 1]
+          index += 2
+          continue
+        }
+        if (char === '\n') {
+          push(h('br', { key: 'br-' + key }))
+          index += 1
+          continue
+        }
+        if (char === '`') {
+          const end = text.indexOf('`', index + 1)
+          if (end > index + 1) {
+            push(h('code', { key: 'code-' + key, className: 'tk-md-code' }, text.slice(index + 1, end)))
+            index = end + 1
+            continue
+          }
+        }
+        if (char === '!' && text[index + 1] === '[') {
+          const close = text.indexOf('](', index + 2)
+          if (close > index + 2) {
+            const end = text.indexOf(')', close + 2)
+            if (end > close + 2) {
+              push(markdownImageNode(text.slice(index + 2, close), text.slice(close + 2, end), context, 'img-' + key))
+              index = end + 1
+              continue
+            }
+          }
+        }
+        if (char === '[') {
+          const close = text.indexOf('](', index + 1)
+          if (close > index + 1) {
+            const end = text.indexOf(')', close + 2)
+            if (end > close + 2) {
+              push(markdownLinkNode(text.slice(index + 1, close), text.slice(close + 2, end), context, 'a-' + key))
+              index = end + 1
+              continue
+            }
+          }
+        }
+        if (char === '*' || char === '_') {
+          const double = text.slice(index, index + 2) === char + char
+          const marker = double ? char + char : char
+          if (char === '_' && !double && index > 0 && /[a-z0-9]/i.test(text[index - 1])) {
+            plain += char
+            index += 1
+            continue
+          }
+          const end = text.indexOf(marker, index + marker.length)
+          if (end > index + marker.length) {
+            const inner = text.slice(index + marker.length, end)
+            push(h(double ? 'strong' : 'em', { key: (double ? 'strong-' : 'em-') + key },
+              markdownInline(inner, context)))
+            index = end + marker.length
+            continue
+          }
+        }
+        // A link label must stay plain text: an autolink inside an anchor
+        // would nest an <a> or a <button> in an <a>, which the HTML parser
+        // cannot represent.
+        if (context.noAutoLinks !== true) {
+          const autolink = MD_AUTOLINK.exec(text.slice(index))
+          if (autolink !== null) {
+            const href = autolink[0].replace(/[.,;:!?]+$/, '')
+            if (href.length > 8) {
+              push(h('a', {
+                key: 'auto-' + key,
+                className: 'tk-md-a',
+                href,
+                target: '_blank',
+                rel: 'noreferrer noopener',
+              }, href))
+              index += href.length
+              continue
+            }
+          }
+          const workspacePath = markdownWorkspacePathAt(text, index)
+          if (workspacePath !== undefined) {
+            markdownRemember(context, workspacePath.path)
+            push(markdownFileNode(workspacePath.path, workspacePath.label, context, 'path-' + key))
+            index += workspacePath.label.length
+            continue
+          }
+        }
+        plain += char
+        index += 1
+      }
+      flush()
+      return nodes
+    }
+
+    /**
+     * Whether a source line opens a block, so a paragraph must stop before it.
+     * @param line - one source line.
+     * @returns whether the line starts a block.
+     */
+    function markdownStartsBlock(line) {
+      return /^```/.test(line)
+        || /^#{1,3}\s+/.test(line)
+        || /^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)
+        || /^\s*>/.test(line)
+        || /^\s*[-*+]\s+/.test(line)
+        || /^\s*\d+[.)]\s+/.test(line)
+    }
+
+    /**
+     * Parse the block subset: fenced code, headings 1–3, rules, quotes, lists
+     * and paragraphs. Everything else stays plain text inside a paragraph.
+     * @param text - the normalized source.
+     * @param context - the render context.
+     * @returns the block nodes.
+     */
+    function markdownBlocks(text, context) {
+      const lines = text.split('\n')
+      const blocks = []
+      let index = 0
+      let key = 0
+      while (index < lines.length) {
+        const line = lines[index]
+        if (/^\s*$/.test(line)) {
+          index += 1
+          continue
+        }
+        const fence = /^```\s*([\w+-]*)\s*$/.exec(line)
+        if (fence !== null) {
+          const code = []
+          index += 1
+          while (index < lines.length && !/^```\s*$/.test(lines[index])) {
+            code.push(lines[index])
+            index += 1
+          }
+          if (index < lines.length) index += 1
+          blocks.push(h('pre', { key: 'pre-' + key, className: 'tk-md-pre' },
+            h('code', { className: 'tk-md-code' }, code.join('\n'))))
+          key += 1
+          continue
+        }
+        const heading = /^(#{1,3})\s+(.+?)\s*$/.exec(line)
+        if (heading !== null) {
+          const level = heading[1].length
+          blocks.push(h('h' + String(level), { key: 'h-' + key, className: 'tk-md-h' + String(level) },
+            markdownInline(heading[2], context)))
+          key += 1
+          index += 1
+          continue
+        }
+        if (/^\s*(?:-{3,}|\*{3,}|_{3,})\s*$/.test(line)) {
+          blocks.push(h('hr', { key: 'hr-' + key, className: 'tk-md-hr' }))
+          key += 1
+          index += 1
+          continue
+        }
+        if (/^\s*>/.test(line)) {
+          const quote = []
+          while (index < lines.length && /^\s*>/.test(lines[index])) {
+            quote.push(lines[index].replace(/^\s*>\s?/, ''))
+            index += 1
+          }
+          blocks.push(h('blockquote', { key: 'quote-' + key, className: 'tk-md-quote' },
+            markdownInline(quote.join('\n'), context)))
+          key += 1
+          continue
+        }
+        if (/^\s*[-*+]\s+/.test(line)) {
+          const items = []
+          while (index < lines.length && /^\s*[-*+]\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*[-*+]\s+/, ''))
+            index += 1
+          }
+          blocks.push(h('ul', { key: 'ul-' + key, className: 'tk-md-list' },
+            items.map((item, itemIndex) => h('li', { key: itemIndex }, markdownInline(item, context)))))
+          key += 1
+          continue
+        }
+        if (/^\s*\d+[.)]\s+/.test(line)) {
+          const items = []
+          while (index < lines.length && /^\s*\d+[.)]\s+/.test(lines[index])) {
+            items.push(lines[index].replace(/^\s*\d+[.)]\s+/, ''))
+            index += 1
+          }
+          blocks.push(h('ol', { key: 'ol-' + key, className: 'tk-md-list' },
+            items.map((item, itemIndex) => h('li', { key: itemIndex }, markdownInline(item, context)))))
+          key += 1
+          continue
+        }
+        const paragraph = [line]
+        index += 1
+        while (index < lines.length && !/^\s*$/.test(lines[index]) && !markdownStartsBlock(lines[index])) {
+          paragraph.push(lines[index])
+          index += 1
+        }
+        blocks.push(h('p', { key: 'p-' + key, className: 'tk-md-p' },
+          markdownInline(paragraph.join('\n'), context)))
+        key += 1
+      }
+      return blocks
+    }
+
+    /**
+     * Render one description or report as safe Markdown plus attachment chips.
+     * The task record carries no attachment field, so file references in the
+     * text itself are what the chips collect. A reference the dialog knows to
+     * be missing never reaches the chips; one still being checked does not
+     * either, so the row cannot reshuffle a moment later.
+     * @param props - `text`, optional `onOpenFile`, `t` and the per-open
+     *   `statusOf` the task dialog hands in.
+     */
+    function Markdown({ text, onOpenFile = undefined, t = undefined, statusOf = undefined }) {
+      const translate = typeof t === 'function' ? t : key => key
+      const context = { onOpenFile, t: translate, statusOf, attachments: [], seen: new Set() }
+      const source = typeof text === 'string' ? text.replace(/\r\n?/g, '\n') : ''
+      const blocks = markdownBlocks(source, context)
+      const chips = context.attachments.filter(path => {
+        const status = markdownPathStatus(context, path)
+        return status === 'yes' || status === 'unknown'
+      })
+      if (chips.length > 0) {
+        blocks.push(h('div', { key: 'attachments', className: 'tk-attach', 'data-attachments': 'true' },
+          h('span', { className: 'tk-attach-label' }, translate('attachments')),
+          h('div', { className: 'tk-attach-list' },
+            chips.map((path, pathIndex) => markdownFileNode(path, path, context, 'attach-' + pathIndex)))))
+      }
+      return h('div', { className: 'tk-md', 'data-markdown': 'true' }, blocks)
+    }
+
     /**
      * The disclosure button a foldable section header carries. It stays
      * mounted across a toggle, so keyboard focus survives the fold.
@@ -1380,11 +2964,12 @@ window.__ModuleLoader__.load({
      * A titled block of the inspector that folds away and scrolls once it
      * outgrows the dialog. The header keeps its note (the item count), so a
      * folded block still says how much it holds. The scroll box is focusable,
-     * so a keyboard reader can scroll it without a mouse.
+     * so a keyboard reader can scroll it without a mouse. A list that is its
+     * own scroll box passes `scroll: false` and owns the focusable region.
      * @param props - `title`, optional `icon` and `note`, plus `target`,
-     *   `expanded`, `label`, `onToggle` and the block content.
+     *   `expanded`, `label`, `onToggle`, optional `scroll` and the content.
      */
-    function FoldSection({ title, icon = undefined, note = undefined, target, expanded, label, onToggle, children }) {
+    function FoldSection({ title, icon = undefined, note = undefined, target, expanded, label, onToggle, scroll = true, children }) {
       return h('section', { className: 'tk-sec', 'data-fold-block': target },
         h('div', { className: 'tk-sec-head' },
           h(FoldToggle, { expanded, label, target, onClick: onToggle }),
@@ -1392,12 +2977,14 @@ window.__ModuleLoader__.load({
           h('h3', { className: 'tk-sec-title' }, title),
           note === undefined || note === null ? null : h('span', { className: 'tk-sec-note' }, note)),
         expanded === true
-          ? h('div', {
-            className: 'tk-sec-scroll',
-            tabIndex: 0,
-            role: 'group',
-            'aria-label': title,
-          }, children)
+          ? (scroll === false
+            ? children
+            : h('div', {
+              className: 'tk-sec-scroll',
+              tabIndex: 0,
+              role: 'group',
+              'aria-label': title,
+            }, children))
           : null)
     }
 
@@ -1540,7 +3127,8 @@ window.__ModuleLoader__.load({
 
     /**
      * Read the observation ledger from localStorage.
-     * @returns `{ [taskId]: { s?: number, c?: number } }` with unix ms stamps.
+     * @returns `{ [taskId]: { f?: number, s?: number, c?: number } }` with unix
+     *   ms stamps: first seen, started and completed.
      */
     function readLedger() {
       try {
@@ -1585,6 +3173,11 @@ window.__ModuleLoader__.load({
     /**
      * Fold the given task views into the shared ledger, stamping first-seen
      * transitions. Called by the always-on watcher and by the board.
+     *
+     * Every task gets `f`, the first moment the board ever saw it, so the
+     * columns can be ordered by when the work appeared rather than by id. A
+     * record from an older version only carries `s`/`c`; it keeps them and
+     * gains `f` the next time the task is seen.
      * @param tasks - the Team task views.
      * @returns whether anything changed.
      */
@@ -1596,25 +3189,37 @@ window.__ModuleLoader__.load({
         if (task === null || typeof task !== 'object' || typeof task.id !== 'string') continue
         const previous = next[task.id] !== null && typeof next[task.id] === 'object' ? next[task.id] : {}
         const record = { ...previous }
+        let touched = false
+        if (typeof record.f !== 'number') {
+          record.f = at
+          touched = true
+        }
         if (task.status === 'in_progress' && typeof record.s !== 'number') {
           record.s = at
-          changed = true
+          touched = true
         }
         if (task.status === 'completed' && typeof record.c !== 'number') {
           record.c = at
-          changed = true
+          touched = true
         }
         if (task.status === 'pending' && typeof record.c === 'number') {
           // Reopening starts a new run; the previous completion is history.
           delete record.c
+          touched = true
+        }
+        if (touched) {
+          next[task.id] = record
           changed = true
         }
-        if (changed) next[task.id] = record
       }
       const ids = Object.keys(next)
       if (ids.length > LEDGER_LIMIT) {
+        // `f` is the last key: a task that never started has no `s`/`c`, and
+        // without the fallback its fresh first-seen record would sort as 0 and
+        // be the first one dropped on every pass.
         ids
-          .sort((left, right) => num(next[right].c ?? next[right].s, 0) - num(next[left].c ?? next[left].s, 0))
+          .sort((left, right) => num(next[right].c ?? next[right].s ?? next[right].f, 0)
+            - num(next[left].c ?? next[left].s ?? next[left].f, 0))
           .slice(LEDGER_LIMIT)
           .forEach(id => { delete next[id] })
         changed = true
@@ -1644,7 +3249,29 @@ window.__ModuleLoader__.load({
      * Fold state: which sections and status groups the reader folded away.
      * It is per-browser view state, so it lives in localStorage next to the
      * ledger; the overflow expansion below it is a page-session detail only.
+     *
+     * Every board keeps its own folds, keyed by its root session id: two
+     * boards can be open at once (a Lead and a subagent view), and folding a
+     * group on one must not fold the same group on the other. The stored shape
+     * is versioned (`{ boards: { <rootId>: { sections, groups } } }`); the
+     * pre-0.2 flat `{ sections, groups }` carried no board id, so it is
+     * dropped once instead of leaking into every board.
      * ------------------------------------------------------------------ */
+
+    /** Board key used only when a caller has no root session id. */
+    const COLLAPSE_FALLBACK_BOARD = 'default'
+
+    /**
+     * The stored key of one board's fold state.
+     * @param boardId - the root session id.
+     * @returns the key, safe to use as an object property.
+     */
+    function foldBoardKeyOf(boardId) {
+      return typeof boardId === 'string' && boardId !== '' && boardId !== '__proto__'
+        && boardId !== 'constructor' && boardId !== 'prototype'
+        ? boardId
+        : COLLAPSE_FALLBACK_BOARD
+    }
 
     /**
      * Keep only the boolean entries of one persisted fold map.
@@ -1661,46 +3288,96 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Read the fold state of the board.
-     * @returns `{ sections, groups }`, each a map of booleans; empty on a
-     *   blocked or corrupt store.
+     * Read the per-board fold state.
+     * @returns `{ boards }`, each entry `{ sections, groups }`; empty on a
+     *   blocked or corrupt store and after a legacy flat shape.
      */
     function readCollapse() {
-      const empty = { sections: {}, groups: {} }
+      const empty = { boards: {} }
       try {
         const raw = window.localStorage.getItem(COLLAPSE_KEY)
         if (raw === null || raw === '') return empty
         const parsed = JSON.parse(raw)
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return empty
-        return { sections: booleansOf(parsed.sections), groups: booleansOf(parsed.groups) }
+        const source = parsed.boards
+        if (source === null || typeof source !== 'object' || Array.isArray(source)) {
+          // A pre-0.2 flat `{ sections, groups }` carried no board id; applying
+          // it to every board would preserve the leak, so it is dropped.
+          return empty
+        }
+        const boards = {}
+        for (const key of Object.keys(source)) {
+          if (foldBoardKeyOf(key) !== key) continue
+          const entry = source[key]
+          if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+          boards[key] = { sections: booleansOf(entry.sections), groups: booleansOf(entry.groups) }
+        }
+        return { boards }
       } catch {
         // A blocked store only costs the remembered folds.
         return empty
       }
     }
 
-    /** Module-wide fold state: the stored maps plus the unpersisted overflow set. */
+    /** Module-wide fold state: every board's stored maps plus the page expansion set. */
     const COLLAPSE = {
       value: readCollapse(),
-      /** Groups the reader expanded past the cap; page-session state, not stored. */
+      /** `${boardKey}\u0000${groupId}` entries expanded past the cap; page-session state. */
       expanded: new Set(),
     }
 
     /**
-     * Persist the fold state, always with both section flags so the stored
-     * shape is complete even before a section has ever been folded.
+     * The stored fold entry of one board, without creating it.
+     * @param boardId - the root session id.
+     * @returns that board's `{ sections, groups }`, or undefined.
+     */
+    function foldBoardOf(boardId) {
+      return COLLAPSE.value.boards[foldBoardKeyOf(boardId)]
+    }
+
+    /**
+     * The stored fold entry of one board, created on first write.
+     * @param boardId - the root session id.
+     * @returns that board's mutable `{ sections, groups }`.
+     */
+    function ensureFoldBoard(boardId) {
+      const key = foldBoardKeyOf(boardId)
+      if (COLLAPSE.value.boards[key] === undefined) {
+        COLLAPSE.value.boards[key] = { sections: {}, groups: {} }
+      }
+      return COLLAPSE.value.boards[key]
+    }
+
+    /**
+     * The page-session key of one expanded group.
+     * @param boardId - the root session id.
+     * @param groupId - the stable group id.
+     * @returns the scoped key.
+     */
+    function expandedKeyOf(boardId, groupId) {
+      return foldBoardKeyOf(boardId) + '\u0000' + groupId
+    }
+
+    /**
+     * Persist every board's fold state, always with both section flags so the
+     * stored shape is complete even before a section has ever been folded.
      * @returns whether the write went through.
      */
     function writeCollapse() {
-      const value = {
-        sections: {
-          agents: COLLAPSE.value.sections.agents === true,
-          tasks: COLLAPSE.value.sections.tasks === true,
-        },
-        groups: { ...COLLAPSE.value.groups },
+      const boards = {}
+      for (const key of Object.keys(COLLAPSE.value.boards)) {
+        if (foldBoardKeyOf(key) !== key) continue
+        const entry = COLLAPSE.value.boards[key]
+        boards[key] = {
+          sections: {
+            agents: entry.sections.agents === true,
+            tasks: entry.sections.tasks === true,
+          },
+          groups: { ...entry.groups },
+        }
       }
       try {
-        window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify(value))
+        window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify({ boards }))
         return true
       } catch {
         return false
@@ -1718,94 +3395,111 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Whether a section body is folded away.
+     * Whether a section body is folded away on one board.
+     * @param boardId - the root session id.
      * @param section - `agents` or `tasks`.
      * @returns the stored choice.
      */
-    function isSectionCollapsed(section) {
-      return COLLAPSE.value.sections[section] === true
+    function isSectionCollapsed(boardId, section) {
+      const board = foldBoardOf(boardId)
+      return board !== undefined && board.sections[section] === true
     }
 
     /**
-     * Whether a status group is folded away. A group seen for the first time
-     * with a pile past AUTO_COLLAPSE_AT counts as folded before the write in
-     * `noteAutoCollapse` lands, so the very first render already shows it
-     * folded instead of jumping under the reader. A group the reader expanded
-     * past the cap in this page session stays open: that click is a decision
-     * too, even though it is not persisted.
+     * Whether a status group is folded away on one board. A group seen for the
+     * first time with a pile past AUTO_COLLAPSE_AT counts as folded before the
+     * write in `noteAutoCollapse` lands, so the very first render already shows
+     * it folded instead of jumping under the reader. A group the reader
+     * expanded past the cap in this page session stays open: that click is a
+     * decision too, even though it is not persisted. Both maps are scoped to
+     * the board, so two open boards never share a fold.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      * @param count - how many items the group currently holds.
      * @returns the effective fold state.
      */
-    function isGroupCollapsed(groupId, count = 0) {
-      if (COLLAPSE.value.groups[groupId] === true) return true
-      if (COLLAPSE.expanded.has(groupId)) return false
+    function isGroupCollapsed(boardId, groupId, count = 0) {
+      const board = foldBoardOf(boardId)
+      if (board !== undefined && board.groups[groupId] === true) return true
+      if (COLLAPSE.expanded.has(expandedKeyOf(boardId, groupId))) return false
       if (count <= AUTO_COLLAPSE_AT) return false
-      return !Object.prototype.hasOwnProperty.call(COLLAPSE.value.groups, groupId)
+      return board === undefined || !Object.prototype.hasOwnProperty.call(board.groups, groupId)
     }
 
     /**
      * Whether a group shows every item this page session.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      * @returns the session expansion state.
      */
-    function isGroupExpanded(groupId) {
-      return COLLAPSE.expanded.has(groupId)
+    function isGroupExpanded(boardId, groupId) {
+      return COLLAPSE.expanded.has(expandedKeyOf(boardId, groupId))
     }
 
     /**
-     * Fold or unfold one section and store the choice.
+     * Fold or unfold one section on one board and store the choice.
+     * @param boardId - the root session id.
      * @param section - `agents` or `tasks`.
      */
-    function toggleSection(section) {
-      COLLAPSE.value.sections[section] = isSectionCollapsed(section) !== true
+    function toggleSection(boardId, section) {
+      const board = ensureFoldBoard(boardId)
+      board.sections[section] = isSectionCollapsed(boardId, section) !== true
       writeCollapse()
     }
 
     /**
-     * Fold or unfold one status group and store the choice. The stored entry
-     * also pins the group against the auto-collapse, so an explicit choice
-     * always wins.
+     * Fold or unfold one status group on one board and store the choice. The
+     * stored entry also pins the group against the auto-collapse, so an
+     * explicit choice always wins.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      * @param count - how many items the group currently holds.
      */
-    function toggleGroup(groupId, count = 0) {
-      const collapsed = isGroupCollapsed(groupId, count) !== true
-      COLLAPSE.value.groups[groupId] = collapsed
-      if (collapsed) COLLAPSE.expanded.delete(groupId)
+    function toggleGroup(boardId, groupId, count = 0) {
+      const board = ensureFoldBoard(boardId)
+      const collapsed = isGroupCollapsed(boardId, groupId, count) !== true
+      board.groups[groupId] = collapsed
+      if (collapsed) COLLAPSE.expanded.delete(expandedKeyOf(boardId, groupId))
       writeCollapse()
     }
 
     /**
      * Show every item of one group for the rest of the page session.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      */
-    function expandGroup(groupId) {
-      COLLAPSE.expanded.add(groupId)
+    function expandGroup(boardId, groupId) {
+      COLLAPSE.expanded.add(expandedKeyOf(boardId, groupId))
     }
 
     /**
      * Fall back to the visible cap for one group.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      */
-    function collapseGroup(groupId) {
-      COLLAPSE.expanded.delete(groupId)
+    function collapseGroup(boardId, groupId) {
+      COLLAPSE.expanded.delete(expandedKeyOf(boardId, groupId))
     }
 
     /**
      * Fold a pile bigger than the threshold the first time it is seen that
-     * big, so a long finished column cannot push the whole panel down. Only
-     * groups the reader has not decided about are touched.
+     * big on one board, so a long finished column cannot push the whole panel
+     * down. Only groups the reader has not decided about are touched.
+     * @param boardId - the root session id.
      * @param counts - group id -> item count.
      * @returns whether the stored state changed.
      */
-    function noteAutoCollapse(counts) {
+    function noteAutoCollapse(boardId, counts) {
       let changed = false
+      let board
+      const key = foldBoardKeyOf(boardId)
       for (const groupId of Object.keys(counts)) {
         if (counts[groupId] <= AUTO_COLLAPSE_AT) continue
-        if (COLLAPSE.expanded.has(groupId)) continue
-        if (Object.prototype.hasOwnProperty.call(COLLAPSE.value.groups, groupId)) continue
-        COLLAPSE.value.groups[groupId] = true
+        if (COLLAPSE.expanded.has(key + '\u0000' + groupId)) continue
+        const current = COLLAPSE.value.boards[key]
+        if (current !== undefined && Object.prototype.hasOwnProperty.call(current.groups, groupId)) continue
+        board = board ?? ensureFoldBoard(boardId)
+        board.groups[groupId] = true
         changed = true
       }
       if (!changed) return false
@@ -1822,6 +3516,329 @@ window.__ModuleLoader__.load({
       if (task.status === 'completed') return 'done'
       if (task.status === 'in_progress') return 'active'
       return task.ready === false ? 'blocked' : 'queued'
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Ordering: the view setting decides how the cards of a column and the
+     * agents of a group are sorted. A task's first-seen stamp comes from the
+     * observation ledger; an agent carries its own createdAt/updatedAt. The
+     * Lead is always pinned first in its own column, and a task the ledger
+     * never saw sorts after the ones it did.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * The first-seen stamp of a task from the observation ledger. A record
+     * written before `f` existed falls back to its start and completion
+     * stamps, so the order does not jump when the version changes.
+     * @param ledger - the observation ledger.
+     * @param task - a Team task view.
+     * @returns unix ms, or undefined when the task was never observed.
+     */
+    function firstSeenOf(ledger, task) {
+      const record = ledger?.[task?.id]
+      if (record === null || typeof record !== 'object') return undefined
+      if (typeof record.f === 'number' && Number.isFinite(record.f)) return record.f
+      if (typeof record.s === 'number' && Number.isFinite(record.s)) return record.s
+      if (typeof record.c === 'number' && Number.isFinite(record.c)) return record.c
+      return undefined
+    }
+
+    /**
+     * Compare two task ids the way the board has always ordered them: numeric
+     * natural order, so `#2` stays before `#10`.
+     * @returns a negative, zero or positive number.
+     */
+    function compareTaskIds(left, right) {
+      return String(left?.id).localeCompare(String(right?.id), undefined, { numeric: true })
+    }
+
+    /**
+     * Sort one status column's tasks by the view setting. `newest` puts the
+     * freshest work on top (`oldest` reverses that); a task without a stamp
+     * sorts last, and the id breaks every remaining tie so the order is
+     * deterministic across renders.
+     * @param tasks - the column's tasks.
+     * @param sort - `newest`, `oldest` or `name`.
+     * @param ledger - the observation ledger.
+     * @returns a sorted copy.
+     */
+    function sortTasks(tasks, sort, ledger) {
+      const rows = [...tasks]
+      const idOrder = (left, right) => (sort === 'oldest' ? compareTaskIds(left, right) : -compareTaskIds(left, right))
+      rows.sort((left, right) => {
+        if (sort === 'name') {
+          const byName = String(left.subject ?? left.id).localeCompare(String(right.subject ?? right.id))
+          return byName !== 0 ? byName : compareTaskIds(left, right)
+        }
+        const leftAt = firstSeenOf(ledger, left)
+        const rightAt = firstSeenOf(ledger, right)
+        if (leftAt === undefined && rightAt === undefined) return idOrder(left, right)
+        if (leftAt === undefined) return 1
+        if (rightAt === undefined) return -1
+        const delta = sort === 'oldest' ? leftAt - rightAt : rightAt - leftAt
+        return delta !== 0 ? delta : idOrder(left, right)
+      })
+      return rows
+    }
+
+    /**
+     * The agent's own clock: when it was created, else when it was last seen.
+     * @param agent - one agent entry.
+     * @returns unix ms; 0 when neither stamp is known.
+     */
+    function agentStampOf(agent) {
+      if (typeof agent?.createdAt === 'number' && Number.isFinite(agent.createdAt)) return agent.createdAt
+      if (typeof agent?.updatedAt === 'number' && Number.isFinite(agent.updatedAt)) return agent.updatedAt
+      return 0
+    }
+
+    /**
+     * Compare two agents by name, then by id, so equally named rows keep a
+     * stable order.
+     * @returns a negative, zero or positive number.
+     */
+    function compareAgents(left, right) {
+      const byName = String(left?.name ?? '').localeCompare(String(right?.name ?? ''))
+      return byName !== 0 ? byName : String(left?.id).localeCompare(String(right?.id))
+    }
+
+    /**
+     * Sort agents by the view setting, freshest first by default. Pinning the
+     * Lead is the caller's job, because the pin is per column.
+     * @param agents - the agents to order.
+     * @param sort - `newest`, `oldest` or `name`.
+     * @returns a sorted copy.
+     */
+    function sortAgents(agents, sort) {
+      const rows = [...agents]
+      if (sort === 'oldest') {
+        rows.sort((left, right) => agentStampOf(left) - agentStampOf(right) || compareAgents(left, right))
+        return rows
+      }
+      if (sort === 'name') {
+        rows.sort(compareAgents)
+        return rows
+      }
+      rows.sort((left, right) => agentStampOf(right) - agentStampOf(left) || compareAgents(left, right))
+      return rows
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Agent grouping: a role is the first part of the agent's name, before the
+     * first `-`, without trailing digits and lower-cased (`builder-b2` ->
+     * builder, `round1` -> round). A single agent's prefix is not a group: only
+     * a base two or more agents of the same status column share becomes a role
+     * group, and every other agent joins Ungrouped. There is no preset
+     * fallback: the harness default `standard` would otherwise fold every
+     * default agent into one meaningless group. Custom groups come from the
+     * Settings editor and match substrings of the role base, name, preset or
+     * id. The Lead is pinned before every group.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * Bases that describe no role at all; they never form a group, even when
+     * every agent carries the same one (`agent-1`, `agent-2`).
+     */
+    const GENERIC_ROLE_BASE = /^(agent|subagent|assistant|worker|session)$/
+
+    /**
+     * The role base of an agent: the first name part before the first `-`,
+     * with trailing digits removed and lower-cased (`builder-b2` -> builder,
+     * `scribe-r9` -> scribe, `round1` -> round).
+     * @param agent - one agent entry.
+     * @returns the lower-case base, or '' when the name carries none.
+     */
+    function roleBaseOf(agent) {
+      const name = typeof agent?.name === 'string' ? agent.name.trim() : ''
+      if (name === '') return ''
+      const base = name.split('-')[0].replace(/\d+$/, '').trim().toLowerCase()
+      return GENERIC_ROLE_BASE.test(base) ? '' : base
+    }
+
+    /**
+     * The first custom group an agent belongs to, if any. A pattern matches
+     * case-insensitively as a substring of the role, name, preset or id, and a
+     * group matches at most once because a row belongs to one group.
+     * @param agent - one agent entry.
+     * @param groups - the parsed custom groups, in editor order.
+     * @returns the matching group, or undefined.
+     */
+    function customGroupOf(agent, groups) {
+      if (!Array.isArray(groups) || groups.length === 0) return undefined
+      const values = [roleBaseOf(agent), agent?.name, agent?.preset, agent?.id]
+        .filter(value => typeof value === 'string' && value !== '')
+        .map(value => value.toLowerCase())
+      for (const group of groups) {
+        for (const pattern of group.patterns) {
+          const needle = pattern.toLowerCase()
+          if (needle !== '' && values.some(value => value.includes(needle))) return group
+        }
+      }
+      return undefined
+    }
+
+    /**
+     * The newest member stamp of one group; role groups are ordered by it so
+     * the group holding the freshest agent comes first.
+     * @param group - one group unit.
+     * @returns unix ms; 0 when no member has a stamp.
+     */
+    function groupRecencyOf(group) {
+      let newest = 0
+      for (const agent of group.agents) newest = Math.max(newest, agentStampOf(agent))
+      return newest
+    }
+
+    /**
+     * Build the rows of one agent status column after its Lead: custom groups
+     * in editor order (each with a head, even for a single member), then the
+     * role groups when `autoRoleGroups` is on — only a base two or more
+     * remaining agents share gets a head. Every other remaining agent collects
+     * under one Ungrouped head, so a column whose bases are all unique is still
+     * a single Ungrouped group rather than a flat list.
+     * @param agents - the column's agents, the Lead already removed.
+     * @param settings - the view settings.
+     * @returns the row units; `null` when both grouping switches are off.
+     */
+    function planAgentGroups(agents, settings) {
+      const custom = settings !== null && settings.customGroups === true
+        ? parseCustomGroups(settings.customGroupsText)
+        : []
+      const auto = settings !== null && settings.autoRoleGroups === true
+      if (custom.length === 0 && auto !== true) return null
+      const units = []
+      let leftover = [...agents]
+      if (custom.length > 0) {
+        const buckets = custom.map(group => ({ key: 'custom:' + group.name, title: group.name, agents: [] }))
+        const unclaimed = []
+        for (const agent of leftover) {
+          const match = customGroupOf(agent, custom)
+          if (match === undefined) {
+            unclaimed.push(agent)
+            continue
+          }
+          buckets[custom.indexOf(match)].agents.push(agent)
+        }
+        for (const bucket of buckets) {
+          if (bucket.agents.length === 0) continue
+          units.push({
+            key: bucket.key,
+            title: bucket.title,
+            agents: sortAgents(bucket.agents, settings.sort),
+            head: true,
+          })
+        }
+        leftover = unclaimed
+      }
+      if (auto !== true) {
+        if (leftover.length > 0) {
+          units.push(units.length > 0
+            ? {
+              key: 'ungrouped',
+              titleKey: 'ungrouped',
+              agents: sortAgents(leftover, settings.sort),
+              head: true,
+            }
+            : { key: 'other', agents: sortAgents(leftover, settings.sort), head: false })
+        }
+        return units
+      }
+      // A role group is a repeated base, not one agent's prefix: count the
+      // bases in this column and keep only those two or more agents share. The
+      // rest — a unique base or no meaningful base — joins Ungrouped.
+      const counts = new Map()
+      const bases = leftover.map(agent => roleBaseOf(agent))
+      for (const base of bases) {
+        if (base !== '') counts.set(base, (counts.get(base) ?? 0) + 1)
+      }
+      const byBase = new Map()
+      const ungrouped = []
+      for (let index = 0; index < leftover.length; index += 1) {
+        const base = bases[index]
+        if (base === '' || counts.get(base) < 2) {
+          ungrouped.push(leftover[index])
+          continue
+        }
+        if (!byBase.has(base)) byBase.set(base, [])
+        byBase.get(base).push(leftover[index])
+      }
+      const groups = []
+      for (const [base, members] of byBase) {
+        groups.push({ key: 'role:' + base, title: base, agents: sortAgents(members, settings.sort), head: true })
+      }
+      groups.sort((left, right) => groupRecencyOf(right) - groupRecencyOf(left)
+        || String(left.title).localeCompare(String(right.title)))
+      if (ungrouped.length > 0) {
+        groups.push({
+          key: 'ungrouped',
+          titleKey: 'ungrouped',
+          agents: sortAgents(ungrouped, settings.sort),
+          head: true,
+        })
+      }
+      return units.concat(groups)
+    }
+
+    /**
+     * The first custom task group a task belongs to, if any. A pattern matches
+     * case-insensitively as a substring of the task subject, id, owner name or
+     * any write scope; a task belongs to one group.
+     * @param task - a Team task view.
+     * @param groups - the parsed custom groups, in editor order.
+     * @returns the matching group, or undefined.
+     */
+    function taskCustomGroupOf(task, groups) {
+      if (!Array.isArray(groups) || groups.length === 0) return undefined
+      const scopes = Array.isArray(task?.writeScopes) ? task.writeScopes : []
+      const values = [task?.subject, task?.id, task?.ownerName, ...scopes]
+        .filter(value => typeof value === 'string' && value !== '')
+        .map(value => value.toLowerCase())
+      for (const group of groups) {
+        for (const pattern of group.patterns) {
+          const needle = pattern.toLowerCase()
+          if (needle !== '' && values.some(value => value.includes(needle))) return group
+        }
+      }
+      return undefined
+    }
+
+    /**
+     * Build the task rows of one status column after its sort: the custom
+     * groups in editor order (each with a head, even for a single member), then
+     * the unmatched tasks. When at least one custom group has members, the
+     * unmatched tasks get their own Ungrouped head; otherwise they stay flat,
+     * so an empty group is never drawn for a whole column. There is no
+     * automatic role grouping for tasks.
+     * @param tasks - the column's tasks, already sorted.
+     * @param settings - the view settings.
+     * @returns the row units; `null` when task grouping is off or empty.
+     */
+    function planTaskGroups(tasks, settings) {
+      const custom = settings !== null && settings.taskCustomGroups === true
+        ? parseCustomGroups(settings.taskCustomGroupsText)
+        : []
+      if (custom.length === 0) return null
+      const buckets = custom.map(group => ({ key: 'custom:' + group.name, title: group.name, tasks: [] }))
+      const unmatched = []
+      for (const task of tasks) {
+        const match = taskCustomGroupOf(task, custom)
+        if (match === undefined) {
+          unmatched.push(task)
+          continue
+        }
+        buckets[custom.indexOf(match)].tasks.push(task)
+      }
+      const units = []
+      for (const bucket of buckets) {
+        if (bucket.tasks.length === 0) continue
+        units.push({ key: bucket.key, title: bucket.title, tasks: bucket.tasks, head: true })
+      }
+      if (unmatched.length > 0) {
+        units.push(units.length > 0
+          ? { key: 'ungrouped', titleKey: 'ungrouped', tasks: unmatched, head: true }
+          : { key: 'other', title: '', tasks: unmatched, head: false })
+      }
+      return units
     }
 
     /**
@@ -1925,19 +3942,6 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Walk the subagent tree below one session, breadth first.
-     *
-     * `subagentCatalog` lists only a session's DIRECT children, so the tree is
-     * walked level by level; each child's own catalog is read from the same
-     * sessions list once the host has loaded it. Activity is derived the way
-     * the Subagents menu derives it: `running` comes from the child session's
-     * own run state, and "completed" needs the closed-turn marker.
-     *
-     * @param state - the sessions list state.
-     * @param rootId - the Lead session of the tree.
-     * @returns `{ agents, childIds }` — flat entries plus the ids whose catalogs are still needed.
-     */
-    /**
      * The model this session runs, with its provider and reasoning effort.
      * `modelSelection.next` is the pending-or-last-used choice, so it is the
      * effective one; effort names live in the model catalog, so the raw id is
@@ -1970,14 +3974,40 @@ window.__ModuleLoader__.load({
       return typeof value === 'string' && value !== '' ? value : undefined
     }
 
-    function collectAgents(state, rootId) {
+    /**
+     * Walk the subagent tree below one session, breadth first.
+     *
+     * `subagentCatalog` lists only a session's DIRECT children, so the tree is
+     * walked level by level; each child's own catalog is read from the same
+     * sessions list once the host has loaded it.
+     *
+     * Activity is derived the way the Subagents menu derives it: `running` comes
+     * from the live Session status store, falling back to the list summary only
+     * while that store has no answer. The summary alone is not enough: a row the
+     * client synthesizes from a parent's catalog carries the run state of an
+     * already-open session, or `false`, and never the Host's current answer — so
+     * a running agent would sit in "idle" (the product's own `useSessionStatus`
+     * comment: catalog rows "do not establish Host running state"). The
+     * "completed" word still needs the closed-turn marker.
+     *
+     * @param state - the sessions list state.
+     * @param rootId - the Lead session of the tree.
+     * @param statuses - the live `useSessionStatus` map, when the host supplies it.
+     * @param limit - how many agents to keep, from the row's Config; a negative value keeps every one.
+     * @returns `{ agents, childIds }` — flat entries plus the ids whose catalogs are still needed.
+     */
+    function collectAgents(state, rootId, statuses, limit) {
       const agents = []
       const childIds = []
       const seen = new Set()
       if (typeof rootId !== 'string' || rootId === '') return { agents, childIds }
+      // A negative limit (the shipped default is -1) means "no limit": the board
+      // follows the catalogs to the end and counts the whole tree for the totals.
+      const configured = num(limit, AGENTS_LIMIT_DEFAULT)
+      const cap = configured < 0 ? Number.POSITIVE_INFINITY : Math.floor(configured)
       seen.add(rootId)
       const queue = [{ id: rootId, depth: 0 }]
-      while (queue.length > 0 && agents.length < AGENTS_CAP) {
+      while (queue.length > 0 && agents.length < cap) {
         const node = queue.shift()
         const catalog = listProjection(state, node.id, AGENT_CATALOG)
         if (!Array.isArray(catalog)) {
@@ -1991,7 +4021,7 @@ window.__ModuleLoader__.load({
           const summary = state?.byId?.[entry.id]
           const timing = listProjection(state, entry.id, AGENT_TIMING)
           const mode = typeof entry.mode === 'string' ? entry.mode : 'unknown'
-          const running = summary?.running === true
+          const running = (statuses?.get(entry.id)?.running ?? summary?.running) === true
           const completed = mode !== 'external' && !running && timing?.lastTurnCompleted === true
           agents.push({
             id: entry.id,
@@ -2015,7 +4045,7 @@ window.__ModuleLoader__.load({
             model: selectionOf(state, entry.id),
             preset: presetOf(state, entry.id),
           })
-          if (agents.length >= AGENTS_CAP) break
+          if (agents.length >= cap) break
           queue.push({ id: entry.id, depth: node.depth + 1 })
         }
       }
@@ -2037,6 +4067,13 @@ window.__ModuleLoader__.load({
       const runningMs = agent.running && agent.startedAt !== undefined ? Math.max(0, context.now - agent.startedAt) : 0
       const durationMs = settled > 0 || runningMs > 0 ? settled + runningMs : undefined
       const jobRows = context.jobs?.[agent.id]
+      // The roster is live and may already have dropped settled jobs with
+      // their owner session; the browser store keeps what it saw before.
+      const storedSpans = BACKGROUND.value[agent.id]
+      const rosterSpans = jobRows === undefined ? undefined : jobSpansOf(jobRows, context.now)
+      const backgroundSpans = storedSpans === undefined && rosterSpans === undefined
+        ? undefined
+        : mergeIntervals([...(storedSpans ?? []), ...(rosterSpans ?? [])])
       return {
         tokens: tokensOf(usage),
         hasTokens: usage !== undefined,
@@ -2046,8 +4083,8 @@ window.__ModuleLoader__.load({
         turns: rawStats === undefined ? undefined : num(rawStats.turns),
         cost: context.costs[agent.id],
         durationMs,
-        // Known for the agents whose roster is watched; undefined otherwise.
-        backgroundMs: jobRows === undefined ? undefined : backgroundSpanOf(jobRows, context.now),
+        // Known for the agents whose roster is watched or remembered.
+        backgroundMs: backgroundSpans === undefined ? undefined : backgroundMsOf(backgroundSpans),
         taskCount: context.taskCounts?.[agent.id] ?? 0,
       }
     }
@@ -2166,6 +4203,61 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The `[start, end]` intervals the given jobs occupied. A live job runs up
+     * to `now`; a job that never started contributes nothing.
+     * @param jobs - the agent's jobs.
+     * @param now - the ticking clock.
+     * @returns the intervals, unmerged.
+     */
+    function jobSpansOf(jobs, now) {
+      const spans = []
+      for (const job of jobs ?? []) {
+        const startedAt = num(job?.startedAt, 0)
+        if (startedAt <= 0) continue
+        const end = isLiveJob(job) ? num(now, 0) : num(job?.finishedAt, 0)
+        if (end > startedAt) spans.push([startedAt, end])
+      }
+      return spans
+    }
+
+    /**
+     * Merge overlapping or touching intervals, sorted by their start.
+     * @param intervals - candidate `[start, end]` pairs, in any order.
+     * @returns the coalesced, sorted intervals; invalid pairs are dropped.
+     */
+    function mergeIntervals(intervals) {
+      const spans = []
+      for (const span of intervals ?? []) {
+        const from = num(span?.[0], NaN)
+        const to = num(span?.[1], NaN)
+        if (!Number.isFinite(from) || !Number.isFinite(to) || to <= from) continue
+        spans.push([from, to])
+      }
+      spans.sort((left, right) => left[0] - right[0] || left[1] - right[1])
+      const merged = []
+      for (const span of spans) {
+        const last = merged[merged.length - 1]
+        if (last !== undefined && span[0] <= last[1]) {
+          last[1] = Math.max(last[1], span[1])
+          continue
+        }
+        merged.push([span[0], span[1]])
+      }
+      return merged
+    }
+
+    /**
+     * The wall time a set of intervals occupies, counting overlaps once.
+     * @param intervals - merged or unmerged `[start, end]` pairs.
+     * @returns the occupied milliseconds; 0 when nothing ran.
+     */
+    function backgroundMsOf(intervals) {
+      let total = 0
+      for (const span of mergeIntervals(intervals)) total += span[1] - span[0]
+      return total
+    }
+
+    /**
      * The wall time the given jobs occupied: the union of their intervals, so
      * two concurrent commands are counted once. A live job runs up to `now`.
      * This is the "time in background processes" figure, next to the agent's
@@ -2175,33 +4267,127 @@ window.__ModuleLoader__.load({
      * @returns the occupied milliseconds; 0 when nothing ever ran.
      */
     function backgroundSpanOf(jobs, now) {
-      const spans = []
-      for (const job of jobs ?? []) {
-        const startedAt = num(job?.startedAt, 0)
-        if (startedAt <= 0) continue
-        const end = isLiveJob(job) ? num(now, 0) : num(job?.finishedAt, 0)
-        if (end > startedAt) spans.push([startedAt, end])
-      }
-      spans.sort((left, right) => left[0] - right[0])
-      let total = 0
-      let from
-      let to
-      for (const span of spans) {
-        if (from === undefined) {
-          from = span[0]
-          to = span[1]
-          continue
+      return backgroundMsOf(jobSpansOf(jobs, now))
+    }
+
+    /* ------------------------------------------------------------------ *
+     * Background-time history: the DSH jobs service only exposes the live
+     * roster. A settled JobView stays in its owner's roster until the owner
+     * session is disposed, and then it is gone, so no API can answer "how much
+     * background time did this agent ever use?". The board therefore folds the
+     * roster's intervals into localStorage, merged per agent, and totals the
+     * union of that store and the live roster. Nothing here touches a job.
+     * ------------------------------------------------------------------ */
+
+    /** Whether a stored key is safe to copy through `Object.keys`. */
+    function safeBackgroundKey(key) {
+      return typeof key === 'string' && key !== '' && key !== '__proto__'
+        && key !== 'constructor' && key !== 'prototype'
+    }
+
+    /**
+     * Read the stored background intervals.
+     * @returns `{ value, raw }`: sanitized merged intervals per agent id, and
+     *   the stored text used to skip an unchanged write.
+     */
+    function readBackground() {
+      try {
+        const raw = window.localStorage.getItem(BACKGROUND_KEY)
+        if (raw === null || raw === '') return { value: {}, raw: '' }
+        const parsed = JSON.parse(raw)
+        if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return { value: {}, raw: '' }
+        const value = {}
+        for (const key of Object.keys(parsed)) {
+          if (!safeBackgroundKey(key) || !Array.isArray(parsed[key])) continue
+          const merged = mergeIntervals(parsed[key])
+          if (merged.length > 0) value[key] = merged
         }
-        if (span[0] <= to) {
-          to = Math.max(to, span[1])
-          continue
-        }
-        total += to - from
-        from = span[0]
-        to = span[1]
+        return { value, raw }
+      } catch {
+        // A blocked or corrupt store only costs the lifetime background time.
+        return { value: {}, raw: '' }
       }
-      if (from !== undefined) total += to - from
-      return total
+    }
+
+    /** Module-wide background store: the jobs fold writes it, the metrics read it. */
+    const BACKGROUND = readBackground()
+
+    /**
+     * Apply the per-agent and agent-count caps to a background store. Merged
+     * intervals are kept newest-first within an agent, and agents are kept by
+     * their latest interval, so a long-lived tree cannot grow the store without
+     * bound.
+     * @param value - the candidate store.
+     * @returns the capped copy.
+     */
+    function capBackground(value) {
+      const rows = []
+      for (const key of Object.keys(value)) {
+        if (!safeBackgroundKey(key)) continue
+        const merged = mergeIntervals(value[key])
+        if (merged.length === 0) continue
+        const kept = merged.length > BACKGROUND_INTERVALS_LIMIT
+          ? merged.slice(merged.length - BACKGROUND_INTERVALS_LIMIT)
+          : merged
+        rows.push({ key, intervals: kept, latest: kept[kept.length - 1][1] })
+      }
+      rows.sort((left, right) => right.latest - left.latest)
+      const capped = {}
+      for (const row of rows.slice(0, BACKGROUND_AGENTS_LIMIT)) capped[row.key] = row.intervals
+      return capped
+    }
+
+    /**
+     * Persist the background store only when it changed.
+     * @param value - the capped store to write.
+     * @returns whether a write happened.
+     */
+    function writeBackground(value) {
+      const text = JSON.stringify(value)
+      if (text === BACKGROUND.raw) return false
+      try {
+        window.localStorage.setItem(BACKGROUND_KEY, text)
+        BACKGROUND.raw = text
+        return true
+      } catch {
+        // A blocked store stops persistence for this page only.
+        return false
+      }
+    }
+
+    /**
+     * Fold one jobs-update's roster intervals into the background store. Called
+     * on every jobs change, not on the ticking clock: a live job's interval is
+     * already counted up to this moment. Writes only when the merged store
+     * actually moved, so an unchanged update costs nothing.
+     * @param jobsByAgent - `useAgentJobs().byAgent`.
+     * @param now - the moment the roster was read.
+     * @returns whether the store changed.
+     */
+    function noteBackground(jobsByAgent, now) {
+      if (jobsByAgent === null || typeof jobsByAgent !== 'object') return false
+      const at = num(now, Date.now())
+      const next = { ...BACKGROUND.value }
+      let changed = false
+      for (const agentId of Object.keys(jobsByAgent)) {
+        if (!safeBackgroundKey(agentId)) continue
+        const rows = jobsByAgent[agentId]
+        if (!Array.isArray(rows)) continue
+        const spans = jobSpansOf(rows, at)
+        if (spans.length === 0) continue
+        const previous = Array.isArray(next[agentId]) ? next[agentId] : []
+        const merged = mergeIntervals(previous.concat(spans))
+        const same = merged.length === previous.length
+          && merged.every((span, index) => span[0] === previous[index][0] && span[1] === previous[index][1])
+        if (same) continue
+        next[agentId] = merged
+        changed = true
+      }
+      if (!changed) return false
+      const capped = capBackground(next)
+      BACKGROUND.value = capped
+      writeBackground(capped)
+      return true
     }
 
     /**
@@ -2287,6 +4473,143 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Track which agent sessions ended their last turn with an error.
+     *
+     * The durable truth is each session's event log, and no projection carries
+     * it, so the board checks a settled agent once per mount and follows every
+     * new failure through the live `api-session/error` push. State is per-mount
+     * only: a fresh page re-checks, a reload loses nothing durable.
+     *
+     * A running agent is treated as not broken: a retry clears the old mark,
+     * and only a new live failure re-adds it. The live payload has no replay,
+     * so the first check per settled agent is what covers failures that
+     * happened before the board was opened.
+     *
+     * @param services - the injected face: `subscribeSessionErrors`, `loadSessionError`.
+     * @param agents - the strip rows, including the Lead, in render order.
+     * @returns a map from agent id to `{ message, code?, at }`; only agents
+     *   that are not running appear in it.
+     */
+    function useAgentErrors(services, agents) {
+      const [errors, setErrors] = useState({})
+      const checked = useRef(new Set())
+      const mounted = useRef(true)
+      const controller = useRef(undefined)
+      const agentsRef = useRef(agents)
+      agentsRef.current = agents
+      const errorsRef = useRef(errors)
+      errorsRef.current = errors
+      // A settled/running flip is the retry edge the mark follows.
+      const agentKey = agents.map(agent => agent.id + ':' + (agent.running === true ? '1' : '0')).join(',')
+
+      // The live push fires for every failed turn, including sessions whose
+      // card is not open and subagents the chat never activated.
+      useEffect(() => {
+        let off
+        try {
+          off = typeof services.subscribeSessionErrors === 'function'
+            ? services.subscribeSessionErrors(event => {
+              if (mounted.current !== true) return
+              if (event === null || typeof event !== 'object') return
+              if (typeof event.sessionId !== 'string' || event.sessionId === '') return
+              const message = typeof event.message === 'string' ? event.message : ''
+              const at = typeof event.at === 'number' && Number.isFinite(event.at) ? event.at : Date.now()
+              setErrors(current => ({ ...current, [event.sessionId]: { message, at } }))
+            })
+            : undefined
+        } catch {
+          off = undefined
+        }
+        return () => {
+          try {
+            if (typeof off === 'function') off()
+          } catch {
+            // The Remote may already be gone with the page.
+          }
+        }
+      }, [services])
+
+      // A retry starts a new turn: the old failure must not survive it. The
+      // live push re-adds the mark if this new turn fails again.
+      useEffect(() => {
+        setErrors(current => {
+          let next
+          for (const agent of agentsRef.current) {
+            if (agent.running !== true || current[agent.id] === undefined) continue
+            next = next ?? { ...current }
+            delete next[agent.id]
+          }
+          return next ?? current
+        })
+      }, [agentKey])
+
+      // One abort lifetime per mount; a changing agent list must not cancel a
+      // check that is already in flight.
+      useEffect(() => {
+        mounted.current = true
+        return () => {
+          mounted.current = false
+          const active = controller.current
+          controller.current = undefined
+          try {
+            if (active !== undefined && typeof active.abort === 'function') active.abort()
+          } catch {
+            // Aborting an already aborted check is harmless.
+          }
+        }
+      }, [])
+
+      // Backfill once per settled agent, low concurrency and bounded in count.
+      // `checked` is marked before the read so re-renders cannot duplicate it.
+      useEffect(() => {
+        if (typeof services.loadSessionError !== 'function') return
+        let active = controller.current
+        if (active === undefined && typeof AbortController === 'function') {
+          active = new AbortController()
+          controller.current = active
+        }
+        const signal = active?.signal
+        const pending = []
+        for (const agent of agentsRef.current) {
+          if (checked.current.size >= SESSION_ERROR_CHECK_CAP) break
+          if (agent.running === true) continue
+          if (errorsRef.current[agent.id] !== undefined) continue
+          if (checked.current.has(agent.id)) continue
+          checked.current.add(agent.id)
+          pending.push(agent.id)
+        }
+        if (pending.length === 0) return
+        const run = async () => {
+          for (const id of pending) {
+            if (mounted.current !== true || signal?.aborted === true) return
+            let value
+            try {
+              value = await services.loadSessionError(id, signal)
+            } catch {
+              value = undefined
+            }
+            if (mounted.current !== true || signal?.aborted === true) return
+            if (value === null || value === undefined) continue
+            setErrors(current => (current[id] === undefined ? { ...current, [id]: value } : current))
+          }
+        }
+        run()
+      }, [agentKey, services])
+
+      return useMemo(() => {
+        const visible = {}
+        for (const agent of agentsRef.current) {
+          if (agent.running === true) continue
+          const value = errors[agent.id]
+          if (value !== undefined) visible[agent.id] = value
+        }
+        return visible
+        // The agent key is the running-state identity for this projection.
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+      }, [errors, agentKey])
+    }
+
+    /**
      * Resolve the team board of the Lead session. The seat's own projection is
      * the live one, so it wins whenever this board is rendered for the Lead
      * session itself; otherwise the list payload of the root session is used,
@@ -2309,22 +4632,30 @@ window.__ModuleLoader__.load({
      * The board model: the Team projection, the subagent tree with its session
      * metrics, the observed ledger and a ticking clock.
      *
-     * @param props - the slot's framework props (`useProjection`, `useSessions`, `sessionId`).
+     * @param props - the slot's framework props (`useProjection`, `useSessions`,
+     *   `useSessionStatus`, `sessionId`).
      * @param services - the injected face: `faceOf`, `refreshProjections`, `loadCosts`, `listState`, `subscribeList`.
      * @returns the model the board renders.
      */
     function useTeamModel(props, services) {
       const { t } = props
-      // The seat supplies these two hooks for session-scoped slots. Fall back to
+      // The card order, the agent order and the grouping all follow the view
+      // settings, so the model subscribes to the same browser-local store.
+      const [settings] = useViewSettings()
+      // The seat supplies these hooks for session-scoped slots. Fall back to
       // the injected session-list face when a host build does not, so the board
       // still renders instead of failing on an absent prop.
       const useProjectionProp = typeof props.useProjection === 'function' ? props.useProjection : null
       const useSessionsProp = typeof props.useSessions === 'function' ? props.useSessions : null
+      // `useSessionStatus` is a global standard prop, so every slot gets it; the
+      // fallback keeps an older host rendering with the list summary alone.
+      const useStatusProp = typeof props.useSessionStatus === 'function' ? props.useSessionStatus : null
       const own = useProjectionProp === null ? undefined : useProjectionProp(TEAM_PROJECTION)
       const [, setVersion] = useState(0)
       const state = useSessionsProp === null
         ? services.listState()
         : useSessionsProp(snapshot => snapshot)
+      const statuses = useStatusProp === null ? undefined : useStatusProp(value => value)
       useEffect(() => {
         if (useSessionsProp !== null) return undefined
         return services.subscribeList(() => { setVersion(value => value + 1) })
@@ -2334,7 +4665,8 @@ window.__ModuleLoader__.load({
       const resolved = useMemo(() => resolveTeam(state, props.sessionId, own), [state, props.sessionId, own])
       const team = resolved.team
       const rootId = resolved.rootId
-      const tree = useMemo(() => collectAgents(state, rootId), [state, rootId])
+      const [limit, setLimit] = useState(AGENTS_LIMIT_DEFAULT)
+      const tree = useMemo(() => collectAgents(state, rootId, statuses, limit), [state, rootId, statuses, limit])
       const agents = tree.agents
       const agentIds = tree.childIds
       const ledger = useLedger()
@@ -2342,6 +4674,27 @@ window.__ModuleLoader__.load({
       const [now, setNow] = useState(() => Date.now())
       const [costState, setCostState] = useState('idle')
       const refreshed = useRef({})
+      /** Whether the row's limit has been read; a late settings surface retries until it has. */
+      const limitKnown = useRef(false)
+
+      /**
+       * Read the row's `agentsLimit` from the settings document. The board
+       * renders before the answer arrives and after a failed read, so the
+       * built-in default covers both.
+       */
+      const readLimit = useCallback(async () => {
+        let value
+        try {
+          value = await services.pluginLimit()
+        } catch {
+          value = undefined
+        }
+        if (typeof value !== 'number' || !Number.isFinite(value)) return
+        limitKnown.current = true
+        setLimit(current => (current === value ? current : value))
+      }, [services])
+
+      useEffect(() => { readLimit() }, [readLimit])
 
       const tasks = useMemo(() => {
         const list = Array.isArray(team?.tasks) ? team.tasks : []
@@ -2361,7 +4714,7 @@ window.__ModuleLoader__.load({
       const lead = useMemo(() => {
         if (typeof rootId !== 'string' || rootId === '') return undefined
         const summary = state?.byId?.[rootId]
-        const running = summary?.running === true
+        const running = (statuses?.get(rootId)?.running ?? summary?.running) === true
         const name = typeof summary?.title === 'string' && summary.title !== ''
           ? summary.title
           : (typeof summary?.displayTitle === 'string' && summary.displayTitle !== ''
@@ -2384,7 +4737,7 @@ window.__ModuleLoader__.load({
           model: selectionOf(state, rootId),
           preset: presetOf(state, rootId),
         }
-      }, [state, rootId, t])
+      }, [state, rootId, statuses, t])
 
       const taskCounts = useMemo(() => {
         const counts = {}
@@ -2418,6 +4771,9 @@ window.__ModuleLoader__.load({
         })
       }, [agents, lead])
 
+      /** The failed-last-turn marks of the strip, per mount and by agent id. */
+      const agentErrors = useAgentErrors(services, stripAgents)
+
       /**
        * The sessions whose job rosters the board watches. The strip lists the
        * Lead first and then the running agents, so the cap takes those before
@@ -2436,6 +4792,14 @@ window.__ModuleLoader__.load({
       /** The attributed jobs of every watched agent; read-only and optional. */
       const jobs = useAgentJobs(services, jobsIds)
 
+      // Settled JobViews are dropped with their owner session, so the roster
+      // alone cannot total the lifetime background time: fold each roster
+      // change into the browser store. Live jobs are already counted up to
+      // this moment, so the ticking clock does not need this effect.
+      useEffect(() => {
+        noteBackground(jobs.byAgent, Date.now())
+      }, [jobs.byAgent])
+
       /** The same rows, grouped by the status the task columns use. */
       const agentColumns = useMemo(() => {
         const groups = AGENT_COLUMNS.map(column => ({ ...column, agents: [] }))
@@ -2444,8 +4808,27 @@ window.__ModuleLoader__.load({
           const group = groups.find(candidate => candidate.key === key) ?? groups[groups.length - 1]
           group.agents.push(agent)
         }
-        return groups
-      }, [stripAgents])
+        // The Lead is pinned on top of its own column, without a group head.
+        // The rest follow the role/custom grouping when a switch is on; with
+        // both switches off they follow the view sort like every other list.
+        return groups.map(column => {
+          const leadRow = column.agents.find(agent => agent.isLead === true)
+          const rest = column.agents.filter(agent => agent.isLead !== true)
+          const units = planAgentGroups(rest, settings)
+          if (units === null) {
+            const ordered = sortAgents(rest, settings.sort)
+            return {
+              ...column,
+              agents: leadRow === undefined ? ordered : [leadRow, ...ordered],
+              groups: null,
+              lead: leadRow,
+            }
+          }
+          const rows = leadRow === undefined ? [] : [leadRow]
+          for (const unit of units) rows.push(...unit.agents)
+          return { ...column, agents: rows, groups: units, lead: leadRow }
+        })
+      }, [stripAgents, settings])
 
       const costIds = useMemo(() => {
         const ids = []
@@ -2478,6 +4861,7 @@ window.__ModuleLoader__.load({
         let costUsd
         let costCny
         let realUsd
+        let realCny
         let durationMs
         let durationKnown = false
         let backgroundMs
@@ -2510,6 +4894,7 @@ window.__ModuleLoader__.load({
             if (typeof cost.equivalentUsd === 'number') costUsd = num(costUsd) + cost.equivalentUsd
             else if (typeof cost.equivalentCny === 'number') costCny = num(costCny) + cost.equivalentCny
             if (typeof cost.realUsd === 'number') realUsd = num(realUsd) + cost.realUsd
+            if (typeof cost.realCny === 'number') realCny = num(realCny) + cost.realCny
           }
         }
         return {
@@ -2522,6 +4907,7 @@ window.__ModuleLoader__.load({
               usd: costUsd,
               cny: costCny,
               realUsd: costUsd === undefined ? undefined : num(realUsd),
+              realCny: costUsd === undefined ? num(realCny) : undefined,
               text: costUsd !== undefined ? formatMoney(costUsd, '$') : formatMoney(costCny, '¥'),
               currency: costUsd !== undefined ? 'USD' : 'CNY',
             },
@@ -2554,6 +4940,10 @@ window.__ModuleLoader__.load({
           }
         }
         for (const id of targets) services.refreshProjections(id)
+        // A configuration edit reaches the board on an explicit refresh; a
+        // settings surface that mounted late is retried by the periodic pass
+        // until it has answered once.
+        if (force === true || limitKnown.current !== true) readLimit()
         if (costIds.length === 0) return
         const result = await services.loadCosts(costIds)
         if (result === null) {
@@ -2564,7 +4954,7 @@ window.__ModuleLoader__.load({
         setCostState('ready')
         setNow(Date.now())
         // eslint-disable-next-line react-hooks/exhaustive-deps
-      }, [costIds.join(','), agentIds.join(','), rootId, props.sessionId, services])
+      }, [costIds.join(','), agentIds.join(','), rootId, props.sessionId, services, readLimit])
 
       useEffect(() => {
         pull(false)
@@ -2581,11 +4971,17 @@ window.__ModuleLoader__.load({
         const grouped = {}
         for (const column of COLUMNS) grouped[column.key] = []
         for (const task of tasks) grouped[columnOf(task)].push(task)
-        return COLUMNS.map(column => ({
-          ...column,
-          tasks: grouped[column.key].sort((left, right) => String(left.id).localeCompare(String(right.id), undefined, { numeric: true })),
-        }))
-      }, [tasks])
+        return COLUMNS.map(column => {
+          const ordered = sortTasks(grouped[column.key], settings.sort, ledger)
+          return {
+            ...column,
+            tasks: ordered,
+            // `null` keeps the flat list the board has always drawn; an array
+            // adds the custom task groups and the unmatched tail.
+            groups: planTaskGroups(ordered, settings),
+          }
+        })
+      }, [tasks, ledger, settings])
 
       const timelines = useMemo(() => {
         const map = {}
@@ -2600,6 +4996,7 @@ window.__ModuleLoader__.load({
         timelines,
         agents: stripAgents,
         agentColumns,
+        agentErrors,
         jobs,
         totals,
         agentStats,
@@ -2633,14 +5030,28 @@ window.__ModuleLoader__.load({
       faceOf: () => undefined,
       refreshProjections: () => {},
       loadCosts: async () => null,
+      pluginLimit: async () => undefined,
       listState: () => undefined,
       subscribeList: () => () => {},
       jobsSnapshot: () => undefined,
       watchJobs: () => undefined,
       subscribeJobs: () => () => {},
       openAgent: () => {},
+      openFileLink: () => {},
+      checkLocalPath: async () => undefined,
+      loadAgentReport: async () => undefined,
+      loadSessionError: async () => undefined,
+      subscribeSessionErrors: () => () => {},
       agentLabel: (key, fallback) => fallback,
     }
+
+    /**
+     * Agent ids that owned at least one background job while this page has
+     * been open. The set survives remounts of the tab, so a chip that appeared
+     * once stays behind as a settled count instead of vanishing when the
+     * process finishes. Page state only — nothing here reaches localStorage.
+     */
+    const JOBS_SEEN = new Set()
 
     /**
      * Pick the money figure to show. The board shows the API-equivalent value
@@ -2666,6 +5077,42 @@ window.__ModuleLoader__.load({
       }
       if (real !== undefined) return { text: formatMoney(real, '$'), currency: 'USD', equivalentUsd: undefined, realUsd: real }
       return undefined
+    }
+
+    /**
+     * Whether the real spend is below the plan-inclusive equivalent, which is
+     * what a subscription looks like: the tokens cost more at list price than
+     * the wallet paid. `normalizeCost` keeps both currencies, so the CNY record
+     * is judged on its own pair.
+     * @param cost - a normalized cost record.
+     * @returns whether the plan note applies.
+     */
+    function costOnPlan(cost) {
+      if (cost === null || typeof cost !== 'object') return false
+      if (typeof cost.equivalentUsd === 'number' && typeof cost.realUsd === 'number') {
+        return cost.realUsd < cost.equivalentUsd
+      }
+      if (typeof cost.equivalentCny === 'number' && typeof cost.realCny === 'number') {
+        return cost.realCny < cost.equivalentCny
+      }
+      return false
+    }
+
+    /**
+     * The native title of every cost figure: the money the wallet paid beside
+     * the plan-inclusive equivalent of the same tokens. The symbol follows the
+     * record's currency — `realUsd` carries the CNY amount when `moneyOf` picked
+     * the CNY equivalent — and a missing figure reads as an em dash.
+     * @param cost - a normalized cost record.
+     * @param t - translate function.
+     * @returns the tooltip text, or undefined when there is no figure at all.
+     */
+    function costSpendTitle(cost, t) {
+      const money = moneyOf(cost)
+      if (money === undefined) return undefined
+      const symbol = money.currency === 'CNY' ? '¥' : '$'
+      const real = typeof money.realUsd === 'number' ? formatMoney(money.realUsd, symbol) : '—'
+      return t('metricCostApiSpend') + ': ' + real + ' · ' + t('metricCostEquivalent') + ': ' + money.text
     }
 
     /**
@@ -2706,38 +5153,52 @@ window.__ModuleLoader__.load({
 
     /**
      * The owner line of a card. A subagent owner is a link to that agent's
-     * session; the Lead or an unknown owner stays plain text.
-     * @param props - `task`, `whoById`, `t`, `onOpenAgent`.
+     * session; the Lead or an unknown owner stays plain text. Hovering either
+     * variant reports the owner so the agents strip can light the agent row.
+     * @param props - `task`, `whoById`, `t`, `onOpenAgent`, `onHoverOwner`.
      */
-    function OwnerLine({ task, whoById, t, onOpenAgent }) {
+    function OwnerLine({ task, whoById, t, onOpenAgent, onHoverOwner = undefined }) {
       const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
       const who = ownerId === undefined ? undefined : whoById[ownerId]
       const label = who !== undefined
         ? who.name
         : (typeof task.ownerName === 'string' && task.ownerName !== '' ? task.ownerName : t('statusUnowned'))
+      const hoverIn = () => {
+        if (typeof onHoverOwner === 'function' && ownerId !== undefined) onHoverOwner(ownerId)
+      }
+      const hoverOut = () => {
+        if (typeof onHoverOwner === 'function') onHoverOwner(null)
+      }
       if (who !== undefined && who.isLead !== true) {
         return h('button', {
           type: 'button',
           className: 'tk-owner-link',
           title: t('agentOpenHint'),
           'data-agent-id': who.id,
+          onMouseEnter: hoverIn,
+          onMouseLeave: hoverOut,
           onClick: event => {
             event.stopPropagation()
             onOpenAgent(who.id, 'main')
           },
         }, h(Icon, { name: 'users', size: 10 }), h('span', null, label))
       }
-      return h('span', { className: 'tk-card-owner', title: who?.isLead === true ? t('agentHeading') : undefined },
-        who?.isLead === true ? h(Icon, { name: 'users', size: 10 }) : null,
-        h('span', null, label))
+      return h('span', {
+        className: 'tk-card-owner',
+        title: who?.isLead === true ? t('agentHeading') : undefined,
+        onMouseEnter: hoverIn,
+        onMouseLeave: hoverOut,
+      },
+      who?.isLead === true ? h(Icon, { name: 'users', size: 10 }) : null,
+      h('span', null, label))
     }
 
     /**
      * The task card. A button so keyboard users reach the inspector too. It
      * carries task facts only: the agent's numbers are in the strip.
-     * @param props - `task`, `whoById`, `t`, `onOpen`, `onOpenAgent`.
+     * @param props - `task`, `flipGroup`, `whoById`, `t`, `onOpen`, `onOpenAgent`, `onHoverOwner`.
      */
-    function TaskCard({ task, whoById, t, onOpen, onOpenAgent }) {
+    function TaskCard({ task, flipGroup, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined }) {
       const state = stateOfTask(task)
       const broken = Array.isArray(task.blockedBy) ? task.blockedBy.length : 0
       const scopes = Array.isArray(task.writeScopes) ? task.writeScopes.length : 0
@@ -2748,6 +5209,8 @@ window.__ModuleLoader__.load({
         'data-state': state,
         'data-blocked': state === 'warning' ? 'true' : 'false',
         'data-task-id': task.id,
+        'data-flip-id': 'task:' + task.id,
+        'data-flip-group': flipGroup,
         onClick: () => { onOpen(task.id) },
         'aria-label': task.subject,
       },
@@ -2756,30 +5219,48 @@ window.__ModuleLoader__.load({
           h('span', { className: 'tk-card-title' }, String(task.subject ?? task.id))),
         h('span', { className: 'tk-card-meta' },
           h('span', { className: 'tk-card-id' }, '#' + String(task.id).replace(/^task-/, '')),
-          h(OwnerLine, { task, whoById, t, onOpenAgent }),
+          h(OwnerLine, { task, whoById, t, onOpenAgent, onHoverOwner }),
           broken > 0 ? h(Chip, { tone: 'warn', icon: 'link' }, String(broken)) : null,
           scopes > 0 ? h(Chip, { icon: 'pen' }, String(scopes)) : null))
     }
 
     /**
+     * The visible title of one group unit. A custom or role group carries its
+     * data name; the built-in leftover group carries a dictionary key.
+     * @param unit - one group unit.
+     * @param t - translate function.
+     * @returns the title text.
+     */
+    function groupUnitTitle(unit, t) {
+      if (unit.titleKey === 'ungrouped') return t('ungrouped')
+      return unit.titleKey === undefined ? unit.title : t(unit.titleKey)
+    }
+
+    /**
      * One status group's header. The whole row is the disclosure button, so a
      * click anywhere on it folds the pile; the count sits in the row and
-     * therefore stays visible while the group is folded.
-     * @param props - `groupId`, `state`, `title`, `count`, `expanded`, `label`, `onToggle`.
+     * therefore stays visible while the group is folded. Only a status column's
+     * own header carries a state dot: the outer head repeats the column colour,
+     * while a nested head (a role or custom group inside it) stays chevron,
+     * title and count and is marked with `data-subgroup`. Callers pass `state`
+     * for an outer head and leave it undefined for a nested one.
+     * @param props - `groupId`, optional `state`, `title`, `count`, `expanded`,
+     *   `label`, `onToggle`, and `subgroup` for a nested head.
      */
-    function GroupHead({ groupId, state, title, count, expanded, label, onToggle }) {
+    function GroupHead({ groupId, state, title, count, expanded, label, onToggle, subgroup = false }) {
       return h('button', {
         type: 'button',
         className: 'tk-col-head tk-col-fold',
         'data-fold': 'group',
         'data-target': groupId,
+        'data-subgroup': subgroup === true ? 'true' : undefined,
         'aria-expanded': expanded === true ? 'true' : 'false',
         'aria-label': label,
         title: label,
         onClick: () => { onToggle(groupId, count) },
       },
       h(Icon, { name: 'chevron-down', size: 11, className: 'tk-chevron' }),
-      h(StateDot, { state, size: 9 }),
+      state === undefined ? null : h(StateDot, { state, size: 9 }),
       h('span', { className: 'tk-col-title' }, title),
       h('span', { className: 'tk-col-count' }, String(count)))
     }
@@ -2787,20 +5268,26 @@ window.__ModuleLoader__.load({
     /**
      * The "show all / show less" control of one over-long group. It is a
      * single button, so its DOM node — and the keyboard focus on it — survives
-     * the switch between the two labels.
-     * @param props - `groupId`, `remaining`, `expanded`, `t`, `onExpand`, `onCollapse`.
+     * the switch between the two labels. The callbacks receive the board id,
+     * so the expansion stays scoped to the board that owns the group.
+     * @param props - `boardId`, `groupId`, `remaining`, `expanded`, `t`,
+     *   `onExpand`, `onCollapse`.
      */
-    function OverflowToggle({ groupId, remaining, expanded, t, onExpand, onCollapse }) {
+    function OverflowToggle({ boardId, groupId, remaining, expanded, t, onExpand, onCollapse }) {
       const label = expanded ? t('showLess') : t('showMore') + ' +' + String(remaining)
       return h('button', {
         type: 'button',
         className: expanded ? 'tk-more tk-more-less' : 'tk-more',
         'data-group': groupId,
+        'data-board': boardId,
         'data-remaining': String(expanded ? 0 : remaining),
         'aria-expanded': expanded === true ? 'true' : 'false',
         'aria-label': label,
         title: label,
-        onClick: () => { if (expanded === true) onCollapse(groupId); else onExpand(groupId) },
+        onClick: () => {
+          if (expanded === true) onCollapse(boardId, groupId)
+          else onExpand(boardId, groupId)
+        },
       },
       h('span', { className: 'tk-more-label' }, expanded ? t('showLess') : t('showMore')),
       expanded === true ? null : h('span', { className: 'tk-more-count' }, '+' + String(remaining)))
@@ -2809,21 +5296,28 @@ window.__ModuleLoader__.load({
     /**
      * The items of one expanded status group: capped at VISIBLE_LIMIT until
      * the reader asks for the rest of the pile. The cap is view state only,
-     * while the header count always comes from the data.
-     * @param props - `groupId`, `count`, `t`, `renderEmpty`, `renderItem`,
-     *   `onExpand`, `onCollapse`.
+     * while the header count always comes from the data. A pile expanded past
+     * the cap scrolls inside its own column, so the panel does not grow with
+     * it; the show-less control stays below the scroll box. The board id scopes
+     * the page-session expansion, so two open boards keep their own choices.
+     * @param props - `boardId`, `groupId`, `count`, `t`, `renderEmpty`,
+     *   `renderItem`, `onExpand`, `onCollapse`.
      */
-    function GroupBody({ groupId, count, t, renderEmpty, renderItem, onExpand, onCollapse }) {
-      const expanded = isGroupExpanded(groupId)
+    function GroupBody({ boardId, groupId, count, t, renderEmpty, renderItem, onExpand, onCollapse }) {
+      const expanded = isGroupExpanded(boardId, groupId)
       const capped = count > VISIBLE_LIMIT && !expanded
       const shown = capped ? VISIBLE_LIMIT : count
       const items = []
       for (let index = 0; index < shown; index += 1) items.push(renderItem(index))
+      const scroll = expanded && count > VISIBLE_LIMIT
       return h('div', { className: 'tk-col-body', 'data-group-body': groupId },
-        count === 0 ? renderEmpty() : items,
+        count === 0
+          ? renderEmpty()
+          : (scroll ? h('div', { className: 'tk-col-items', 'data-scroll': 'true' }, items) : items),
         count <= VISIBLE_LIMIT
           ? null
           : h(OverflowToggle, {
+            boardId,
             groupId,
             remaining: count - shown,
             expanded,
@@ -2834,11 +5328,48 @@ window.__ModuleLoader__.load({
     }
 
     /** One column with its header and cards. */
-    function BoardColumn({ column, whoById, t, onOpen, onOpenAgent, onToggleGroup, onExpandGroup, onCollapseGroup }) {
+    function BoardColumn({ boardId, column, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined, onToggleGroup, onExpandGroup, onCollapseGroup }) {
       const count = column.tasks.length
       const groupId = groupIdOf('tasks', column.key)
-      const collapsed = isGroupCollapsed(groupId, count)
+      const collapsed = isGroupCollapsed(boardId, groupId, count)
       const title = t('col' + column.key.charAt(0).toUpperCase() + column.key.slice(1))
+      const renderEmpty = () => h('span', { className: 'tk-col-empty' }, t('emptyColumn'))
+      const renderCard = task => h(TaskCard, {
+        key: task.id, task, flipGroup: column.key, whoById, t, onOpen, onOpenAgent, onHoverOwner,
+      })
+      /** One custom task group, or the flat unmatched tail after the groups. */
+      const renderUnit = unit => {
+        if (unit.head !== true) {
+          return h(React.Fragment, { key: unit.key }, unit.tasks.map(renderCard))
+        }
+        const subgroupId = groupIdOf('tasks', column.key + ':' + unit.key)
+        const folded = isGroupCollapsed(boardId, subgroupId, unit.tasks.length)
+        const title = groupUnitTitle(unit, t)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title
+        return h(React.Fragment, { key: unit.key },
+          h(GroupHead, {
+            groupId: subgroupId,
+            title,
+            count: unit.tasks.length,
+            expanded: !folded,
+            label,
+            onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
+            subgroup: true,
+          }),
+          folded
+            ? null
+            : h(GroupBody, {
+              boardId,
+              groupId: subgroupId,
+              count: unit.tasks.length,
+              t,
+              renderEmpty,
+              renderItem: index => renderCard(unit.tasks[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            }))
+      }
+      const units = Array.isArray(column.groups) ? column.groups : null
       return h('section', { className: 'tk-col', 'data-column': column.key },
         h(GroupHead, {
           groupId,
@@ -2847,91 +5378,322 @@ window.__ModuleLoader__.load({
           count,
           expanded: !collapsed,
           label: (collapsed ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,
-          onToggle: onToggleGroup,
+          onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
         }),
         collapsed
           ? null
-          : h(GroupBody, {
-            groupId,
-            count,
-            t,
-            renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-            renderItem: index => {
-              const task = column.tasks[index]
-              return h(TaskCard, {
-                key: task.id, task, whoById, t, onOpen, onOpenAgent,
-              })
-            },
-            onExpand: onExpandGroup,
-            onCollapse: onCollapseGroup,
-          }))
+          : (units === null
+            ? h(GroupBody, {
+              boardId,
+              groupId,
+              count,
+              t,
+              renderEmpty,
+              renderItem: index => renderCard(column.tasks[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            })
+            : h('div', { className: 'tk-col-body', 'data-group-body': groupId },
+              count === 0 ? renderEmpty() : units.map(renderUnit))))
     }
 
     /**
-     * One agent of the strip: identity on the first line, and on the second its
-     * read-only background-jobs chip plus the session metrics.
-     * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`,
-     *   `onOpenAgent`, `onInspect`.
+     * One agent of the strip: identity and the read-only background-jobs chip
+     * on the first line, and the session metrics on the second. The whole row is
+     * a clickable surface that opens the agent dialog, exactly like a task card
+     * opens the task dialog; the name and the two icon buttons keep their own
+     * actions and stop the click from reaching the row. `showAgentModel` adds
+     * an opt-in ellipsized model line that closes the metric row — beside the
+     * statistics when they fit, on its own right-aligned line when the row
+     * wraps; `showModelProvider`, `showModelName` and `showModelEffort` pick
+     * its visible parts — the tooltip carries the full `provider · model ·
+     * effort` either way.
+     * @param props - `agent`, `stats`, `jobs`, `error`, `now`, `t`, `tAgent`,
+     *   `flipGroup`, `onOpenAgent`, `onInspect`, `hovered` when a card owner is
+     *   hovered, and `showAgentModel`, `showModelProvider`, `showModelName`,
+     *   `showModelEffort` from the view settings. `error` is the failed
+     *   last-turn mark of this agent, when any.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, onOpenAgent, onInspect }) {
+    function AgentRow({ agent, stats, jobs, error = undefined, now, t, tAgent, flipGroup, onOpenAgent, onInspect, hovered = false, showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
+      // A live push carries the message only; an empty one still says the last
+      // turn failed rather than showing a bare label.
+      const errorText = error === null || error === undefined
+        ? undefined
+        : (typeof error.message === 'string' && error.message !== '' ? error.message : t('errorTurnFailed'))
+      const errorTitle = errorText === undefined ? undefined : t('sessionError') + ': ' + errorText
+      const selection = agent.model
+      const partsOf = fields => (selection === undefined
+        ? []
+        : fields.map(field => selection[field]).filter(part => typeof part === 'string' && part !== ''))
+      // The tooltip always names the full selection; the visible line joins only
+      // the parts the reader left on, in provider · model · effort order. An
+      // unknown selection, or no enabled part, adds no line at all.
+      const modelTitle = partsOf(['provider', 'model', 'effort']).join(' · ')
+      const modelFields = []
+      if (showModelProvider === true) modelFields.push('provider')
+      if (showModelName === true) modelFields.push('model')
+      if (showModelEffort === true) modelFields.push('effort')
+      const modelLine = partsOf(modelFields).join(' · ')
+      const modelVisible = showAgentModel === true && modelLine !== ''
       const items = agentMetricLine(stats, t)
-      const agentJobs = Array.isArray(jobs) ? jobs : []
+      const rosterRead = Array.isArray(jobs)
+      const agentJobs = rosterRead ? jobs : []
+      // Once an agent owned a job, keep the chip as a settled count even after
+      // the last process finishes; the set lives for the page, not the mount.
+      if (rosterRead && agentJobs.length > 0) JOBS_SEEN.add(agent.id)
+      const showJobs = rosterRead && JOBS_SEEN.has(agent.id)
       const live = liveJobsOf(agentJobs)
       const longest = live.length === 0 ? undefined : jobElapsed(live[0], now)
-      const backgroundMs = backgroundSpanOf(agentJobs, now)
-      // The chip counts every background job the agent owns; the live color and
-      // the tooltip tell how many of them still hold it and how much wall time
-      // the background took next to the run duration beside it.
+      // The metric already adds the remembered history to the live roster;
+      // the chip's tooltip shows the same lifetime total.
+      const backgroundMs = stats !== undefined && typeof stats.backgroundMs === 'number'
+        ? stats.backgroundMs
+        : backgroundSpanOf(agentJobs, now)
+      // The chip counts every background job the agent owns, a settled zero
+      // included; the live color and the tooltip tell how many of them still
+      // hold it and how much wall time the background took.
       const jobsLabel = agentJobs.length === 0
-        ? undefined
+        ? t('jobsHeading') + ': 0'
         : (live.length === 0
           ? t('jobsHeading') + ': ' + String(agentJobs.length)
           : t('jobsRunningCount') + ': ' + String(live.length)
             + (longest === undefined ? '' : ' · ' + t('jobsLongest') + ' ' + formatSpan(longest, t)))
           + ' · ' + t('metricBackground') + ' ' + formatSpan(backgroundMs, t)
+      // The chip sits on the title row right before the panel button, so it
+      // stays visible while the metric row below carries statistics and the
+      // model. The metric row wraps: the model line rides at the end of it,
+      // beside the statistics when they fit and on its own right-aligned line
+      // when the card narrows; appending it only when visible keeps the row
+      // off an empty card.
+      const jobsChip = showJobs === false
+        ? null
+        : h('span', {
+          key: 'jobs',
+          className: 'tk-chip tk-agent-jobs',
+          'data-live': live.length > 0 ? 'true' : 'false',
+          title: jobsLabel,
+          'aria-label': jobsLabel,
+        }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length))
+      const metaParts = [...items]
+      if (modelVisible === true) {
+        metaParts.push(h('span', { key: 'model', className: 'tk-agent-model', title: modelTitle }, modelLine))
+      }
       return h('div', {
         className: 'tk-agent-row',
+        role: 'button',
+        tabIndex: 0,
+        title: errorTitle,
+        'aria-label': errorTitle === undefined ? agent.name : agent.name + ' — ' + errorTitle,
         'data-activity': agent.activity,
         'data-agent-id': agent.id,
         'data-lead': agent.isLead === true ? 'true' : 'false',
+        'data-error': errorText === undefined ? undefined : 'true',
+        'data-hover': hovered === true ? 'true' : 'false',
+        'data-flip-id': 'agent:' + agent.id,
+        'data-flip-group': flipGroup,
+        onClick: () => { onInspect(agent.id) },
+        onKeyDown: event => {
+          if (event === null || typeof event !== 'object') return
+          if (event.key !== 'Enter' && event.key !== ' ' && event.key !== 'Spacebar') return
+          // Space would otherwise scroll the panel under the focused row.
+          if (event.key !== 'Enter' && typeof event.preventDefault === 'function') event.preventDefault()
+          onInspect(agent.id)
+        },
       },
       h('div', { className: 'tk-agent-main' },
         h(StateDot, { state: dot, size: 9 }),
         h('button', {
           type: 'button',
           className: 'tk-agent-name',
-          title: activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
-          onClick: () => { onOpenAgent(agent.id, 'main') },
+          title: (errorTitle === undefined ? '' : errorTitle + ' — ')
+            + activityOf(agent, tAgent) + ' — ' + t('agentOpenHint'),
+          onClick: event => {
+            stopEvent(event)
+            onOpenAgent(agent.id, 'main')
+          },
         }, agent.name),
-        mode === undefined ? null : h('span', { className: 'tk-agent-mode' }, mode),
+        // A failed session gets a small mark beside its name; the row title
+        // carries the same text, so hovering the card shows it too.
+        errorText === undefined
+          ? null
+          : h('span', {
+            className: 'tk-agent-error',
+            title: errorTitle,
+            'aria-label': errorTitle,
+          }, h(Icon, { name: 'alert', size: 10 })),
+        // The word beside the name is the DSH subagent mode, not a status: its
+        // tooltip names the mode and explains what it means.
+        mode === undefined ? null : h('span', {
+          className: 'tk-agent-mode',
+          title: t('agentMode') + ': ' + mode + ' — ' + t('agentModeHint'),
+        }, mode),
         h('span', { className: 'tk-head-spacer' }),
-        h('button', {
-          type: 'button',
-          className: 'tk-icon-btn tk-agent-info',
-          title: t('agentDetails'),
-          'aria-label': t('agentDetails'),
-          onClick: () => { onInspect(agent.id) },
-        }, h(Icon, { name: 'gauge', size: 11 })),
+        jobsChip,
         h('button', {
           type: 'button',
           className: 'tk-icon-btn tk-agent-jump',
           title: t('agentOpenAsideHint'),
           'aria-label': t('agentOpenAsideHint'),
-          onClick: () => { onOpenAgent(agent.id, 'aside') },
+          onClick: event => {
+            stopEvent(event)
+            onOpenAgent(agent.id, 'aside')
+          },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
-      agentJobs.length === 0 && items.length === 0
+      metaParts.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
-          agentJobs.length === 0 ? null : h('span', {
-            key: 'jobs',
-            className: 'tk-chip tk-agent-jobs',
-            'data-live': live.length > 0 ? 'true' : 'false',
-            title: jobsLabel,
-            'aria-label': jobsLabel,
-          }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length)),
-          items))
+          // The metrics keep their order and their place, and the model line
+          // closes the row, so appearing or vanishing never shifts a metric
+          // icon. The jobs chip lives on the title row instead.
+          metaParts))
+    }
+
+    /** The sort choices the header menu offers, in display order. */
+    const SORT_OPTIONS = [
+      { value: 'newest', labelKey: 'setSortNewest' },
+      { value: 'oldest', labelKey: 'setSortOldest' },
+      { value: 'name', labelKey: 'setSortName' },
+    ]
+
+    /**
+     * The compact grouping switch a section header carries next to its sort
+     * control. Every switch owns exactly one of the view settings the Settings
+     * page edits — `autoRoleGroups`, `customGroups` or `taskCustomGroups` — so
+     * a header switch and its Settings checkbox always agree, and no switch
+     * writes or remembers a combined state.
+     * @param props - `on`, the visible `label`, the setting `hint`, and `onToggle`.
+     */
+    function GroupingToggle({ on, label, hint, onToggle }) {
+      return h('button', {
+        type: 'button',
+        className: 'tk-group-toggle',
+        'data-on': on === true ? 'true' : 'false',
+        'aria-pressed': on === true ? 'true' : 'false',
+        'aria-label': hint,
+        title: hint,
+        onClick: () => { onToggle() },
+      }, h(Icon, { name: 'layers', size: 10 }), h('span', null, label))
+    }
+
+    /**
+     * The compact sort menu both section headers carry. It writes the same
+     * `sort` view setting the Settings page edits, so the board reorders in
+     * place without leaving the tab. A native `<select>` renders its popup in
+     * the platform's own (light) surface over the dark panel, so the menu is
+     * drawn from the product's theme tokens instead.
+     * @param props - `sort`, `onChange` and `t`.
+     */
+    function SortSelect({ sort, onChange, t }) {
+      const [open, setOpen] = useState(false)
+      const [active, setActive] = useState(() => Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort)))
+      const rootRef = useRef(null)
+      const buttonRef = useRef(null)
+      const label = t('setSorting')
+      const current = SORT_OPTIONS.find(option => option.value === sort) ?? SORT_OPTIONS[0]
+
+      // Close on an outside pointer press or Escape while the menu is open.
+      useEffect(() => {
+        if (!open) return undefined
+        const onPointer = event => {
+          const root = rootRef.current
+          if (root !== null && typeof root.contains === 'function'
+            && typeof event.target === 'object' && root.contains(event.target)) return
+          setOpen(false)
+        }
+        const onKey = event => {
+          if (event !== null && event.key === 'Escape') setOpen(false)
+        }
+        if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+          document.addEventListener('pointerdown', onPointer)
+        }
+        if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+          window.addEventListener('keydown', onKey)
+        }
+        return () => {
+          if (typeof document !== 'undefined' && typeof document.removeEventListener === 'function') {
+            document.removeEventListener('pointerdown', onPointer)
+          }
+          if (typeof window !== 'undefined' && typeof window.removeEventListener === 'function') {
+            window.removeEventListener('keydown', onKey)
+          }
+        }
+      }, [open])
+
+      const choose = value => {
+        setOpen(false)
+        if (typeof onChange === 'function') onChange(value)
+      }
+      const move = step => {
+        const from = open ? active : Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort))
+        setActive((from + step + SORT_OPTIONS.length) % SORT_OPTIONS.length)
+        if (!open) setOpen(true)
+      }
+      const closeMenu = () => {
+        setOpen(false)
+        const node = buttonRef.current
+        if (node !== null && node !== undefined && typeof node.focus === 'function') node.focus()
+      }
+      const onKeyDown = event => {
+        if (event === null || typeof event !== 'object') return
+        if (event.key === 'Escape' && open) {
+          stopEvent(event)
+          closeMenu()
+          return
+        }
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+          stopEvent(event)
+          move(event.key === 'ArrowDown' ? 1 : -1)
+          return
+        }
+        if (open && (event.key === 'Enter' || event.key === ' ' || event.key === 'Spacebar')) {
+          stopEvent(event)
+          choose(SORT_OPTIONS[active].value)
+        }
+      }
+
+      return h('div', {
+        className: 'tk-sort',
+        'data-sort': 'true',
+        ref: rootRef,
+        onKeyDown,
+      },
+      h('button', {
+        type: 'button',
+        className: 'tk-sort-btn',
+        ref: buttonRef,
+        title: label,
+        'aria-label': label,
+        'aria-haspopup': 'menu',
+        'aria-expanded': open ? 'true' : 'false',
+        onClick: event => {
+          stopEvent(event)
+          if (!open) setActive(Math.max(0, SORT_OPTIONS.findIndex(option => option.value === sort)))
+          setOpen(value => !value)
+        },
+      },
+      h('span', { className: 'tk-sort-label' }, t(current.labelKey)),
+      h(Icon, { name: 'chevron-down', size: 10, className: 'tk-sort-chevron' })),
+      open
+        ? h('div', { className: 'tk-sort-menu', role: 'menu', 'aria-label': label },
+          SORT_OPTIONS.map((option, index) => h('button', {
+            key: option.value,
+            type: 'button',
+            role: 'menuitemradio',
+            className: 'tk-sort-option',
+            'data-value': option.value,
+            'data-active': index === active ? 'true' : 'false',
+            'aria-checked': option.value === sort ? 'true' : 'false',
+            onFocus: () => { setActive(index) },
+            onClick: event => {
+              stopEvent(event)
+              choose(option.value)
+            },
+          },
+          h(Icon, { name: 'check', size: 10, className: 'tk-sort-check' }),
+          h('span', null, t(option.labelKey)))))
+        : null)
     }
 
     /**
@@ -2944,29 +5706,40 @@ window.__ModuleLoader__.load({
       // The same order the agent rows and the dialog use: run time, tokens,
       // agent-hours, money.
       if (totals.durationMs !== undefined) {
-        items.push(h(Chip, { key: 'duration', icon: 'clock', title: t('metricDuration') }, formatSpan(totals.durationMs, t)))
+        items.push(h(Chip, { key: 'duration', icon: 'clock', title: t('metricDuration') },
+          h(AnimatedText, { text: formatSpan(totals.durationMs, t) })))
       }
       if (totals.backgroundMs !== undefined) {
         items.push(h(Chip, {
           key: 'background',
           icon: 'activity',
           title: t('metricBackground'),
-        }, formatSpan(totals.backgroundMs, t)))
+        }, h(AnimatedText, { text: formatSpan(totals.backgroundMs, t) })))
       }
       if (totals.tokens !== undefined) {
-        items.push(h(Chip, { key: 'tokens', icon: 'hash', title: t('metricTokens') }, formatTokens(totals.tokens)))
+        items.push(h(Chip, { key: 'tokens', icon: 'hash', title: t('metricTokens') },
+          h(AnimatedText, { text: formatTokens(totals.tokens) })))
       }
       if (totals.hours !== undefined) {
-        items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') }, formatHours(totals.hours) + t('unitHour')))
+        items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') },
+          h(AnimatedText, { text: formatHours(totals.hours) + t('unitHour') })))
       }
       if (totals.cost !== undefined) {
-        const planPart = totals.cost.realUsd !== undefined && totals.cost.usd !== undefined
-          && totals.cost.realUsd < totals.cost.usd
+        const costRecord = {
+          equivalentUsd: totals.cost.usd,
+          equivalentCny: totals.cost.cny,
+          realUsd: totals.cost.realUsd,
+          realCny: totals.cost.realCny,
+        }
+        const spendTitle = costSpendTitle(costRecord, t)
+        const planPart = costOnPlan(costRecord)
         items.push(h(Chip, {
           key: 'cost',
           icon: 'coin',
-          title: t('agentsTotalCost') + (planPart ? ' · ' + t('costPlanNote') + ' ' + formatMoney(totals.cost.realUsd, '$') : ''),
-        }, totals.cost.text))
+          title: spendTitle === undefined
+            ? t('agentsTotalCost')
+            : spendTitle + (planPart ? ' · ' + t('costPlanNote') : ''),
+        }, h(AnimatedText, { text: totals.cost.text })))
       }
       if (items.length === 0) return null
       return h('div', { className: 'tk-totals', 'data-agent-team-viewer': 'totals' },
@@ -2976,36 +5749,109 @@ window.__ModuleLoader__.load({
 
     /**
      * The agents of the tree, broken down by the same statuses the task board
-     * uses — the Lead first inside its own group, then every subagent.
-     * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
-     *   `costState`, `totals`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
-     *   `onToggleSection`, `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`.
+     * uses — the Lead first inside its own group, then every subagent. When a
+     * grouping switch is on, each status column renders custom and role groups
+     * with their own foldable headers; otherwise it stays a flat list.
+     * @param props - `columns`, `agentStats`, `jobsByAgent`, `agentErrors`, `now`,
+     *   `columnCount`, `costState`, `totals`, `sort`, `t`, `tAgent`, `onOpenAgent`,
+     *   `onInspect`, `onSortChange`, `hoverOwnerId`, `onToggleSection`,
+     *   `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`, `showAgentModel`,
+     *   `showModelProvider`, `agentGroups` (`roles` and `custom` flags) and
+     *   `onToggleAgentGroup`.
      */
     function AgentsStrip({
-      columns, agentStats, jobsByAgent, now, columnCount, costState, totals, t, tAgent, onOpenAgent, onInspect,
-      onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
+      boardId, columns, agentStats, jobsByAgent, agentErrors = {}, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
+      onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
+      showAgentModel = false, showModelProvider = false, showModelName = true, showModelEffort = true,
+      agentGroups = { roles: false, custom: false }, onToggleAgentGroup = undefined,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
       const countLabel = plural(t, subagents, ['agentsOne', 'agentsFew', 'agentsMany'])
       const seenCols = columnCount >= 4 ? 3 : columnCount
-      const collapsed = isSectionCollapsed('agents')
+      const collapsed = isSectionCollapsed(boardId, 'agents')
+      const renderRow = (agent, flipGroup) => h(AgentRow, {
+        key: agent.id,
+        agent,
+        stats: agentStats[agent.id],
+        jobs: jobsByAgent[agent.id],
+        error: agentErrors[agent.id],
+        now,
+        t,
+        tAgent,
+        flipGroup,
+        onOpenAgent,
+        onInspect,
+        hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
+        showAgentModel,
+        showModelProvider,
+        showModelName,
+        showModelEffort,
+      })
+      /** Whether a nested group is a head, and the body it reveals when open. */
+      const renderUnit = (column, unit) => {
+        if (unit.head !== true) {
+          return h(React.Fragment, { key: unit.key }, unit.agents.map(agent => renderRow(agent, column.key)))
+        }
+        const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
+        const folded = isGroupCollapsed(boardId, subgroupId, unit.agents.length)
+        const title = groupUnitTitle(unit, t)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title
+        return h(React.Fragment, { key: unit.key },
+          h(GroupHead, {
+            groupId: subgroupId,
+            title,
+            count: unit.agents.length,
+            expanded: !folded,
+            label,
+            onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
+            subgroup: true,
+          }),
+          folded
+            ? null
+            : h(GroupBody, {
+              boardId,
+              groupId: subgroupId,
+              count: unit.agents.length,
+              t,
+              renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
+              renderItem: index => renderRow(unit.agents[index], column.key),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            }))
+      }
       return h('section', { className: 'tk-agents', 'data-agent-team-viewer': 'agents' },
         h('div', { className: 'tk-agents-head' },
           h(FoldToggle, {
             expanded: !collapsed,
             label: (collapsed ? t('unfoldSection') : t('foldSection')) + ' · ' + t('agentsHeading'),
             target: 'agents',
-            onClick: onToggleSection,
+            onClick: target => { onToggleSection(boardId, target) },
           }),
           h(Icon, { name: 'users', size: 11 }),
           h('h3', { className: 'tk-sec-title' }, t('agentsHeading')),
           h('span', { className: 'tk-sec-note' }, String(subagents) + ' ' + countLabel),
           h('span', { className: 'tk-head-spacer' }),
-          h('span', {
-            className: 'tk-note',
-            title: costState === 'missing' ? t('costMissingHint') : undefined,
-          }, costState === 'missing' ? t('costMissing') : t('agentOpenHint'))),
+          costState === 'missing'
+            ? h('span', { className: 'tk-note', title: t('costMissingHint') }, t('costMissing'))
+            : null,
+          h(GroupingToggle, {
+            on: agentGroups.roles === true,
+            label: t('groupRoles'),
+            hint: t('setAutoRoleGroups'),
+            onToggle: () => {
+              if (typeof onToggleAgentGroup === 'function') onToggleAgentGroup('autoRoleGroups')
+            },
+          }),
+          h(GroupingToggle, {
+            on: agentGroups.custom === true,
+            label: t('groupCustom'),
+            hint: t('setCustomGroups'),
+            onToggle: () => {
+              if (typeof onToggleAgentGroup === 'function') onToggleAgentGroup('customGroups')
+            },
+          }),
+          h(SortSelect, { sort, onChange: onSortChange, t })),
         collapsed
           ? null
           : h(React.Fragment, null,
@@ -3014,7 +5860,7 @@ window.__ModuleLoader__.load({
               columns.map(column => {
                 const groupId = groupIdOf('agents', column.key)
                 const count = column.agents.length
-                const folded = isGroupCollapsed(groupId, count)
+                const folded = isGroupCollapsed(boardId, groupId, count)
                 const title = t(column.labelKey)
                 return h('section', {
                   key: column.key,
@@ -3028,32 +5874,28 @@ window.__ModuleLoader__.load({
                   count,
                   expanded: !folded,
                   label: (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,
-                  onToggle: onToggleGroup,
+                  onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
                 }),
                 folded
                   ? null
-                  : h(GroupBody, {
-                    groupId,
-                    count,
-                    t,
-                    renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-                    renderItem: index => {
-                      const agent = column.agents[index]
-                      return h(AgentRow, {
-                        key: agent.id,
-                        agent,
-                        stats: agentStats[agent.id],
-                        jobs: jobsByAgent[agent.id],
-                        now,
-                        t,
-                        tAgent,
-                        onOpenAgent,
-                        onInspect,
-                      })
-                    },
-                    onExpand: onExpandGroup,
-                    onCollapse: onCollapseGroup,
-                  }))
+                  : (column.groups === null
+                    ? h(GroupBody, {
+                      boardId,
+                      groupId,
+                      count,
+                      t,
+                      renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
+                      renderItem: index => renderRow(column.agents[index], column.key),
+                      onExpand: onExpandGroup,
+                      onCollapse: onCollapseGroup,
+                    })
+                    : h('div', { className: 'tk-col-body', 'data-group-body': groupId },
+                      count === 0
+                        ? h('span', { className: 'tk-col-empty' }, t('emptyColumn'))
+                        : [
+                          column.lead === undefined ? null : renderRow(column.lead, column.key),
+                          ...column.groups.map(unit => renderUnit(column, unit)),
+                        ])))
               }))))
     }
 
@@ -3079,14 +5921,26 @@ window.__ModuleLoader__.load({
     function BoardTab(props) {
       const { t } = props
       const services = props.services ?? NO_SERVICES
+      // Panel scale is a view preference; the panel root below is the only
+      // element it touches — the header action and the dialogs are elsewhere.
+      const [settings, updateSettings] = useViewSettings()
       const model = useTeamModel(props, services)
       const [selected, setSelected] = useState(null)
       const [inspectedAgent, setInspectedAgent] = useState(null)
+      // Reports are read from the owning agent's chat, not from the task
+      // record; they are cached per owner so reopening a task is instant.
+      const [reports, setReports] = useState({})
+      const reportRequests = useRef(new Set())
+      // The owner line of a card lights its agent row while the pointer is on
+      // it, so "who works on this" and "that row" read as one thing.
+      const [hoverOwner, setHoverOwner] = useState(null)
       const [columnCount, setColumnCount] = useState(4)
       // Bumped after a local fold change: the fold state lives outside React so
       // it survives remounts of the tab, exactly like the observation ledger.
       const [, bumpView] = useState(0)
       const rootRef = useRef(null)
+      /** Card and row rectangles of the previous render, keyed by FLIP id. */
+      const flipRects = useRef(new Map())
 
       useEffect(() => {
         const node = rootRef.current
@@ -3099,11 +5953,95 @@ window.__ModuleLoader__.load({
         return () => { observer.disconnect() }
       }, [])
 
+      // FLIP: a card that moved to another column or group glides from where
+      // it was to where it is. A card that only shifted because a sibling
+      // resized did not change its logical place, so it stays put — animating
+      // every layout shift made the cards twitch. The pass only reads the DOM;
+      // no state. It no-ops when the harness has no real DOM, when the setting
+      // is off or when the reader asked for reduced motion.
+      useEffect(() => {
+        const root = rootRef.current
+        if (root === null || typeof root.querySelectorAll !== 'function') return
+        if (typeof document === 'undefined' || typeof Element === 'undefined') return
+        const nodes = root.querySelectorAll('[data-flip-id]')
+        const previous = flipRects.current
+        const next = new Map()
+        const moves = []
+        for (const node of nodes) {
+          const id = typeof node.getAttribute === 'function' ? node.getAttribute('data-flip-id') : null
+          if (id === null || id === '') continue
+          const group = typeof node.getAttribute === 'function'
+            ? (node.getAttribute('data-flip-group') ?? '')
+            : ''
+          const before = previous.get(id)
+          const changedGroup = before !== undefined && before.group !== group
+          // A transform feeds back into getBoundingClientRect; cancel the old
+          // animation before measuring so a repeat pass reads the layout.
+          if (changedGroup && typeof node.getAnimations === 'function') {
+            for (const animation of node.getAnimations()) {
+              try {
+                animation.cancel()
+              } catch {
+                // An animation that already finished is nothing to cancel.
+              }
+            }
+          }
+          const box = node.getBoundingClientRect()
+          next.set(id, { left: box.left, top: box.top, group })
+          if (!changedGroup) continue
+          const dx = before.left - box.left
+          const dy = before.top - box.top
+          if (dx === 0 && dy === 0) continue
+          moves.push({ node, dx, dy })
+        }
+        // Replace the snapshot every pass, even when nothing animates: the next
+        // move must be measured against the layout the reader just saw.
+        flipRects.current = next
+        if (moves.length === 0) return
+        if (settings.animateCards !== true || !(settings.animationMs > 0)) return
+        if (typeof window.matchMedia === 'function') {
+          let reduced = false
+          try {
+            reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches === true
+          } catch {
+            reduced = false
+          }
+          if (reduced) return
+        }
+        for (const move of moves) {
+          if (typeof move.node.animate !== 'function') continue
+          try {
+            move.node.animate([
+              { transform: 'translate(' + String(move.dx) + 'px,' + String(move.dy) + 'px)' },
+              { transform: 'none' },
+            ], { duration: settings.animationMs, easing: 'cubic-bezier(0.2,0,0,1)' })
+          } catch {
+            // An element that cannot start an animation lands in its new place.
+          }
+        }
+      })
+
       /** How many items each status group holds, keyed by the stable group id. */
       const groupCounts = useMemo(() => {
         const counts = {}
-        for (const column of model.agentColumns) counts[groupIdOf('agents', column.key)] = column.agents.length
-        for (const column of model.columns) counts[groupIdOf('tasks', column.key)] = column.tasks.length
+        for (const column of model.agentColumns) {
+          counts[groupIdOf('agents', column.key)] = column.agents.length
+          // A nested role/custom group folds itself like a status group does.
+          for (const unit of column.groups ?? []) {
+            if (unit.head === true) {
+              counts[groupIdOf('agents', column.key + ':' + unit.key)] = unit.agents.length
+            }
+          }
+        }
+        for (const column of model.columns) {
+          counts[groupIdOf('tasks', column.key)] = column.tasks.length
+          // A nested custom task group folds itself like a status group does.
+          for (const unit of column.groups ?? []) {
+            if (unit.head === true) {
+              counts[groupIdOf('tasks', column.key + ':' + unit.key)] = unit.tasks.length
+            }
+          }
+        }
         return counts
       }, [model.agentColumns, model.columns])
 
@@ -3111,33 +6049,69 @@ window.__ModuleLoader__.load({
       // itself the first time it is seen that big. The headers already render
       // folded because the resolver reads the count, so nothing jumps here.
       useEffect(() => {
-        noteAutoCollapse(groupCounts)
-      }, [groupCounts])
+        noteAutoCollapse(model.rootId, groupCounts)
+      }, [groupCounts, model.rootId])
 
       /** Re-render after a fold change; nothing here touches the board data. */
       const refreshView = useCallback(() => {
         bumpView(version => version + 1)
       }, [])
-      const foldSection = useCallback(section => {
-        toggleSection(section)
+      // Each handler takes the board id explicitly, so the agents strip and the
+      // task columns can reuse one handler without sharing the fold state.
+      const foldSection = useCallback((boardId, section) => {
+        toggleSection(boardId, section)
         refreshView()
       }, [refreshView])
-      const foldGroup = useCallback((groupId, count) => {
-        toggleGroup(groupId, count)
+      const foldGroup = useCallback((boardId, groupId, count) => {
+        toggleGroup(boardId, groupId, count)
         refreshView()
       }, [refreshView])
-      const showAllItems = useCallback(groupId => {
-        expandGroup(groupId)
+      const showAllItems = useCallback((boardId, groupId) => {
+        expandGroup(boardId, groupId)
         refreshView()
       }, [refreshView])
-      const showCappedItems = useCallback(groupId => {
-        collapseGroup(groupId)
+      const showCappedItems = useCallback((boardId, groupId) => {
+        collapseGroup(boardId, groupId)
         refreshView()
       }, [refreshView])
 
       const selectedTask = selected === null
         ? undefined
         : model.tasks.find(task => task.id === selected)
+
+      /** The owner whose final answer the dialog's Report tab reads. */
+      const reportOwnerId = selectedTask !== undefined
+        && typeof selectedTask.ownerId === 'string' && selectedTask.ownerId !== ''
+        ? selectedTask.ownerId
+        : undefined
+
+      // One read per owner per mount: the answer cannot change while the
+      // dialog is open in a way the viewer could follow cheaply, and the read
+      // is a one-shot snapshot rather than a subscription.
+      useEffect(() => {
+        if (reportOwnerId === undefined) return
+        if (reportRequests.current.has(reportOwnerId)) return
+        reportRequests.current.add(reportOwnerId)
+        if (typeof services.loadAgentReport !== 'function') {
+          setReports(current => ({ ...current, [reportOwnerId]: { state: 'empty' } }))
+          return
+        }
+        setReports(current => (current[reportOwnerId] === undefined
+          ? { ...current, [reportOwnerId]: { state: 'loading' } }
+          : current))
+        Promise.resolve()
+          .then(() => services.loadAgentReport(reportOwnerId))
+          .then(text => {
+            const ready = typeof text === 'string' && text.trim() !== ''
+            setReports(current => ({
+              ...current,
+              [reportOwnerId]: ready ? { state: 'ready', text } : { state: 'empty' },
+            }))
+          })
+          .catch(() => {
+            setReports(current => ({ ...current, [reportOwnerId]: { state: 'empty' } }))
+          })
+      }, [reportOwnerId, services])
 
       const countLabel = plural(t, model.tasks.length, ['tasksOne', 'tasksFew', 'tasksMany'])
       // Navigating away must not leave a dialog hanging over the new view.
@@ -3153,9 +6127,9 @@ window.__ModuleLoader__.load({
       const agentTasks = inspected === undefined
         ? []
         : model.tasks.filter(task => task.ownerId === inspected.id)
-      const tasksCollapsed = isSectionCollapsed('tasks')
+      const tasksCollapsed = isSectionCollapsed(model.rootId, 'tasks')
 
-      return h('div', { className: 'tk-root', ref: rootRef },
+      return h('div', { className: 'tk-root', ref: rootRef, style: { zoom: settings.uiScale } },
         h(Styles, null),
         h('div', { className: 'tk-scroll' },
           h('div', { className: 'tk-head' },
@@ -3182,21 +6156,35 @@ window.__ModuleLoader__.load({
 
           model.agents.length > 0
             ? h(AgentsStrip, {
+              boardId: model.rootId,
               columns: model.agentColumns,
               agentStats: model.agentStats,
               jobsByAgent: model.jobs.byAgent,
+              agentErrors: model.agentErrors,
               now: model.now,
               columnCount,
               costState: model.costState,
               totals: model.totals,
+              sort: settings.sort,
+              onSortChange: value => { updateSettings({ sort: value }) },
               t,
               tAgent,
               onOpenAgent: openAgent,
               onInspect: inspectAgent,
+              hoverOwnerId: hoverOwner ?? undefined,
               onToggleSection: foldSection,
               onToggleGroup: foldGroup,
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
+              showAgentModel: settings.showAgentModel === true,
+              showModelProvider: settings.showModelProvider === true,
+              showModelName: settings.showModelName === true,
+              showModelEffort: settings.showModelEffort === true,
+              agentGroups: {
+                roles: settings.autoRoleGroups === true,
+                custom: settings.customGroups === true,
+              },
+              onToggleAgentGroup: key => { updateSettings({ [key]: settings[key] !== true }) },
             })
             : null,
 
@@ -3207,12 +6195,23 @@ window.__ModuleLoader__.load({
               expanded: !tasksCollapsed,
               label: (tasksCollapsed ? t('unfoldSection') : t('foldSection')) + ' · ' + t('tasksHeading'),
               target: 'tasks',
-              onClick: foldSection,
+              onClick: target => { foldSection(model.rootId, target) },
             }),
             h(Icon, { name: 'kanban', size: 11 }),
             h('h3', { className: 'tk-sec-title' }, t('tasksHeading')),
             h('span', { className: 'tk-sec-note' }, String(model.tasks.length) + ' ' + countLabel),
-            h('span', { className: 'tk-head-spacer' })),
+            h('span', { className: 'tk-head-spacer' }),
+            h(GroupingToggle, {
+              on: settings.taskCustomGroups === true,
+              label: t('groupCustom'),
+              hint: t('setTaskCustomGroups'),
+              onToggle: () => { updateSettings({ taskCustomGroups: settings.taskCustomGroups !== true }) },
+            }),
+            h(SortSelect, {
+              sort: settings.sort,
+              onChange: value => { updateSettings({ sort: value }) },
+              t,
+            })),
 
           tasksCollapsed
             ? null
@@ -3220,6 +6219,7 @@ window.__ModuleLoader__.load({
               onToggleGroup: foldGroup,
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
+              onHoverOwner: setHoverOwner,
             }),
 
           model.tasks.length > 0
@@ -3232,14 +6232,21 @@ window.__ModuleLoader__.load({
         selectedTask === undefined
           ? null
           : h(TaskInspector, {
+            key: selectedTask.id,
             task: selectedTask,
             timeline: model.timelines[selectedTask.id],
             agent: selectedTask.ownerId === undefined ? undefined : model.whoById[selectedTask.ownerId],
             stats: selectedTask.ownerId === undefined ? undefined : model.agentStats[selectedTask.ownerId],
+            report: reportOwnerId === undefined
+              ? undefined
+              : (reports[reportOwnerId] ?? { state: 'loading' }),
             t,
             tAgent,
             costState: model.costState,
+            sessionId: model.rootId,
+            checkLocalPath: services.checkLocalPath,
             onOpenAgent: openAgent,
+            onOpenFile: path => { services.openFileLink(model.rootId, path) },
             onInspect: inspectAgent,
             onClose: () => { setSelected(null) },
           }),
@@ -3250,6 +6257,7 @@ window.__ModuleLoader__.load({
             agent: inspected,
             stats: model.agentStats[inspected.id],
             jobs: model.jobs.byAgent[inspected.id],
+            error: model.agentErrors[inspected.id],
             tasks: agentTasks,
             costState: model.costState,
             whoById: model.whoById,
@@ -3284,7 +6292,8 @@ window.__ModuleLoader__.load({
      * @param setSelected - opens the task inspector.
      * @param openAgent - navigates to an agent.
      * @param tAgent - translator for the subagent namespace.
-     * @param fold - the fold handlers: `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`.
+     * @param fold - the fold handlers plus the owner-hover reporter:
+     *   `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`, `onHoverOwner`.
      * @returns the body element.
      */
     function boardBody(model, t, columnCount, setSelected, openAgent, tAgent, fold) {
@@ -3304,12 +6313,14 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'tk-board', 'data-cols': String(columnCount) },
         model.columns.map(column => h(BoardColumn, {
           key: column.key,
+          boardId: model.rootId,
           column,
           whoById: model.whoById,
           t,
           tAgent,
           onOpen: setSelected,
           onOpenAgent: openAgent,
+          onHoverOwner: fold.onHoverOwner,
           onToggleGroup: fold.onToggleGroup,
           onExpandGroup: fold.onExpandGroup,
           onCollapseGroup: fold.onCollapseGroup,
@@ -3372,11 +6383,22 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Whether a write scope names a folder rather than a file. A trailing slash
+     * is the one convention the task record offers, in either separator.
+     * @param path - the scope string.
+     * @returns whether the workspace should open the Files page for it.
+     */
+    function isFolderScope(path) {
+      return typeof path === 'string' && (path.endsWith('/') || path.endsWith('\\'))
+    }
+
+    /**
      * The task dialog.
      * @param props - `task`, `timeline`, `agent`, `stats`, `t`, `tAgent`,
-     *   `costState`, `onOpenAgent`, `onInspect`, `onClose`.
+     *   `costState`, `report`, `sessionId`, `checkLocalPath`, `onOpenAgent`,
+     *   `onOpenFile`, `onInspect`, `onClose`.
      */
-    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, onOpenAgent = undefined, onInspect = undefined, onClose }) {
+    function TaskInspector({ task, timeline, agent, stats, t, tAgent = undefined, costState, report = undefined, sessionId = undefined, checkLocalPath = undefined, onOpenAgent = undefined, onOpenFile = undefined, onInspect = undefined, onClose }) {
       useEffect(() => {
         const onKey = event => {
           if (event.key === 'Escape') onClose()
@@ -3384,6 +6406,70 @@ window.__ModuleLoader__.load({
         window.addEventListener('keydown', onKey)
         return () => { window.removeEventListener('keydown', onKey) }
       }, [onClose])
+
+      // The dialog's two pages: the task's own facts (the default) and the
+      // owning subagent's final answer. The report is read by the board and
+      // handed in; this component only picks which page to draw.
+      // The dialog scale is its own view preference: only the panel zooms, the
+      // backdrop keeps its size and the dialog stays centred.
+      const [viewSettings] = useViewSettings()
+      const [activeTab, setActiveTab] = useState('description')
+
+      // Local-path existence is checked once per unique path for the lifetime
+      // of this dialog: the card mounts one TaskInspector per selected task id,
+      // so opening another task (or reopening this one) starts a new cache.
+      // `pending` renders as plain text until the answer arrives, so a dead
+      // link never flashes in; `unknown` keeps the link, because an install
+      // without the workspace-files Remote must not lose every link.
+      const [, setPathVersion] = useState(0)
+      const pathCache = useRef(new Map())
+      const pathRequests = useRef(new Map())
+      const pathAbort = useRef(null)
+      useEffect(() => () => {
+        const controller = pathAbort.current
+        if (controller !== null && typeof controller.abort === 'function') controller.abort()
+      }, [])
+
+      /**
+       * The existence state of one local path: `yes`, `no`, `pending` or
+       * `unknown`. The first ask starts exactly one check per normalized path;
+       * later asks, including those of a re-render, read the cache.
+       * @param rawPath - a workspace path, either separator, folder trailing.
+       * @returns the state word.
+       */
+      const statusOf = useCallback((rawPath) => {
+        const key = typeof rawPath === 'string' ? rawPath.trim().replace(/\\/g, '/') : ''
+        if (key === '') return 'unknown'
+        const cached = pathCache.current.get(key)
+        if (cached !== undefined) return cached
+        if (typeof checkLocalPath !== 'function') {
+          pathCache.current.set(key, 'unknown')
+          return 'unknown'
+        }
+        pathCache.current.set(key, 'pending')
+        if (!pathRequests.current.has(key)) {
+          pathRequests.current.set(key, Promise.resolve()
+            .then(() => {
+              let controller = pathAbort.current
+              if (controller === null || controller.signal?.aborted === true) {
+                controller = typeof AbortController === 'function' ? new AbortController() : null
+                pathAbort.current = controller
+              }
+              return checkLocalPath(sessionId, key, controller === null ? undefined : controller.signal)
+            })
+            .then(value => {
+              // A dialog that already closed must not schedule a render.
+              if (pathAbort.current?.signal?.aborted === true) return
+              pathCache.current.set(key, value === true ? 'yes' : value === false ? 'no' : 'unknown')
+              setPathVersion(version => version + 1)
+            }, () => {
+              if (pathAbort.current?.signal?.aborted === true) return
+              pathCache.current.set(key, 'unknown')
+              setPathVersion(version => version + 1)
+            }))
+        }
+        return 'pending'
+      }, [checkLocalPath, sessionId])
 
       const state = stateOfTask(task)
       const timelineValue = timeline ?? {}
@@ -3399,6 +6485,7 @@ window.__ModuleLoader__.load({
       const owner = typeof task.ownerName === 'string' && task.ownerName !== ''
         ? task.ownerName
         : (typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : t('statusUnowned'))
+      const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
       const agentName = agent === undefined ? owner : agent.name
       const scopes = Array.isArray(task.writeScopes) ? task.writeScopes : []
       const deps = Array.isArray(task.blockedBy) ? task.blockedBy : []
@@ -3408,6 +6495,42 @@ window.__ModuleLoader__.load({
       const activityText = agent === undefined ? undefined : activityOf(agent, translateAgent)
       const modeText = agent === undefined ? undefined : modeOf(agent, translateAgent)
 
+      // The owning agent's numbers sit in the header meta line now; the Agent
+      // section below keeps the agent's identity and mode only.
+      const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
+
+      // The owning agent's actions sit in the header's right corner, left of
+      // the close control, so the agent block itself stays facts only. The
+      // assignee chip is the details affordance: with a resolved owner and an
+      // inspector it becomes a button, otherwise it stays a plain chip.
+      const ownerChip = typeof onInspect === 'function' && ownerId !== undefined
+        ? h('button', {
+          type: 'button',
+          className: 'tk-chip tk-owner-chip',
+          title: t('agentDetails'),
+          'aria-label': t('agentDetails'),
+          onClick: () => { onInspect(ownerId) },
+        }, h(Icon, { name: 'users', size: 10 }), h('span', null, agentName))
+        : h(Chip, { icon: 'users' }, agentName)
+
+      const headActions = agent === undefined
+        ? null
+        : h('span', { className: 'tk-insp-actions' },
+          typeof onOpenAgent !== 'function' ? null : h('button', {
+            type: 'button',
+            className: 'tk-icon-btn',
+            title: t('agentOpenHint'),
+            'aria-label': t('agentOpenHint'),
+            onClick: () => { onOpenAgent(task.ownerId, 'main') },
+          }, h(Icon, { name: 'chevron-right', size: 13 })),
+          typeof onOpenAgent !== 'function' ? null : h('button', {
+            type: 'button',
+            className: 'tk-icon-btn',
+            title: t('agentOpenAsideHint'),
+            'aria-label': t('agentOpenAsideHint'),
+            onClick: () => { onOpenAgent(task.ownerId, 'aside') },
+          }, h(Icon, { name: 'panel-right', size: 13 })))
+
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
           h('h2', { className: 'tk-insp-title' }, String(task.subject ?? task.id)),
@@ -3415,18 +6538,24 @@ window.__ModuleLoader__.load({
             h(StateDot, { state, size: 10 }),
             h(Chip, { tone: statusTone }, statusLabel),
             h('span', { className: 'tk-card-id' }, '#' + String(task.id).replace(/^task-/, '')),
-            agent === undefined
-              ? h(Chip, { icon: 'users' }, owner)
-              : h(Chip, { icon: 'users' }, agentName),
+            ownerChip,
+            agentLine.length === 0
+              ? null
+              : h('span', {
+                className: 'tk-insp-stats',
+                title: t('agentMetricsNote'),
+                'aria-label': t('agentMetricsNote'),
+              }, agentLine),
             deps.length > 0 ? h(Chip, { tone: 'warn', icon: 'link' }, String(deps.length)) : null)),
         h('span', { className: 'tk-head-spacer' }),
+        headActions,
         h('button', {
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
 
-      const descriptionBlock = h(Section, { title: t('description'), icon: 'pen' },
-        h('p', { className: 'tk-body-text', 'data-empty': description === '' ? 'true' : 'false' },
-          description === '' ? t('noDescription') : description))
+      const descriptionPane = description === ''
+        ? h('p', { className: 'tk-body-text', 'data-empty': 'true' }, t('noDescription'))
+        : h(Markdown, { text: description, onOpenFile, t, statusOf })
 
       const timelineBlock = h(Section, {
         title: t('taskTimeline'),
@@ -3453,36 +6582,18 @@ window.__ModuleLoader__.load({
           children: h('span', { className: 'tk-mono' }, String(task.revision ?? '—')),
         })))
 
-      const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
       const agentBlock = task.ownerId === undefined
         ? null
-        : h(Section, { title: t('agentHeading'), icon: 'users', note: t('agentMetricsNote') },
+        : h(Section, { title: t('agentHeading'), icon: 'users' },
           h('dl', { className: 'tk-kv' },
             KeyRow({ name: 'agentName', label: t('agentLabel'), children: agentName }),
             activityText === undefined ? null : KeyRow({ name: 'agentActivity', label: t('stateLabel'), children: activityText }),
-            modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })),
-          agentLine.length === 0 ? null : h('div', { className: 'tk-stats' }, agentLine),
-          onOpenAgent === undefined ? null : h('div', { className: 'tk-actions' },
-            h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenHint'),
-              onClick: () => { onOpenAgent(task.ownerId, 'main') },
-            }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen')),
-            agent === undefined ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenAsideHint'),
-              onClick: () => { onOpenAgent(task.ownerId, 'aside') },
-            }, h(Icon, { name: 'panel-right', size: 11 }), t('agentOpenAside')),
-            onInspect === undefined || agent === undefined ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              onClick: () => { onInspect(task.ownerId) },
-            }, h(Icon, { name: 'gauge', size: 11 }), t('agentDetails'))))
+            modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })))
 
       const depsBlock = h(Section, {
-        title: t('dependencies'), icon: 'link', note: deps.length === 0 ? t('noDependencies') : undefined,
+        title: t('dependencies'), icon: 'link',
+        note: deps.length === 0 ? t('noDependencies') : undefined,
+        noteBelow: deps.length === 0,
       },
       deps.length === 0 ? null : h('ul', { className: 'tk-list' }, deps.map(id => h('li', { key: id },
         h(Icon, { name: 'chevron-right', size: 10 }),
@@ -3494,12 +6605,105 @@ window.__ModuleLoader__.load({
           h('span', { className: 'tk-warn' }, h(Icon, { name: 'alert', size: 10 }), h('span', null, warning)))))
 
       const scopesBlock = h(Section, {
-        title: t('writeScopes'), icon: 'folder', note: scopes.length === 0 ? t('noWriteScopes') : undefined,
+        title: t('writeScopes'), icon: 'folder',
+        note: scopes.length === 0 ? t('noWriteScopes') : undefined,
+        noteBelow: scopes.length === 0,
       },
-      scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => h('li', { key: scope },
-        h(Icon, { name: 'pen', size: 10 }),
-        h('span', { className: 'tk-mono' }, scope)))),
+      scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => {
+        const folder = isFolderScope(scope)
+        const hint = folder ? t('openFolderHint') : t('openFileHint')
+        const status = statusOf(scope)
+        // A scope that does not exist (or is still being checked) stays in the
+        // list as plain text: no button, no focus, no click target.
+        if (status === 'no' || status === 'pending') {
+          return h('li', { key: scope },
+            h('span', {
+              className: status === 'no' ? 'tk-mono tk-file-missing' : 'tk-mono',
+              title: status === 'no' ? t('fileMissingHint') : undefined,
+            }, scope))
+        }
+        return h('li', { key: scope },
+          h('button', {
+            type: 'button',
+            className: 'tk-file-link',
+            'data-scope': scope,
+            title: hint,
+            'aria-label': hint + ': ' + scope,
+            onClick: () => { if (typeof onOpenFile === 'function') onOpenFile(scope) },
+          },
+          h(Icon, { name: folder ? 'folder' : 'pen', size: 10 }),
+          h('span', { className: 'tk-mono' }, scope)))
+      })),
       warningBlock)
+
+      const reportState = report !== null && typeof report === 'object' && typeof report.state === 'string'
+        ? report.state
+        : 'empty'
+      const reportText = report !== null && typeof report === 'object' && typeof report.text === 'string'
+        ? report.text
+        : ''
+      const reportBlock = reportState === 'loading'
+        ? h('div', { className: 'tk-report', 'data-report': 'loading' },
+          h('span', { className: 'tk-note' }, t('reportLoading')))
+        : reportState === 'ready'
+          ? h('div', { className: 'tk-report', 'data-report': 'ready' },
+            h(Markdown, { text: reportText, onOpenFile, t, statusOf }))
+          : h('div', { className: 'tk-report', 'data-report': 'empty' },
+            h('span', { className: 'tk-note' }, t('reportEmptyNote')),
+            onOpenAgent === undefined || ownerId === undefined
+              ? null
+              : h('div', { className: 'tk-actions' },
+                h('button', {
+                  type: 'button',
+                  className: 'tk-btn',
+                  title: t('agentOpenHint'),
+                  onClick: () => { onOpenAgent(ownerId, 'main') },
+                }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen'))))
+
+      const tabButton = (key, label) => h('button', {
+        key,
+        type: 'button',
+        role: 'tab',
+        className: 'tk-tab',
+        'data-tab': key,
+        'aria-selected': activeTab === key ? 'true' : 'false',
+        onClick: () => { setActiveTab(key) },
+      }, label)
+      const tabs = h('div', { className: 'tk-tabs', role: 'tablist', 'aria-label': t('inspectorTitle') },
+        tabButton('description', t('description')),
+        tabButton('report', t('taskReport')))
+
+      // The dialog body is two columns: the task's own facts on the left and
+      // the Description/Report text on the right. Each column scrolls on its
+      // own, so a long text never pushes the metadata out of the dialog.
+      const metadata = h('div', {
+        className: 'tk-insp-aside',
+        'data-inspector-column': 'meta',
+        tabIndex: 0,
+        role: 'group',
+        'aria-label': t('inspectorTitle'),
+      }, timelineBlock, agentBlock, depsBlock, scopesBlock)
+
+      const pane = activeTab === 'report'
+        ? h('div', {
+          className: 'tk-insp-prose',
+          role: 'tabpanel',
+          'data-tabpanel': 'report',
+          tabIndex: 0,
+          'aria-label': t('taskReport'),
+        }, reportBlock)
+        : h('div', {
+          className: 'tk-insp-prose',
+          role: 'tabpanel',
+          'data-tabpanel': 'description',
+          tabIndex: 0,
+          'aria-label': t('description'),
+        }, descriptionPane)
+
+      const textColumn = h('div', { className: 'tk-insp-main', 'data-inspector-column': 'text' },
+        tabs,
+        pane)
+      const body = h('div', { className: 'tk-insp-body tk-insp-split' }, metadata, textColumn)
 
       const dialog = h('div', {
         className: 'tk-insp',
@@ -3507,14 +6711,11 @@ window.__ModuleLoader__.load({
         'aria-modal': 'true',
         'aria-label': t('inspectorTitle'),
         'data-task-id': task.id,
+        'data-layout': 'task',
+        style: { zoom: viewSettings.dialogScale },
       },
       head,
-      h('div', { className: 'tk-insp-body' },
-        descriptionBlock,
-        timelineBlock,
-        agentBlock,
-        depsBlock,
-        scopesBlock))
+      body)
 
       return h(Portal, null,
         h('div', {
@@ -3576,7 +6777,12 @@ window.__ModuleLoader__.load({
       }
       const money = moneyOf(stats.cost)
       if (money !== undefined) {
-        items.push(h(Stat, { key: 'cost', icon: 'coin', value: money.text, title: t('metricCostEquivalent') }))
+        items.push(h(Stat, {
+          key: 'cost',
+          icon: 'coin',
+          value: money.text,
+          title: costSpendTitle(stats.cost, t) ?? t('metricCostEquivalent'),
+        }))
       }
       return items
     }
@@ -3605,9 +6811,11 @@ window.__ModuleLoader__.load({
         : String(value.steps) + ' ' + t('stepsLabel') + ' · ' + String(value.turns ?? 0) + ' ' + t('turnsLabel')
       const costSub = money === undefined
         ? (costState === 'missing' ? t('costMissing') : t('agentNoData'))
-        : (money.realUsd !== undefined && money.equivalentUsd !== undefined && money.realUsd < money.equivalentUsd
-          ? t('costPlanNote') + ' · ' + formatMoney(money.realUsd, '$')
-          : 'API · ' + money.currency)
+        : (() => {
+          const spend = costSpendTitle(value.cost, t)
+          const plan = costOnPlan(value.cost) ? t('costPlanNote') + ' · ' : ''
+          return plan + (spend === undefined ? t('metricCostEquivalent') : spend)
+        })()
 
       return h('div', { className: 'tk-metrics' },
         h(Metric, {
@@ -3670,13 +6878,14 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * The agent dialog: what this agent did, the background jobs it is running
-     * and the tasks it owns — the two lists fold and scroll on their own.
-     * @param props - `agent`, `stats`, `jobs`, `tasks`, `whoById`, `now`, `t`,
-     *   `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
+     * The agent dialog: what this agent did, the tasks it owns and the
+     * background jobs it is running — the two lists fold and scroll on their
+     * own, and the tasks come first.
+     * @param props - `agent`, `stats`, `jobs`, `error`, `tasks`, `whoById`, `now`,
+     *   `t`, `tAgent`, `onOpenAgent`, `onOpenTask`, `onClose`.
      */
     function AgentDialog({
-      agent, stats, jobs, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
+      agent, stats, jobs, error = undefined, tasks, whoById, now, costState, t, tAgent, onOpenAgent, onOpenTask, onClose,
     }) {
       useEffect(() => {
         const onKey = event => {
@@ -3685,6 +6894,9 @@ window.__ModuleLoader__.load({
         window.addEventListener('keydown', onKey)
         return () => { window.removeEventListener('keydown', onKey) }
       }, [onClose])
+
+      // The dialog scale is its own view preference; only the panel zooms.
+      const [viewSettings] = useViewSettings()
 
       // The two lists can grow; each folds away on its own, and the dialog is
       // short-lived, so the choice lives with the open card.
@@ -3696,6 +6908,30 @@ window.__ModuleLoader__.load({
       const mode = modeOf(agent, tAgent)
       const parent = agent.parentId === undefined ? undefined : whoById[agent.parentId]
       const sessionId = String(agent.id).replace(/^session-/, '')
+      // The row marks a failed last turn; the dialog repeats the text when the
+      // failure is still the agent's current state.
+      const errorText = error === null || error === undefined
+        ? undefined
+        : (typeof error.message === 'string' && error.message !== '' ? error.message : t('errorTurnFailed'))
+
+      // The agent's actions sit in the header's right corner, left of the
+      // close control, exactly like the task dialog's; the body below stays
+      // facts and lists only.
+      const headActions = h('span', { className: 'tk-insp-actions' },
+        h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenHint'),
+          'aria-label': t('agentOpenHint'),
+          onClick: () => { onOpenAgent(agent.id, 'main') },
+        }, h(Icon, { name: 'chevron-right', size: 13 })),
+        agent.isLead === true ? null : h('button', {
+          type: 'button',
+          className: 'tk-icon-btn',
+          title: t('agentOpenAsideHint'),
+          'aria-label': t('agentOpenAsideHint'),
+          onClick: () => { onOpenAgent(agent.id, 'aside') },
+        }, h(Icon, { name: 'panel-right', size: 13 })))
 
       const head = h('div', { className: 'tk-insp-head' },
         h('div', { className: 'tk-insp-heading' },
@@ -3707,6 +6943,7 @@ window.__ModuleLoader__.load({
               ? h(Chip, { tone: 'info', icon: 'users' }, t('leadLabel'))
               : (mode === undefined ? null : h(Chip, { icon: 'users' }, mode)))),
         h('span', { className: 'tk-head-spacer' }),
+        headActions,
         h('button', {
           type: 'button', className: 'tk-icon-btn', title: t('close'), 'aria-label': t('close'), onClick: onClose,
         }, h(Icon, { name: 'x', size: 14 })))
@@ -3723,6 +6960,13 @@ window.__ModuleLoader__.load({
         KeyRow({ name: 'session', label: t('agentSession'), children: h('span', { className: 'tk-mono' }, sessionId) }),
         KeyRow({ name: 'created', label: t('agentCreated'), children: formatStamp(agent.createdAt) }),
         KeyRow({ name: 'activity', label: t('agentLastActivity'), children: formatStamp(agent.updatedAt ?? agent.startedAt) }),
+        errorText === undefined
+          ? null
+          : KeyRow({
+            name: 'error',
+            label: t('sessionError'),
+            children: h('span', { className: 'tk-error-note' }, errorText),
+          }),
         agent.model === undefined ? null : KeyRow({ name: 'model', label: t('agentModel'), children: modelValue }),
         effortValue === undefined ? null : KeyRow({ name: 'effort', label: t('agentEffort'), children: effortValue }),
         agent.preset === undefined ? null : KeyRow({
@@ -3749,11 +6993,22 @@ window.__ModuleLoader__.load({
             note: String(jobItems.length),
             target: 'agent-jobs',
             expanded: jobsOpen,
+            scroll: false,
             label: (jobsOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('jobsHeading'),
             onToggle: () => { setJobsOpen(value => !value) },
-          }, h('ul', { className: 'tk-jobs' }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
+          }, h('ul', {
+            className: 'tk-jobs',
+            tabIndex: 0,
+            role: 'group',
+            'aria-label': t('jobsHeading'),
+          }, jobItems.map(job => h(JobRow, { key: job.id, job, now, t })))))
 
-      const taskList = h('ul', { className: 'tk-list' }, tasks.map(task => h('li', { key: task.id },
+      const taskList = h('ul', {
+        className: 'tk-list',
+        tabIndex: 0,
+        role: 'group',
+        'aria-label': t('agentTasksHeading'),
+      }, tasks.map(task => h('li', { key: task.id },
         h('button', {
           type: 'button',
           className: 'tk-task-link',
@@ -3772,6 +7027,7 @@ window.__ModuleLoader__.load({
           note: String(tasks.length),
           target: 'agent-tasks',
           expanded: tasksOpen,
+          scroll: false,
           label: (tasksOpen ? t('foldSection') : t('unfoldSection')) + ' · ' + t('agentTasksHeading'),
           onToggle: () => { setTasksOpen(value => !value) },
         }, taskList)
@@ -3787,27 +7043,15 @@ window.__ModuleLoader__.load({
           'aria-modal': 'true',
           'aria-label': t('agentHeading'),
           'data-agent-dialog': agent.id,
+          style: { zoom: viewSettings.dialogScale },
         },
         head,
         h('div', { className: 'tk-insp-body' },
           h(Section, { title: t('statsHeading'), icon: 'gauge', note: agent.running ? t('statsNoteActive') : undefined },
             h(AgentMetrics, { stats, agent, costState, t })),
           h(Section, { title: t('stateLabel'), icon: 'layers' }, facts),
-          jobsBlock,
           tasksBlock,
-          h('div', { className: 'tk-actions' },
-            h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenHint'),
-              onClick: () => { onOpenAgent(agent.id, 'main') },
-            }, h(Icon, { name: 'chevron-right', size: 11 }), t('agentOpen')),
-            agent.isLead === true ? null : h('button', {
-              type: 'button',
-              className: 'tk-btn',
-              title: t('agentOpenAsideHint'),
-              onClick: () => { onOpenAgent(agent.id, 'aside') },
-            }, h(Icon, { name: 'panel-right', size: 11 }), t('agentOpenAside')))))))
+          jobsBlock))))
     }
 
     /* ------------------------------------------------------------------ *
@@ -3942,6 +7186,35 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * The agent limit the profile row's Config asks for, read from the
+         * settings document the Host serves. `agentsLimit` is declared volatile,
+         * so the Host projects the live value into that document; the settings
+         * surface is optional for a viewer, and an unanswered read keeps the
+         * built-in default.
+         * @returns the configured limit, or undefined when the profile supplies none.
+         */
+        const pluginLimit = async () => {
+          try {
+            const remote = ctx.get('remote')
+            const settings = remote?.settings ?? ctx.get('remote.settings')
+            if (settings === null || settings === undefined || typeof settings.describe !== 'function') return undefined
+            const answer = await settings.describe()
+            if (answer === null || typeof answer !== 'object' || answer.ok !== true) return undefined
+            const namespaces = answer.value?.namespaces
+            if (!Array.isArray(namespaces)) return undefined
+            // The namespace is this bundle's own row id; a profile that renames
+            // the row is still found by the field the row declares.
+            const row = namespaces.find(entry => entry?.ns === SETTINGS_NAMESPACE)
+              ?? namespaces.find(entry => typeof entry?.value?.[AGENTS_LIMIT_FIELD] === 'number')
+            const value = row?.value?.[AGENTS_LIMIT_FIELD]
+            return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+          } catch {
+            // Without the settings surface the board keeps its built-in limit.
+            return undefined
+          }
+        }
+
+        /**
          * The client jobs service installed by the job controller, when the
          * profile has it. The board only attributes jobs — it never kills one
          * and never opens an output observation — so the service is a soft
@@ -4013,6 +7286,139 @@ window.__ModuleLoader__.load({
           + '&mode=' + encodeURIComponent(address.mode)
 
         /**
+         * The file resource address the workspace file provider parses. The
+         * shipped builder exports no client helper, so the format is spelled
+         * here: `dsh-resource://file/session/<sessionId>/<path>`, every id and
+         * path segment component-encoded, `:` literal for a Windows drive.
+         * @param sessionId - the session whose workspace root resolves the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @returns the resource address string.
+         */
+        const fileAddress = (sessionId, path) => 'dsh-resource://file/session/'
+          + encodeURIComponent(sessionId)
+          + '/'
+          + String(path)
+            .replace(/\\/g, '/')
+            .replace(/^(?:\.\/)+/, '')
+            .split('/')
+            .map(segment => encodeURIComponent(segment).replace(/%3A/gi, ':'))
+            .join('/')
+
+        /**
+         * Whether one workspace path exists, for the links the board draws.
+         * A trailing separator names a folder, which is listed (folder
+         * existence is workspace-scoped); every other path is `stat`ed as a
+         * file, and a file miss is retried through `list` because an API may
+         * not expose the directory kind on `stat`. The Remote answers with
+         * `{ ok }` instead of throwing, so a missing path is `false`. An
+         * absent namespace, an aborted call or an error that does not prove
+         * absence is `undefined`: the caller then keeps its link, because a
+         * viewer without the file API must not lose every link.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - workspace-relative or absolute path, either separator.
+         * @param signal - optional abort signal from the caller.
+         * @returns `true` when the file or folder exists, `false` when the
+         *   Remote says it is missing, and `undefined` otherwise.
+         */
+        const checkLocalPath = async (sessionId, path, signal) => {
+          try {
+            if (typeof sessionId !== 'string' || sessionId === '') return undefined
+            if (typeof path !== 'string') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const normalized = path.trim().replace(/\\/g, '/')
+            if (normalized === '') return undefined
+            let service
+            try {
+              service = ctx.get('remote.workspaceFiles')
+            } catch {
+              service = undefined
+            }
+            if (service === null || service === undefined) {
+              try {
+                const remote = ctx.get('remote')
+                service = remote?.workspaceFiles
+              } catch {
+                service = undefined
+              }
+            }
+            if (service === null || service === undefined) return undefined
+            const folder = normalized.endsWith('/')
+            const target = folder ? normalized.replace(/\/+$/, '') : normalized
+            if (target === '') return undefined
+            const method = folder ? 'list' : 'stat'
+            if (typeof service[method] !== 'function') return undefined
+            const answer = await service[method](sessionId, target, signal)
+            if (answer === null || typeof answer !== 'object') return undefined
+            if (answer.ok === true) return true
+            const code = answer.error?.code
+            if (code === 'workspace-file/not-found') {
+              // A file API may not expose the directory kind on `stat`, so a
+              // file miss is only final for a trailing-slash folder; for a
+              // bare path, a successful listing proves the folder exists.
+              if (folder || typeof service.list !== 'function') return false
+              const listing = await service.list(sessionId, target, signal)
+              if (listing === null || typeof listing !== 'object') return undefined
+              if (listing.ok === true) return true
+              if (listing.error?.code === 'workspace-file/not-found') return false
+              return undefined
+            }
+            // The path exists as the other kind, so its link still resolves.
+            if (code === 'workspace-file/not-regular-file') {
+              return answer.error?.details?.kind === 'directory' ? true : undefined
+            }
+            if (code === 'workspace-file/not-directory') {
+              return answer.error?.details?.kind === 'file' ? true : undefined
+            }
+            // `outside-workspace`, `too-large`, `gateway/*` and a carrier
+            // failure prove nothing about the path, so the link stays.
+            return undefined
+          } catch {
+            // An aborted or failed call proves nothing about the path.
+            return undefined
+          }
+        }
+
+        /**
+         * Open one write scope of a task in the workspace. A file opens the
+         * shipped file resource; a folder opens the Files page, because that
+         * page accepts no path. Navigation is best-effort: a missing sidebar
+         * or a resource the installed types cannot open falls back to the
+         * Files page and never throws into the read-only board.
+         * @param sessionId - the session whose workspace root owns the path.
+         * @param path - the task's write scope.
+         * @returns nothing.
+         */
+        const openFileLink = (sessionId, path) => {
+          if (typeof sessionId !== 'string' || sessionId === '') return
+          if (typeof path !== 'string' || path === '') return
+          const folder = path.endsWith('/') || path.endsWith('\\')
+          const openFilesTab = () => {
+            try {
+              const sidebar = ctx.get('sidebarRight')
+              if (sidebar !== null && sidebar !== undefined && typeof sidebar.openTab === 'function') {
+                sidebar.openTab('files')
+              }
+            } catch {
+              // The Files page is a convenience; a closed panel is not an error.
+            }
+          }
+          if (folder) {
+            openFilesTab()
+            return
+          }
+          try {
+            const sidebar = ctx.get('sidebarRight')
+            if (sidebar !== null && sidebar !== undefined && typeof sidebar.openResource === 'function') {
+              sidebar.openResource(fileAddress(sessionId, path))
+              return
+            }
+          } catch {
+            // An unopenable address falls back to the workspace page below.
+          }
+          openFilesTab()
+        }
+
+        /**
          * Go to a subagent: open its chat beside the board, or switch the main
          * column to it. This only navigates — the board is still a viewer.
          * @param agentId - the subagent's Session id.
@@ -4072,17 +7478,365 @@ window.__ModuleLoader__.load({
           }
         })()
 
-        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */
-        const services = {
+        /**
+         * The final answer inside one Chat snapshot: the last non-empty
+         * Assistant text row, in anchor order. Assistant rows are
+         * `kind: 'assistant-step'` and their prose is the `text` blocks; the
+         * last one is the answer the turn closed with. The navigation preview
+         * is deliberately not used — it is bounded and loses the answer.
+         * @param snapshot - a ChatSnapshot from `uiConversation.target('chat')`.
+         * @returns the trimmed answer text, or undefined when there is none.
+         */
+        const finalAnswerOf = (snapshot) => {
+          const store = snapshot?.nodes
+          if (store === null || store === undefined || typeof store.values !== 'function') return undefined
+          let rows
+          try {
+            rows = Array.from(store.values())
+          } catch {
+            return undefined
+          }
+          const answers = []
+          for (const row of rows) {
+            if (row === null || row === undefined || row.kind !== 'assistant-step') continue
+            const blocks = row.data?.blocks
+            if (!Array.isArray(blocks)) continue
+            const text = blocks
+              .filter(block => block !== null && typeof block === 'object'
+                && block.kind === 'text' && typeof block.text === 'string')
+              .map(block => block.text)
+              .join('')
+              .trim()
+            if (text === '') continue
+            answers.push({ anchor: num(row.anchorSeq), text })
+          }
+          if (answers.length === 0) return undefined
+          answers.sort((left, right) => left.anchor - right.anchor)
+          return answers[answers.length - 1].text
+        }
+
+        /**
+         * The final answer inside one Chat target, read without throwing.
+         * @param chat - the Chat target source from `assembly.target('chat')`.
+         * @returns the answer text, or undefined when the target is absent,
+         *   unreadable or still empty.
+         */
+        const chatAnswerOf = (chat) => {
+          try {
+            return finalAnswerOf(chat?.getSnapshot?.())
+          } catch {
+            return undefined
+          }
+        }
+
+        /**
+         * Wait for one Chat target to publish a non-empty answer.
+         *
+         * Retaining a never-opened agent starts its history opening in the
+         * background, so the first synchronous snapshot is empty. Subscribing
+         * to the target activates its view builder and wakes the caller on the
+         * first conversation publication; the caller therefore settles on the
+         * first answer, the initial open's failure, or the bounded timeout. The
+         * wait is one-shot and never rejects; the caller releases the retained
+         * reference in its own `finally`.
+         * @param chat - the Chat target source.
+         * @param reference - the retained Session reference; its `ready` may fail.
+         * @returns the answer text, or undefined.
+         */
+        const waitForChatAnswer = (chat, reference) => new Promise(resolve => {
+          let settled = false
+          let off
+          let timer
+          const finish = (value) => {
+            if (settled) return
+            settled = true
+            if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer)
+            try {
+              if (typeof off === 'function') off()
+            } catch {
+              // A source that already ended needs no unsubscribe.
+            }
+            resolve(value)
+          }
+          const read = () => {
+            const answer = chatAnswerOf(chat)
+            if (answer !== undefined) finish(answer)
+            return answer
+          }
+          try {
+            off = chat.subscribe(read)
+          } catch {
+            finish(undefined)
+            return
+          }
+          // The builder may publish an answer from inside subscribe, before
+          // the unsubscribe handle was assigned; release it now.
+          if (settled) {
+            try {
+              if (typeof off === 'function') off()
+            } catch {
+              // A source that already ended needs no unsubscribe.
+            }
+            return
+          }
+          // A builder may fill synchronously inside subscribe.
+          if (read() !== undefined) return
+          if (typeof setTimeout === 'function') {
+            timer = setTimeout(() => { finish(chatAnswerOf(chat)) }, REPORT_WAIT_MS)
+          }
+          const ready = reference === undefined || reference === null ? undefined : reference.ready
+          if (ready !== null && typeof ready === 'object' && typeof ready.then === 'function') {
+            ready.then(
+              () => { read() },
+              () => { finish(undefined) },
+            )
+          } else if (timer === undefined) {
+            // No clock to bound the wait: report the empty state now.
+            finish(undefined)
+          }
+        })
+
+        /**
+         * Read a subagent's final answer from its chat, without opening a tab.
+         * The task record carries no report, so the answer is read from the
+         * live conversation: retain the session, resolve its Chat target, read
+         * the snapshot once, and — because a never-opened session's history is
+         * still opening, so that first snapshot is empty — wait briefly for the
+         * target to publish its first non-empty answer. The retained reference
+         * is released in `finally`. A missing service, an unopened session, an
+         * open that fails or a timeout resolves to undefined rather than
+         * rejecting, so the dialog shows its empty state.
+         * @param agentId - the owner session id.
+         * @returns the final answer text, or undefined.
+         */
+        const loadAgentReport = async (agentId) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            // A Lead owner has no subagent address, but its identity is a
+            // valid retain target too.
+            reference = sessions.retain(address ?? agentId, { source: 'agent-team-viewer' })
+            const binding = reference?.binding
+            if (binding === null || binding === undefined) return undefined
+            const conversation = ctx.get('uiConversation')
+            if (conversation === null || conversation === undefined
+              || typeof conversation.binding !== 'function') return undefined
+            const assembly = conversation.binding(binding)
+            if (assembly === null || assembly === undefined || typeof assembly.target !== 'function') return undefined
+            const chat = assembly.target('chat')
+            if (chat === null || chat === undefined || typeof chat.getSnapshot !== 'function') return undefined
+            const immediate = chatAnswerOf(chat)
+            if (immediate !== undefined) return immediate
+            if (typeof chat.subscribe !== 'function') return undefined
+            return await waitForChatAnswer(chat, reference)
+          } catch {
+            // The report is optional context; a failure is an empty tab.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
+        /**
+         * The newest `turn/end` event in one durable session window. The event
+         * log is the only place a failed turn is durably recorded; a later
+         * successful turn closes the turn and therefore clears the mark.
+         * @param entries - `SessionEventWindow.entries` from a binding.
+         * @returns the newest `turn/end` event, or undefined when the window
+         *   is empty or still opening.
+         */
+        const lastTurnEndOf = (entries) => {
+          if (!Array.isArray(entries)) return undefined
+          for (let index = entries.length - 1; index >= 0; index -= 1) {
+            const entry = entries[index]
+            const event = entry?.type === 'event' ? entry.event : undefined
+            if (event?.type === 'turn/end') return event
+          }
+          return undefined
+        }
+
+        /**
+         * The user-facing text of one turn failure. A provider's `AUTH` message
+         * may echo a credential fragment, so the shipped Chat projection drops
+         * it; this board mirrors that and shows the localized label instead.
+         * @param failure - the `LlmFailure` on a turn/end error reason.
+         * @returns the message text, never empty.
+         */
+        const errorMessageOf = (failure) => {
+          const rawCode = typeof failure?.code === 'string' ? failure.code : ''
+          const code = rawCode.toUpperCase()
+          if (code !== 'AUTH') {
+            const raw = typeof failure?.message === 'string' ? failure.message.trim() : ''
+            if (raw !== '') return raw
+          }
+          if (code === 'QUOTA' || code === 'ACCOUNT_QUOTA') return t('errorQuota')
+          if (code === 'AUTH') return t('errorAuth')
+          return t('errorTurnFailed')
+        }
+
+        /**
+         * Wait for a retained session's initial open, bounded by a short timer
+         * so a slow or failed open cannot pin the board. The caller releases
+         * the reference in its own `finally`.
+         * @param reference - the retained session reference.
+         * @param signal - optional caller abort signal.
+         * @returns nothing; never rejects.
+         */
+        const waitForSessionReady = (reference, signal) => new Promise(resolve => {
+          const ready = reference?.ready
+          if (ready === null || typeof ready !== 'object' || typeof ready.then !== 'function') {
+            resolve()
+            return
+          }
+          let settled = false
+          let timer
+          let onAbort
+          const finish = () => {
+            if (settled) return
+            settled = true
+            if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer)
+            if (onAbort !== undefined && signal !== undefined && signal !== null
+              && typeof signal.removeEventListener === 'function') {
+              signal.removeEventListener('abort', onAbort)
+            }
+            resolve()
+          }
+          if (typeof setTimeout === 'function') timer = setTimeout(finish, SESSION_ERROR_WAIT_MS)
+          if (signal !== undefined && signal !== null && typeof signal.addEventListener === 'function') {
+            onAbort = finish
+            if (signal.aborted === true) finish()
+            else signal.addEventListener('abort', onAbort, { once: true })
+          }
+          // Without a clock there is nothing to bound the wait, so read the
+          // first snapshot now instead of holding the reference indefinitely.
+          if (timer === undefined) finish()
+          else ready.then(finish, finish)
+        })
+
+        /**
+         * Read the newest failed turn of one agent session from its durable
+         * event log. The session is retained only for this read, so its history
+         * opens in the background; a never-opened session's first snapshot is
+         * empty, and the read then waits briefly for `reference.ready`. No
+         * projection carries the error, and the session's chat tree is not
+         * activated.
+         * @param agentId - the agent's Session id.
+         * @param signal - optional abort signal from the board mount.
+         * @returns `{ message, code, at }`, or undefined when the last turn did
+         *   not fail, or when the read is aborted or unavailable.
+         */
+        const loadSessionError = async (agentId, signal) => {
+          let reference
+          try {
+            if (typeof agentId !== 'string' || agentId === '') return undefined
+            if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+            const sessions = ctx.get('sessions')
+            if (sessions === null || sessions === undefined || typeof sessions.retain !== 'function') return undefined
+            const address = typeof sessions.subagentAddress === 'function'
+              ? sessions.subagentAddress(agentId)
+              : undefined
+            const retainOptions = { source: 'agent-team-viewer' }
+            if (signal !== undefined && signal !== null) retainOptions.signal = signal
+            reference = sessions.retain(address ?? agentId, retainOptions)
+            const binding = reference?.binding
+            const source = binding?.eventSource
+            if (source === null || source === undefined || typeof source.getSnapshot !== 'function') return undefined
+            let entries = source.getSnapshot()?.entries
+            if (lastTurnEndOf(entries) === undefined) {
+              await waitForSessionReady(reference, signal)
+              if (signal !== undefined && signal !== null && signal.aborted === true) return undefined
+              entries = source.getSnapshot()?.entries
+            }
+            const event = lastTurnEndOf(entries)
+            const reason = event?.data?.reason
+            if (reason === null || reason === undefined || reason.kind !== 'error') return undefined
+            const failure = reason.error
+            if (failure === null || typeof failure !== 'object') return undefined
+            return {
+              message: errorMessageOf(failure),
+              code: typeof failure.code === 'string' && failure.code !== '' ? failure.code.toUpperCase() : undefined,
+              at: typeof event.time === 'number' && Number.isFinite(event.time) ? event.time : Date.now(),
+            }
+          } catch {
+            // A missing service, an unopened session, a failed open or an abort
+            // proves nothing about the turn, so the card stays unmarked.
+            return undefined
+          } finally {
+            try {
+              if (reference !== undefined && typeof reference.release === 'function') reference.release()
+            } catch {
+              // Releasing a reference that already ended is harmless.
+            }
+          }
+        }
+
+        /**
+         * Subscribe to the live `api-session/error` push. The payload carries
+         * the message only and has no replay, so a mount backfills what it
+         * missed while this subscription keeps new failures current.
+         * @param listener - called with `{ sessionId, message, at }`.
+         * @returns the unsubscribe function; a no-op when the Remote is absent.
+         */
+        const subscribeSessionErrors = (listener) => {
+          try {
+            if (typeof listener !== 'function') return () => {}
+            const remote = ctx.get('remote')
+            if (remote === null || remote === undefined) return () => {}
+            const subscribe = typeof remote.$on === 'function'
+              ? remote.$on
+              : (typeof remote.on === 'function' ? remote.on : undefined)
+            if (typeof subscribe !== 'function') return () => {}
+            const off = subscribe.call(remote, 'api-session/error', (sessionId, message) => {
+              try {
+                if (typeof sessionId !== 'string' || sessionId === '') return
+                listener({
+                  sessionId,
+                  message: typeof message === 'string' ? message : String(message ?? ''),
+                  at: Date.now(),
+                })
+              } catch {
+                // One board listener must not break the shared Remote dispatcher.
+              }
+            })
+            if (typeof off !== 'function') return () => {}
+            return () => {
+              try {
+                off()
+              } catch {
+                // The Remote may already be gone with the page.
+              }
+            }
+          } catch {
+            // Forwarded events need an answering connection; the board still reads history.
+            return () => {}
+          }
+        }
+
+        /** The face the board body receives: reads, refreshes, costs, jobs and navigation. */        const services = {
           faceOf,
           refreshProjections,
           loadCosts,
+          pluginLimit,
           listState,
           subscribeList,
           jobsSnapshot,
           watchJobs,
           subscribeJobs,
           openAgent,
+          openFileLink,
+          checkLocalPath,
+          loadAgentReport,
+          loadSessionError,
+          subscribeSessionErrors,
           agentLabel,
         }
 
@@ -4137,6 +7891,29 @@ window.__ModuleLoader__.load({
           locale: NS,
           inject: () => ({ open: openBoard }),
         }, HeaderBoardAction))
+
+        // The Settings page of the board. Its preferences are browser-local
+        // view state, so the page writes localStorage and never the Host
+        // settings document. The nav label is the plugin's literal name and
+        // stays untranslated in every language; the page content is localized.
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'agent-team-viewer',
+          order: 80,
+          label: () => 'Agent Team Viewer',
+          locale: NS,
+          inject: () => ({}),
+        }, SettingsSection))
+
+        // The Settings navigation row carries the same mark as the board tab
+        // instead of the settings shell's generic gear; the shared id pairs
+        // this icon with the section above.
+        ctx.slots.inject('settings.section.icon', () => ctx.slots.register({
+          name: 'settings.section.icon',
+          id: 'agent-team-viewer',
+          locale: NS,
+          inject: () => ({}),
+        }, KanbanArtwork))
 
         // The task record keeps no timestamps, so the elapsed labels come from
         // watching the board. This watcher runs for as long as the page does,
