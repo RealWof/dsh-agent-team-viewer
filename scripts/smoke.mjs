@@ -1371,6 +1371,102 @@ check(legacyFoldBoard.nodes.some(node => node.props?.className === 'tk-board'),
 check(legacyFoldBoard.nodes.some(node => node.props?.['data-task-id'] === 'task-2'),
   'the legacy flat fold shape hid a task card')
 
+/* --- Task custom groups ------------------------------------------------ */
+
+storage.delete(COLLAPSE_STORAGE_KEY)
+const taskGroupState = JSON.parse(JSON.stringify(listState))
+taskGroupState.projectionsBySession.root.values.agentTeam.tasks.push({
+  id: 'task-5',
+  revision: 1,
+  subject: 'Review docs',
+  description: '',
+  status: 'pending',
+  blockedBy: [],
+  writeScopes: [],
+  ready: true,
+  writeScopeWarnings: [],
+})
+taskGroupState.projectionsBySession.root.values.agentTeam.tasks.push({
+  id: 'task-6',
+  revision: 1,
+  subject: 'Chore',
+  description: '',
+  status: 'pending',
+  blockedBy: [],
+  writeScopes: [],
+  ready: true,
+  writeScopeWarnings: [],
+})
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  autoRoleGroups: false,
+  customGroups: false,
+  taskCustomGroups: true,
+  taskCustomGroupsText: 'board: Wire\nreview: Review',
+  sort: 'newest',
+}))
+const taskGroupBoard = boardFromFreshBundle(taskGroupState)
+const groupedActive = taskGroupBoard.nodes.find(node => node.props?.['data-column'] === 'active')
+const boardTaskHead = within(groupedActive, node => node.props?.['data-target'] === 'tasks:active:custom:board')[0]
+check(boardTaskHead !== undefined, 'a task matching a custom group got no group head')
+check(boardTaskHead?.props?.['data-subgroup'] === 'true', 'the task group head is not marked as a subgroup')
+check(within(boardTaskHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '1',
+  'the task group head does not count its tasks')
+const boardTaskBody = within(groupedActive, node => node.props?.['data-group-body'] === 'tasks:active:custom:board')[0]
+check(within(boardTaskBody, node => node.props?.['data-task-id'] === 'task-1').length === 1,
+  'the matching task is missing from its custom group')
+const groupedQueued = taskGroupBoard.nodes.find(node => node.props?.['data-column'] === 'queued')
+const reviewTaskHead = within(groupedQueued, node => node.props?.['data-target'] === 'tasks:queued:custom:review')[0]
+check(reviewTaskHead !== undefined, 'the second task custom group got no head')
+const reviewTaskBody = within(groupedQueued, node => node.props?.['data-group-body'] === 'tasks:queued:custom:review')[0]
+check(within(reviewTaskBody, node => node.props?.['data-task-id'] === 'task-5').length === 1,
+  'the task matching the second group is missing')
+const unmatchedTask = within(groupedQueued, node => node.props?.['data-task-id'] === 'task-6')
+check(unmatchedTask.length === 1, 'an unmatched task disappeared instead of staying flat')
+check(within(reviewTaskBody, node => node.props?.['data-task-id'] === 'task-6').length === 0,
+  'an unmatched task was filed under a custom group it does not match')
+
+// The custom task group folds through the same board-scoped state as agents.
+reviewTaskHead?.props?.onClick?.()
+const taskGroupFold = JSON.parse(storage.get(COLLAPSE_STORAGE_KEY))
+check(taskGroupFold.boards.root.groups['tasks:queued:custom:review'] === true,
+  'the task group fold was not stored, got: ' + JSON.stringify(taskGroupFold))
+resetHooks()
+const taskGroupFolded = surface(tabBody({ ...props, useSessions: selector => selector(taskGroupState) }))
+const foldedQueued = taskGroupFolded.nodes.find(node => node.props?.['data-column'] === 'queued')
+check(within(foldedQueued, node => node.props?.['data-task-id'] === 'task-5').length === 0,
+  'the folded task group left its cards rendered')
+check(within(foldedQueued, node => node.props?.['data-target'] === 'tasks:queued:custom:review').length === 1,
+  'the folded task group lost its head')
+
+// An over-long task group caps and scrolls like an agent group.
+storage.delete(COLLAPSE_STORAGE_KEY)
+storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
+  autoRoleGroups: false,
+  customGroups: false,
+  taskCustomGroups: true,
+  taskCustomGroupsText: 'bulk: Bulk',
+  sort: 'newest',
+}))
+const bulkGroupState = bulkState('completed', 8)
+const bulkGroupBoard = boardFromFreshBundle(bulkGroupState)
+const bulkDone = bulkGroupBoard.nodes.find(node => node.props?.['data-column'] === 'done')
+const bulkTaskHead = within(bulkDone, node => node.props?.['data-target'] === 'tasks:done:custom:bulk')[0]
+check(bulkTaskHead !== undefined, 'the over-long task group has no head')
+check(within(bulkTaskHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '8',
+  'the over-long task group lost its count')
+const bulkTaskCards = within(bulkDone, node => node.props?.['data-task-id']?.startsWith?.('task-bulk-'))
+check(bulkTaskCards.length === 5, 'the capped task group did not show five cards, got ' + bulkTaskCards.length)
+const bulkMore = within(bulkDone, node => node.props?.className === 'tk-more')[0]
+check(bulkMore?.props?.['data-remaining'] === '3', 'the over-long task group has no show-all control')
+bulkMore?.props?.onClick?.()
+resetHooks()
+const bulkGroupExpanded = surface(tabBody({ ...props, useSessions: selector => selector(bulkGroupState) }))
+const expandedDone = bulkGroupExpanded.nodes.find(node => node.props?.['data-column'] === 'done')
+const bulkScroll = within(expandedDone, node => node.props?.className === 'tk-col-items')[0]
+check(bulkScroll !== undefined, 'the expanded task group does not scroll inside its column')
+check(within(bulkScroll, node => node.props?.['data-task-id']?.startsWith?.('task-bulk-')).length === 8,
+  'the expanded task group did not reveal the whole pile')
+
 // The seeded fold state above would hide the columns; start from a clean one.
 storage.delete(COLLAPSE_STORAGE_KEY)
 storage.set(SETTINGS_STORAGE_KEY, JSON.stringify({
@@ -1560,13 +1656,17 @@ check(clampedRoot?.props?.style?.zoom === 0.8,
 resetSlots()
 const clampedSettings = surface(settingsSection({ t: key => key }))
 const settingBoxes = clampedSettings.nodes.filter(node => node.props?.type === 'checkbox')
-check(settingBoxes.length === 3, 'the Settings page lost a grouping or animation checkbox')
+check(settingBoxes.length === 4, 'the Settings page lost a grouping or animation checkbox')
 check(settingBoxes[0]?.props?.checked === true && settingBoxes[1]?.props?.checked === true
-  && settingBoxes[2]?.props?.checked === false,
+  && settingBoxes[2]?.props?.checked === false && settingBoxes[3]?.props?.checked === false,
 'the Settings page does not render the sanitized booleans')
-const settingTextarea = clampedSettings.nodes.find(node => node.props?.className === 'tk-set-text')
+const settingTextareas = clampedSettings.nodes.filter(node => node.props?.className === 'tk-set-text')
+const settingTextarea = settingTextareas[0]
+check(settingTextareas.length === 2, 'the Settings page lost a custom-groups editor')
 check(settingTextarea?.props?.value === '' && settingTextarea?.props?.disabled === false,
   'the custom-groups editor did not sanitize a non-string value')
+check(settingTextareas[1]?.props?.value === '' && settingTextareas[1]?.props?.disabled === true,
+  'the task custom-groups editor is not disabled when its switch is off')
 const settingSelect = clampedSettings.nodes.find(node => node.props?.className === 'tk-set-select')
 check(settingSelect?.props?.value === 'newest', 'the Settings page did not fall back to the default sort')
 const rangeByLabel = (rendered, label) => rendered.nodes.find(node => node.props?.type === 'range'
@@ -1590,11 +1690,17 @@ const clampedWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
 check(clampedWrite.animationMs === 1000 && clampedWrite.uiScale === 1.4 && clampedWrite.dialogScale === 1.4,
   'the settings writer did not clamp an out-of-range value: ' + JSON.stringify(clampedWrite))
 check(clampedWrite.sort === 'newest' && clampedWrite.autoRoleGroups === true
-  && clampedWrite.customGroups === true && clampedWrite.customGroupsText === '',
+  && clampedWrite.customGroups === true && clampedWrite.customGroupsText === ''
+  && clampedWrite.taskCustomGroups === false && clampedWrite.taskCustomGroupsText === '',
 'the settings writer did not sanitize the invalid fields: ' + JSON.stringify(clampedWrite))
 settingTextarea?.props?.onChange?.({ target: { value: 'crew: builder, reviewer\nqa: test' } })
 check(JSON.parse(storage.get(SETTINGS_STORAGE_KEY)).customGroupsText === 'crew: builder, reviewer\nqa: test',
   'the custom-groups text was not stored verbatim')
+settingBoxes[2]?.props?.onChange?.({ target: { checked: true } })
+settingTextareas[1]?.props?.onChange?.({ target: { value: 'ui: inspector, dialog' } })
+const taskGroupWrite = JSON.parse(storage.get(SETTINGS_STORAGE_KEY))
+check(taskGroupWrite.taskCustomGroups === true && taskGroupWrite.taskCustomGroupsText === 'ui: inspector, dialog',
+  'the task custom-groups editor was not stored: ' + JSON.stringify(taskGroupWrite))
 
 /* --- Task dialog Report: loading, ready and empty ---------------------- */
 

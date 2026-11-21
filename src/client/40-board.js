@@ -300,6 +300,43 @@
       const groupId = groupIdOf('tasks', column.key)
       const collapsed = isGroupCollapsed(boardId, groupId, count)
       const title = t('col' + column.key.charAt(0).toUpperCase() + column.key.slice(1))
+      const renderEmpty = () => h('span', { className: 'tk-col-empty' }, t('emptyColumn'))
+      const renderCard = task => h(TaskCard, {
+        key: task.id, task, flipGroup: column.key, whoById, t, onOpen, onOpenAgent, onHoverOwner,
+      })
+      /** One custom task group, or the flat unmatched tail after the groups. */
+      const renderUnit = unit => {
+        if (unit.head !== true) {
+          return h(React.Fragment, { key: unit.key }, unit.tasks.map(renderCard))
+        }
+        const subgroupId = groupIdOf('tasks', column.key + ':' + unit.key)
+        const folded = isGroupCollapsed(boardId, subgroupId, unit.tasks.length)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        return h(React.Fragment, { key: unit.key },
+          h(GroupHead, {
+            groupId: subgroupId,
+            state: column.state,
+            title: unit.title,
+            count: unit.tasks.length,
+            expanded: !folded,
+            label,
+            onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
+            subgroup: true,
+          }),
+          folded
+            ? null
+            : h(GroupBody, {
+              boardId,
+              groupId: subgroupId,
+              count: unit.tasks.length,
+              t,
+              renderEmpty,
+              renderItem: index => renderCard(unit.tasks[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            }))
+      }
+      const units = Array.isArray(column.groups) ? column.groups : null
       return h('section', { className: 'tk-col', 'data-column': column.key },
         h(GroupHead, {
           groupId,
@@ -312,21 +349,19 @@
         }),
         collapsed
           ? null
-          : h(GroupBody, {
-            boardId,
-            groupId,
-            count,
-            t,
-            renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-            renderItem: index => {
-              const task = column.tasks[index]
-              return h(TaskCard, {
-                key: task.id, task, flipGroup: column.key, whoById, t, onOpen, onOpenAgent, onHoverOwner,
-              })
-            },
-            onExpand: onExpandGroup,
-            onCollapse: onCollapseGroup,
-          }))
+          : (units === null
+            ? h(GroupBody, {
+              boardId,
+              groupId,
+              count,
+              t,
+              renderEmpty,
+              renderItem: index => renderCard(column.tasks[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            })
+            : h('div', { className: 'tk-col-body', 'data-group-body': groupId },
+              count === 0 ? renderEmpty() : units.map(renderUnit))))
     }
 
     /**

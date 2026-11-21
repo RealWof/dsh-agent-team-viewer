@@ -275,12 +275,14 @@ window.__ModuleLoader__.load({
     /**
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
       customGroups: false,
       customGroupsText: '',
+      taskCustomGroups: false,
+      taskCustomGroupsText: '',
       sort: 'newest',
       animateCards: true,
       animationMs: 220,
@@ -324,6 +326,10 @@ window.__ModuleLoader__.load({
         customGroupsText: typeof read('customGroupsText') === 'string'
           ? read('customGroupsText')
           : VIEW_SETTINGS_DEFAULTS.customGroupsText,
+        taskCustomGroups: boolean(read('taskCustomGroups'), VIEW_SETTINGS_DEFAULTS.taskCustomGroups),
+        taskCustomGroupsText: typeof read('taskCustomGroupsText') === 'string'
+          ? read('taskCustomGroupsText')
+          : VIEW_SETTINGS_DEFAULTS.taskCustomGroupsText,
         sort,
         animateCards: boolean(read('animateCards'), VIEW_SETTINGS_DEFAULTS.animateCards),
         animationMs: snapSetting(read('animationMs'), 0, VIEW_ANIMATION_MAX, VIEW_ANIMATION_STEP,
@@ -487,6 +493,25 @@ window.__ModuleLoader__.load({
             'aria-label': t('setCustomGroups'),
             disabled: settings.customGroups !== true,
             onChange: event => { update({ customGroupsText: event.target.value }) },
+          }),
+          h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote')),
+
+          h('label', { className: 'tk-set-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.taskCustomGroups,
+              onChange: event => { update({ taskCustomGroups: event.target.checked }) },
+            }),
+            h('span', null, t('setTaskCustomGroups'))),
+          h('span', { className: 'tk-set-hint' }, t('setTaskCustomGroupsHint')),
+          h('textarea', {
+            className: 'tk-set-text',
+            rows: 3,
+            value: settings.taskCustomGroupsText,
+            placeholder: t('setTaskCustomGroupsExample'),
+            'aria-label': t('setTaskCustomGroups'),
+            disabled: settings.taskCustomGroups !== true,
+            onChange: event => { update({ taskCustomGroupsText: event.target.value }) },
           }),
           h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote'))),
 
@@ -674,6 +699,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: 'Group agents by the name patterns below instead of by role.',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: 'One group per line: Group name: pattern, pattern',
+      setTaskCustomGroups: 'Custom task groups',
+      setTaskCustomGroupsHint: 'Group tasks by the patterns below instead of one flat list.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: 'Task order',
       setSortNewest: 'Newest first',
       setSortOldest: 'Oldest first',
@@ -812,6 +840,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: 'Группировать агентов по шаблонам имён ниже, а не по роли.',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: 'Одна группа на строку: Имя группы: шаблон, шаблон',
+      setTaskCustomGroups: 'Группы задач',
+      setTaskCustomGroupsHint: 'Группировать задачи по шаблонам ниже, а не одним списком.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: 'Порядок задач',
       setSortNewest: 'Сначала новые',
       setSortOldest: 'Сначала старые',
@@ -950,6 +981,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: '改为按下方名称模式分组，而不是按角色。',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: '每行一个分组：分组名：模式，模式',
+      setTaskCustomGroups: '自定义任务分组',
+      setTaskCustomGroupsHint: '按下方模式对任务分组，而不是一个平铺列表。',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: '任务顺序',
       setSortNewest: '最新优先',
       setSortOldest: '最早优先',
@@ -1088,6 +1122,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: 'ロールではなく、下の名前パターンでエージェントをグループ化します。',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: '1 行に 1 グループ：グループ名：パターン、パターン',
+      setTaskCustomGroups: 'タスクのカスタムグループ',
+      setTaskCustomGroupsHint: '下のパターンでタスクをグループ化します（単一リストの代わり）。',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: 'タスクの並び順',
       setSortNewest: '新しい順',
       setSortOldest: '古い順',
@@ -1226,6 +1263,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: 'Agrupa los agentes por los patrones de nombre de abajo en lugar del rol.',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: 'Un grupo por línea: Nombre del grupo: patrón, patrón',
+      setTaskCustomGroups: 'Grupos de tareas personalizados',
+      setTaskCustomGroupsHint: 'Agrupa las tareas por los patrones de abajo en lugar de una lista plana.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: 'Orden de las tareas',
       setSortNewest: 'Más recientes primero',
       setSortOldest: 'Más antiguas primero',
@@ -1364,6 +1404,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: 'Regroupe les agents selon les motifs de nom ci-dessous plutôt que selon le rôle.',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: 'Un groupe par ligne : Nom du groupe : motif, motif',
+      setTaskCustomGroups: 'Groupes de tâches personnalisés',
+      setTaskCustomGroupsHint: 'Regroupez les tâches selon les motifs ci-dessous au lieu d’une liste plate.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: 'Ordre des tâches',
       setSortNewest: 'Plus récentes en premier',
       setSortOldest: 'Plus anciennes en premier',
@@ -1502,6 +1545,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: 'Gruppiert Agenten nach den Mustern unten statt nach der Rolle.',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: 'Eine Gruppe pro Zeile: Gruppenname: Muster, Muster',
+      setTaskCustomGroups: 'Benutzerdefinierte Aufgabengruppen',
+      setTaskCustomGroupsHint: 'Gruppiert Aufgaben nach den Mustern unten statt in einer flachen Liste.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: 'Aufgabenreihenfolge',
       setSortNewest: 'Neueste zuerst',
       setSortOldest: 'Älteste zuerst',
@@ -1640,6 +1686,9 @@ window.__ModuleLoader__.load({
       setCustomGroupsHint: 'Agrupa os agentes pelos padrões de nome abaixo em vez da função.',
       setCustomGroupsExample: 'review: reviewer, auditor',
       setCustomGroupsNote: 'Um grupo por linha: Nome do grupo: padrão, padrão',
+      setTaskCustomGroups: 'Grupos de tarefas personalizados',
+      setTaskCustomGroupsHint: 'Agrupe as tarefas pelos padrões abaixo em vez de uma lista plana.',
+      setTaskCustomGroupsExample: 'ui: inspector, dialog',
       setSorting: 'Ordem das tarefas',
       setSortNewest: 'Mais recentes primeiro',
       setSortOldest: 'Mais antigas primeiro',
@@ -2826,6 +2875,61 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * The first custom task group a task belongs to, if any. A pattern matches
+     * case-insensitively as a substring of the task subject, id, owner name or
+     * any write scope; a task belongs to one group.
+     * @param task - a Team task view.
+     * @param groups - the parsed custom groups, in editor order.
+     * @returns the matching group, or undefined.
+     */
+    function taskCustomGroupOf(task, groups) {
+      if (!Array.isArray(groups) || groups.length === 0) return undefined
+      const scopes = Array.isArray(task?.writeScopes) ? task.writeScopes : []
+      const values = [task?.subject, task?.id, task?.ownerName, ...scopes]
+        .filter(value => typeof value === 'string' && value !== '')
+        .map(value => value.toLowerCase())
+      for (const group of groups) {
+        for (const pattern of group.patterns) {
+          const needle = pattern.toLowerCase()
+          if (needle !== '' && values.some(value => value.includes(needle))) return group
+        }
+      }
+      return undefined
+    }
+
+    /**
+     * Build the task rows of one status column after its sort: the custom
+     * groups in editor order (each with a head, even for a single member), then
+     * the unmatched tasks flat. There is no automatic role grouping for tasks.
+     * @param tasks - the column's tasks, already sorted.
+     * @param settings - the view settings.
+     * @returns the row units; `null` when task grouping is off or empty.
+     */
+    function planTaskGroups(tasks, settings) {
+      const custom = settings !== null && settings.taskCustomGroups === true
+        ? parseCustomGroups(settings.taskCustomGroupsText)
+        : []
+      if (custom.length === 0) return null
+      const buckets = custom.map(group => ({ key: 'custom:' + group.name, title: group.name, tasks: [] }))
+      const unmatched = []
+      for (const task of tasks) {
+        const match = taskCustomGroupOf(task, custom)
+        if (match === undefined) {
+          unmatched.push(task)
+          continue
+        }
+        buckets[custom.indexOf(match)].tasks.push(task)
+      }
+      const units = []
+      for (const bucket of buckets) {
+        if (bucket.tasks.length === 0) continue
+        units.push({ key: bucket.key, title: bucket.title, tasks: bucket.tasks, head: true })
+      }
+      if (unmatched.length > 0) units.push({ key: 'other', title: '', tasks: unmatched, head: false })
+      return units
+    }
+
+    /**
      * Read one projection value out of the sessions list payload. The list
      * carries every projection that has been loaded for a session, including
      * the summary-excluded ones once it has been refreshed.
@@ -3815,11 +3919,17 @@ window.__ModuleLoader__.load({
         const grouped = {}
         for (const column of COLUMNS) grouped[column.key] = []
         for (const task of tasks) grouped[columnOf(task)].push(task)
-        return COLUMNS.map(column => ({
-          ...column,
-          tasks: sortTasks(grouped[column.key], settings.sort, ledger),
-        }))
-      }, [tasks, ledger, settings.sort])
+        return COLUMNS.map(column => {
+          const ordered = sortTasks(grouped[column.key], settings.sort, ledger)
+          return {
+            ...column,
+            tasks: ordered,
+            // `null` keeps the flat list the board has always drawn; an array
+            // adds the custom task groups and the unmatched tail.
+            groups: planTaskGroups(ordered, settings),
+          }
+        })
+      }, [tasks, ledger, settings])
 
       const timelines = useMemo(() => {
         const map = {}
@@ -4152,6 +4262,43 @@ window.__ModuleLoader__.load({
       const groupId = groupIdOf('tasks', column.key)
       const collapsed = isGroupCollapsed(boardId, groupId, count)
       const title = t('col' + column.key.charAt(0).toUpperCase() + column.key.slice(1))
+      const renderEmpty = () => h('span', { className: 'tk-col-empty' }, t('emptyColumn'))
+      const renderCard = task => h(TaskCard, {
+        key: task.id, task, flipGroup: column.key, whoById, t, onOpen, onOpenAgent, onHoverOwner,
+      })
+      /** One custom task group, or the flat unmatched tail after the groups. */
+      const renderUnit = unit => {
+        if (unit.head !== true) {
+          return h(React.Fragment, { key: unit.key }, unit.tasks.map(renderCard))
+        }
+        const subgroupId = groupIdOf('tasks', column.key + ':' + unit.key)
+        const folded = isGroupCollapsed(boardId, subgroupId, unit.tasks.length)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        return h(React.Fragment, { key: unit.key },
+          h(GroupHead, {
+            groupId: subgroupId,
+            state: column.state,
+            title: unit.title,
+            count: unit.tasks.length,
+            expanded: !folded,
+            label,
+            onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
+            subgroup: true,
+          }),
+          folded
+            ? null
+            : h(GroupBody, {
+              boardId,
+              groupId: subgroupId,
+              count: unit.tasks.length,
+              t,
+              renderEmpty,
+              renderItem: index => renderCard(unit.tasks[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            }))
+      }
+      const units = Array.isArray(column.groups) ? column.groups : null
       return h('section', { className: 'tk-col', 'data-column': column.key },
         h(GroupHead, {
           groupId,
@@ -4164,21 +4311,19 @@ window.__ModuleLoader__.load({
         }),
         collapsed
           ? null
-          : h(GroupBody, {
-            boardId,
-            groupId,
-            count,
-            t,
-            renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-            renderItem: index => {
-              const task = column.tasks[index]
-              return h(TaskCard, {
-                key: task.id, task, flipGroup: column.key, whoById, t, onOpen, onOpenAgent, onHoverOwner,
-              })
-            },
-            onExpand: onExpandGroup,
-            onCollapse: onCollapseGroup,
-          }))
+          : (units === null
+            ? h(GroupBody, {
+              boardId,
+              groupId,
+              count,
+              t,
+              renderEmpty,
+              renderItem: index => renderCard(column.tasks[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            })
+            : h('div', { className: 'tk-col-body', 'data-group-body': groupId },
+              count === 0 ? renderEmpty() : units.map(renderUnit))))
     }
 
     /**

@@ -648,6 +648,61 @@
     }
 
     /**
+     * The first custom task group a task belongs to, if any. A pattern matches
+     * case-insensitively as a substring of the task subject, id, owner name or
+     * any write scope; a task belongs to one group.
+     * @param task - a Team task view.
+     * @param groups - the parsed custom groups, in editor order.
+     * @returns the matching group, or undefined.
+     */
+    function taskCustomGroupOf(task, groups) {
+      if (!Array.isArray(groups) || groups.length === 0) return undefined
+      const scopes = Array.isArray(task?.writeScopes) ? task.writeScopes : []
+      const values = [task?.subject, task?.id, task?.ownerName, ...scopes]
+        .filter(value => typeof value === 'string' && value !== '')
+        .map(value => value.toLowerCase())
+      for (const group of groups) {
+        for (const pattern of group.patterns) {
+          const needle = pattern.toLowerCase()
+          if (needle !== '' && values.some(value => value.includes(needle))) return group
+        }
+      }
+      return undefined
+    }
+
+    /**
+     * Build the task rows of one status column after its sort: the custom
+     * groups in editor order (each with a head, even for a single member), then
+     * the unmatched tasks flat. There is no automatic role grouping for tasks.
+     * @param tasks - the column's tasks, already sorted.
+     * @param settings - the view settings.
+     * @returns the row units; `null` when task grouping is off or empty.
+     */
+    function planTaskGroups(tasks, settings) {
+      const custom = settings !== null && settings.taskCustomGroups === true
+        ? parseCustomGroups(settings.taskCustomGroupsText)
+        : []
+      if (custom.length === 0) return null
+      const buckets = custom.map(group => ({ key: 'custom:' + group.name, title: group.name, tasks: [] }))
+      const unmatched = []
+      for (const task of tasks) {
+        const match = taskCustomGroupOf(task, custom)
+        if (match === undefined) {
+          unmatched.push(task)
+          continue
+        }
+        buckets[custom.indexOf(match)].tasks.push(task)
+      }
+      const units = []
+      for (const bucket of buckets) {
+        if (bucket.tasks.length === 0) continue
+        units.push({ key: bucket.key, title: bucket.title, tasks: bucket.tasks, head: true })
+      }
+      if (unmatched.length > 0) units.push({ key: 'other', title: '', tasks: unmatched, head: false })
+      return units
+    }
+
+    /**
      * Read one projection value out of the sessions list payload. The list
      * carries every projection that has been loaded for a session, including
      * the summary-excluded ones once it has been refreshed.
@@ -1637,11 +1692,17 @@
         const grouped = {}
         for (const column of COLUMNS) grouped[column.key] = []
         for (const task of tasks) grouped[columnOf(task)].push(task)
-        return COLUMNS.map(column => ({
-          ...column,
-          tasks: sortTasks(grouped[column.key], settings.sort, ledger),
-        }))
-      }, [tasks, ledger, settings.sort])
+        return COLUMNS.map(column => {
+          const ordered = sortTasks(grouped[column.key], settings.sort, ledger)
+          return {
+            ...column,
+            tasks: ordered,
+            // `null` keeps the flat list the board has always drawn; an array
+            // adds the custom task groups and the unmatched tail.
+            groups: planTaskGroups(ordered, settings),
+          }
+        })
+      }, [tasks, ledger, settings])
 
       const timelines = useMemo(() => {
         const map = {}

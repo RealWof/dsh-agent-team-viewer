@@ -20,12 +20,14 @@
     /**
      * Every view preference and its shipped default. `newest` keeps the board
      * in the order a session appends tasks: the newest work stays on top.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
       customGroups: false,
       customGroupsText: '',
+      taskCustomGroups: false,
+      taskCustomGroupsText: '',
       sort: 'newest',
       animateCards: true,
       animationMs: 220,
@@ -69,6 +71,10 @@
         customGroupsText: typeof read('customGroupsText') === 'string'
           ? read('customGroupsText')
           : VIEW_SETTINGS_DEFAULTS.customGroupsText,
+        taskCustomGroups: boolean(read('taskCustomGroups'), VIEW_SETTINGS_DEFAULTS.taskCustomGroups),
+        taskCustomGroupsText: typeof read('taskCustomGroupsText') === 'string'
+          ? read('taskCustomGroupsText')
+          : VIEW_SETTINGS_DEFAULTS.taskCustomGroupsText,
         sort,
         animateCards: boolean(read('animateCards'), VIEW_SETTINGS_DEFAULTS.animateCards),
         animationMs: snapSetting(read('animationMs'), 0, VIEW_ANIMATION_MAX, VIEW_ANIMATION_STEP,
@@ -232,6 +238,25 @@
             'aria-label': t('setCustomGroups'),
             disabled: settings.customGroups !== true,
             onChange: event => { update({ customGroupsText: event.target.value }) },
+          }),
+          h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote')),
+
+          h('label', { className: 'tk-set-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.taskCustomGroups,
+              onChange: event => { update({ taskCustomGroups: event.target.checked }) },
+            }),
+            h('span', null, t('setTaskCustomGroups'))),
+          h('span', { className: 'tk-set-hint' }, t('setTaskCustomGroupsHint')),
+          h('textarea', {
+            className: 'tk-set-text',
+            rows: 3,
+            value: settings.taskCustomGroupsText,
+            placeholder: t('setTaskCustomGroupsExample'),
+            'aria-label': t('setTaskCustomGroups'),
+            disabled: settings.taskCustomGroups !== true,
+            onChange: event => { update({ taskCustomGroupsText: event.target.value }) },
           }),
           h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote'))),
 
