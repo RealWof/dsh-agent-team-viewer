@@ -33,6 +33,12 @@ const stateSlots = {}
 let hookIndex = 0
 const resetHooks = () => { hookIndex = 0 }
 
+/** Wipe the hook slots so the next render is a fresh mount. */
+const resetSlots = () => {
+  for (const key of Object.keys(stateSlots)) delete stateSlots[key]
+  resetHooks()
+}
+
 const React = {
   Fragment: Symbol.for('react.fragment'),
   createElement: toElement,
@@ -481,6 +487,36 @@ check(activeRows[0]?.props?.['data-lead'] === 'true', 'the lead is not the first
 check(strip.texts.includes('colActive') && strip.texts.includes('colDone') && strip.texts.includes('colAgentIdle'),
   'an agent group header is missing its label')
 
+/* --- Role grouping: two agents of one role share a nested head -------- */
+
+const sharedRoleState = (() => {
+  const next = JSON.parse(JSON.stringify(listState))
+  next.byId['session-b'].running = true
+  next.projectionsBySession['session-b'].values.agentPreset = 'standard'
+  return next
+})()
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const sharedRole = surface(tabBody({ ...props, useSessions: selector => selector(sharedRoleState) }))
+const sharedActive = sharedRole.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+const roleHead = within(sharedActive, node => node.props?.['data-target'] === 'agents:active:role:standard')[0]
+check(roleHead !== undefined, 'two agents sharing a role did not get a nested group head')
+check(roleHead?.props?.['data-subgroup'] === 'true', 'the nested group head is not marked as a subgroup')
+check(within(roleHead, node => node.props?.className === 'tk-col-count')[0]?.props?.children === '2',
+  'the nested group head does not count its members')
+check(within(sharedActive, node => node.props?.className === 'tk-agent-row').length === 3,
+  'the nested role group did not render its two members under the lead')
+roleHead?.props?.onClick?.()
+resetHooks()
+const roleFolded = surface(tabBody({ ...props, useSessions: selector => selector(sharedRoleState) }))
+const foldedRoleHead = within(roleFolded.nodes.find(node => node.props?.['data-agent-column'] === 'active'),
+  node => node.props?.['data-target'] === 'agents:active:role:standard')[0]
+check(foldedRoleHead?.props?.['aria-expanded'] === 'false', 'the nested group head did not report the folded state')
+check(within(roleFolded.nodes.find(node => node.props?.['data-agent-column'] === 'active'),
+  node => node.props?.className === 'tk-agent-row').length === 1,
+'the folded nested group left its rows rendered')
+foldedRoleHead?.props?.onClick?.()
+
 /* Navigation: name -> main view, panel icon -> beside, owner -> main view. */
 within(rowOf('session-a'), node => node.props?.className === 'tk-agent-name')[0]?.props?.onClick?.()
 check(opened.length === 1 && opened[0][0] === 'session-a' && opened[0][1] === 'main', 'the agent name did not open the main view')
@@ -622,12 +658,6 @@ check(withSettledAgent.nodes.some(node => node.props?.['data-agent-dialog'] === 
 check(!withSettledAgent.texts.includes('jobsHeading'), 'the settled agent dialog shows a jobs block without a roster')
 
 /* --- Fold state: sections, groups, and the overflow cap ---------------- */
-
-/** Wipe the hook slots so the next render is a fresh mount. */
-const resetSlots = () => {
-  for (const key of Object.keys(stateSlots)) delete stateSlots[key]
-  resetHooks()
-}
 
 const COLLAPSE_STORAGE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
 

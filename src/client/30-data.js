@@ -410,6 +410,129 @@
       return rows
     }
 
+    /* ------------------------------------------------------------------ *
+     * Agent grouping: there is no role API in the Host, so a role is derived
+     * from the preset the session reported, else from the agent name. Custom
+     * groups come from the Settings editor and match substrings of the role,
+     * name, preset or id. The Lead is pinned before every group.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * The role key of an agent: the preset when the session has one, else the
+     * name, lower-cased and without a trailing ordinal (`builder-2` -> builder,
+     * `builder2` -> builder).
+     * @param agent - one agent entry.
+     * @returns the lower-case role key, or `other` when nothing is left.
+     */
+    function roleKeyOf(agent) {
+      const preset = typeof agent?.preset === 'string' ? agent.preset.trim() : ''
+      const name = typeof agent?.name === 'string' ? agent.name.trim() : ''
+      const source = preset !== '' ? preset : name
+      const stripped = source.toLowerCase().replace(/[-_\s]?\d+$/, '').trim()
+      return stripped !== '' ? stripped : 'other'
+    }
+
+    /**
+     * The first custom group an agent belongs to, if any. A pattern matches
+     * case-insensitively as a substring of the role, name, preset or id, and a
+     * group matches at most once because a row belongs to one group.
+     * @param agent - one agent entry.
+     * @param groups - the parsed custom groups, in editor order.
+     * @returns the matching group, or undefined.
+     */
+    function customGroupOf(agent, groups) {
+      if (!Array.isArray(groups) || groups.length === 0) return undefined
+      const values = [roleKeyOf(agent), agent?.name, agent?.preset, agent?.id]
+        .filter(value => typeof value === 'string' && value !== '')
+        .map(value => value.toLowerCase())
+      for (const group of groups) {
+        for (const pattern of group.patterns) {
+          const needle = pattern.toLowerCase()
+          if (needle !== '' && values.some(value => value.includes(needle))) return group
+        }
+      }
+      return undefined
+    }
+
+    /**
+     * The newest member stamp of one group; role groups are ordered by it so
+     * the group holding the freshest agent comes first.
+     * @param group - one group unit.
+     * @returns unix ms; 0 when no member has a stamp.
+     */
+    function groupRecencyOf(group) {
+      let newest = 0
+      for (const agent of group.agents) newest = Math.max(newest, agentStampOf(agent))
+      return newest
+    }
+
+    /**
+     * Build the rows of one agent status column after its Lead: custom groups
+     * in editor order (each with a head, even for a single member), then role
+     * groups when `autoRoleGroups` is on (a role with two or more members gets
+     * a head; a singleton role is a plain row), then the leftovers.
+     * @param agents - the column's agents, the Lead already removed.
+     * @param settings - the view settings.
+     * @returns the row units; `null` when both grouping switches are off.
+     */
+    function planAgentGroups(agents, settings) {
+      const custom = settings !== null && settings.customGroups === true
+        ? parseCustomGroups(settings.customGroupsText)
+        : []
+      const auto = settings !== null && settings.autoRoleGroups === true
+      if (custom.length === 0 && auto !== true) return null
+      const units = []
+      let leftover = [...agents]
+      if (custom.length > 0) {
+        const buckets = custom.map(group => ({ key: 'custom:' + group.name, title: group.name, agents: [] }))
+        const unclaimed = []
+        for (const agent of leftover) {
+          const match = customGroupOf(agent, custom)
+          if (match === undefined) {
+            unclaimed.push(agent)
+            continue
+          }
+          buckets[custom.indexOf(match)].agents.push(agent)
+        }
+        for (const bucket of buckets) {
+          if (bucket.agents.length === 0) continue
+          units.push({
+            key: bucket.key,
+            title: bucket.title,
+            agents: sortAgents(bucket.agents, settings.sort),
+            head: true,
+          })
+        }
+        leftover = unclaimed
+      }
+      if (auto !== true) {
+        if (leftover.length > 0) {
+          units.push({ key: 'other', agents: sortAgents(leftover, settings.sort), head: false })
+        }
+        return units
+      }
+      const byRole = new Map()
+      for (const agent of leftover) {
+        const role = roleKeyOf(agent)
+        if (!byRole.has(role)) byRole.set(role, [])
+        byRole.get(role).push(agent)
+      }
+      const groups = []
+      const singles = []
+      for (const [role, members] of byRole) {
+        const ordered = sortAgents(members, settings.sort)
+        const unit = { key: 'role:' + role, title: role, agents: ordered, head: ordered.length >= 2 }
+        if (unit.head === true) groups.push(unit)
+        else singles.push(unit)
+      }
+      groups.sort((left, right) => groupRecencyOf(right) - groupRecencyOf(left)
+        || String(left.title).localeCompare(String(right.title)))
+      // A singleton role is a plain row, ordered like every other agent.
+      const singleAgents = sortAgents(singles.map(unit => unit.agents[0]), settings.sort)
+      const singleUnits = singleAgents.map(agent => singles.find(unit => unit.agents[0] === agent))
+      return units.concat(groups, singleUnits)
+    }
+
     /**
      * Read one projection value out of the sessions list payload. The list
      * carries every projection that has been loaded for a session, including
@@ -1073,12 +1196,19 @@
           const group = groups.find(candidate => candidate.key === key) ?? groups[groups.length - 1]
           group.agents.push(agent)
         }
-        // The Lead stays on top of its own column; the rest follow the view
-        // setting, so the freshest agent of a status sits right under it.
+        // The Lead is pinned on top of its own column, without a group head.
+        // The rest follow the role/custom grouping when a switch is on, and
+        // the flat order when both are off.
         return groups.map(column => {
           const leadRow = column.agents.find(agent => agent.isLead === true)
-          const rest = sortAgents(column.agents.filter(agent => agent.isLead !== true), settings.sort)
-          return { ...column, agents: leadRow === undefined ? rest : [leadRow, ...rest] }
+          const rest = column.agents.filter(agent => agent.isLead !== true)
+          const units = planAgentGroups(rest, settings)
+          if (units === null) {
+            return { ...column, agents: leadRow === undefined ? rest : [leadRow, ...rest], groups: null, lead: leadRow }
+          }
+          const rows = leadRow === undefined ? [] : [leadRow]
+          for (const unit of units) rows.push(...unit.agents)
+          return { ...column, agents: rows, groups: units, lead: leadRow }
         })
       }, [stripAgents, settings])
 

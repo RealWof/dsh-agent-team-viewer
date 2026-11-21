@@ -1605,6 +1605,9 @@ window.__ModuleLoader__.load({
   color:inherit;font:inherit;text-align:left;cursor:pointer}
 .tk-col-fold:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent))}
 .tk-col-fold:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-col [data-subgroup="true"]{padding-left:3px}
+.tk-col [data-subgroup="true"] .tk-col-title{font-size:9px;letter-spacing:.1px;text-transform:none}
+.tk-col [data-subgroup="true"] .tk-col-count{padding:0 4px;font-size:9px}
 .tk-more{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;min-width:0;padding:2px 6px;
   border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:transparent;
   color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;line-height:14px;cursor:pointer}
@@ -2425,6 +2428,129 @@ window.__ModuleLoader__.load({
       return rows
     }
 
+    /* ------------------------------------------------------------------ *
+     * Agent grouping: there is no role API in the Host, so a role is derived
+     * from the preset the session reported, else from the agent name. Custom
+     * groups come from the Settings editor and match substrings of the role,
+     * name, preset or id. The Lead is pinned before every group.
+     * ------------------------------------------------------------------ */
+
+    /**
+     * The role key of an agent: the preset when the session has one, else the
+     * name, lower-cased and without a trailing ordinal (`builder-2` -> builder,
+     * `builder2` -> builder).
+     * @param agent - one agent entry.
+     * @returns the lower-case role key, or `other` when nothing is left.
+     */
+    function roleKeyOf(agent) {
+      const preset = typeof agent?.preset === 'string' ? agent.preset.trim() : ''
+      const name = typeof agent?.name === 'string' ? agent.name.trim() : ''
+      const source = preset !== '' ? preset : name
+      const stripped = source.toLowerCase().replace(/[-_\s]?\d+$/, '').trim()
+      return stripped !== '' ? stripped : 'other'
+    }
+
+    /**
+     * The first custom group an agent belongs to, if any. A pattern matches
+     * case-insensitively as a substring of the role, name, preset or id, and a
+     * group matches at most once because a row belongs to one group.
+     * @param agent - one agent entry.
+     * @param groups - the parsed custom groups, in editor order.
+     * @returns the matching group, or undefined.
+     */
+    function customGroupOf(agent, groups) {
+      if (!Array.isArray(groups) || groups.length === 0) return undefined
+      const values = [roleKeyOf(agent), agent?.name, agent?.preset, agent?.id]
+        .filter(value => typeof value === 'string' && value !== '')
+        .map(value => value.toLowerCase())
+      for (const group of groups) {
+        for (const pattern of group.patterns) {
+          const needle = pattern.toLowerCase()
+          if (needle !== '' && values.some(value => value.includes(needle))) return group
+        }
+      }
+      return undefined
+    }
+
+    /**
+     * The newest member stamp of one group; role groups are ordered by it so
+     * the group holding the freshest agent comes first.
+     * @param group - one group unit.
+     * @returns unix ms; 0 when no member has a stamp.
+     */
+    function groupRecencyOf(group) {
+      let newest = 0
+      for (const agent of group.agents) newest = Math.max(newest, agentStampOf(agent))
+      return newest
+    }
+
+    /**
+     * Build the rows of one agent status column after its Lead: custom groups
+     * in editor order (each with a head, even for a single member), then role
+     * groups when `autoRoleGroups` is on (a role with two or more members gets
+     * a head; a singleton role is a plain row), then the leftovers.
+     * @param agents - the column's agents, the Lead already removed.
+     * @param settings - the view settings.
+     * @returns the row units; `null` when both grouping switches are off.
+     */
+    function planAgentGroups(agents, settings) {
+      const custom = settings !== null && settings.customGroups === true
+        ? parseCustomGroups(settings.customGroupsText)
+        : []
+      const auto = settings !== null && settings.autoRoleGroups === true
+      if (custom.length === 0 && auto !== true) return null
+      const units = []
+      let leftover = [...agents]
+      if (custom.length > 0) {
+        const buckets = custom.map(group => ({ key: 'custom:' + group.name, title: group.name, agents: [] }))
+        const unclaimed = []
+        for (const agent of leftover) {
+          const match = customGroupOf(agent, custom)
+          if (match === undefined) {
+            unclaimed.push(agent)
+            continue
+          }
+          buckets[custom.indexOf(match)].agents.push(agent)
+        }
+        for (const bucket of buckets) {
+          if (bucket.agents.length === 0) continue
+          units.push({
+            key: bucket.key,
+            title: bucket.title,
+            agents: sortAgents(bucket.agents, settings.sort),
+            head: true,
+          })
+        }
+        leftover = unclaimed
+      }
+      if (auto !== true) {
+        if (leftover.length > 0) {
+          units.push({ key: 'other', agents: sortAgents(leftover, settings.sort), head: false })
+        }
+        return units
+      }
+      const byRole = new Map()
+      for (const agent of leftover) {
+        const role = roleKeyOf(agent)
+        if (!byRole.has(role)) byRole.set(role, [])
+        byRole.get(role).push(agent)
+      }
+      const groups = []
+      const singles = []
+      for (const [role, members] of byRole) {
+        const ordered = sortAgents(members, settings.sort)
+        const unit = { key: 'role:' + role, title: role, agents: ordered, head: ordered.length >= 2 }
+        if (unit.head === true) groups.push(unit)
+        else singles.push(unit)
+      }
+      groups.sort((left, right) => groupRecencyOf(right) - groupRecencyOf(left)
+        || String(left.title).localeCompare(String(right.title)))
+      // A singleton role is a plain row, ordered like every other agent.
+      const singleAgents = sortAgents(singles.map(unit => unit.agents[0]), settings.sort)
+      const singleUnits = singleAgents.map(agent => singles.find(unit => unit.agents[0] === agent))
+      return units.concat(groups, singleUnits)
+    }
+
     /**
      * Read one projection value out of the sessions list payload. The list
      * carries every projection that has been loaded for a session, including
@@ -3088,12 +3214,19 @@ window.__ModuleLoader__.load({
           const group = groups.find(candidate => candidate.key === key) ?? groups[groups.length - 1]
           group.agents.push(agent)
         }
-        // The Lead stays on top of its own column; the rest follow the view
-        // setting, so the freshest agent of a status sits right under it.
+        // The Lead is pinned on top of its own column, without a group head.
+        // The rest follow the role/custom grouping when a switch is on, and
+        // the flat order when both are off.
         return groups.map(column => {
           const leadRow = column.agents.find(agent => agent.isLead === true)
-          const rest = sortAgents(column.agents.filter(agent => agent.isLead !== true), settings.sort)
-          return { ...column, agents: leadRow === undefined ? rest : [leadRow, ...rest] }
+          const rest = column.agents.filter(agent => agent.isLead !== true)
+          const units = planAgentGroups(rest, settings)
+          if (units === null) {
+            return { ...column, agents: leadRow === undefined ? rest : [leadRow, ...rest], groups: null, lead: leadRow }
+          }
+          const rows = leadRow === undefined ? [] : [leadRow]
+          for (const unit of units) rows.push(...unit.agents)
+          return { ...column, agents: rows, groups: units, lead: leadRow }
         })
       }, [stripAgents, settings])
 
@@ -3419,15 +3552,19 @@ window.__ModuleLoader__.load({
     /**
      * One status group's header. The whole row is the disclosure button, so a
      * click anywhere on it folds the pile; the count sits in the row and
-     * therefore stays visible while the group is folded.
-     * @param props - `groupId`, `state`, `title`, `count`, `expanded`, `label`, `onToggle`.
+     * therefore stays visible while the group is folded. A nested head (a
+     * role or custom group inside an agent status column) is marked with
+     * `data-subgroup` and painted slightly smaller.
+     * @param props - `groupId`, `state`, `title`, `count`, `expanded`, `label`,
+     *   `onToggle`, and `subgroup` for a nested head.
      */
-    function GroupHead({ groupId, state, title, count, expanded, label, onToggle }) {
+    function GroupHead({ groupId, state, title, count, expanded, label, onToggle, subgroup = false }) {
       return h('button', {
         type: 'button',
         className: 'tk-col-head tk-col-fold',
         'data-fold': 'group',
         'data-target': groupId,
+        'data-subgroup': subgroup === true ? 'true' : undefined,
         'aria-expanded': expanded === true ? 'true' : 'false',
         'aria-label': label,
         title: label,
@@ -3631,7 +3768,9 @@ window.__ModuleLoader__.load({
 
     /**
      * The agents of the tree, broken down by the same statuses the task board
-     * uses — the Lead first inside its own group, then every subagent.
+     * uses — the Lead first inside its own group, then every subagent. When a
+     * grouping switch is on, each status column renders custom and role groups
+     * with their own foldable headers; otherwise it stays a flat list.
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onToggleSection`, `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`.
@@ -3645,6 +3784,48 @@ window.__ModuleLoader__.load({
       const countLabel = plural(t, subagents, ['agentsOne', 'agentsFew', 'agentsMany'])
       const seenCols = columnCount >= 4 ? 3 : columnCount
       const collapsed = isSectionCollapsed('agents')
+      const renderRow = agent => h(AgentRow, {
+        key: agent.id,
+        agent,
+        stats: agentStats[agent.id],
+        jobs: jobsByAgent[agent.id],
+        now,
+        t,
+        tAgent,
+        onOpenAgent,
+        onInspect,
+      })
+      /** Whether a nested group is a head, and the body it reveals when open. */
+      const renderUnit = (column, unit) => {
+        if (unit.head !== true) {
+          return h(React.Fragment, { key: unit.key }, unit.agents.map(renderRow))
+        }
+        const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
+        const folded = isGroupCollapsed(subgroupId, unit.agents.length)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        return h(React.Fragment, { key: unit.key },
+          h(GroupHead, {
+            groupId: subgroupId,
+            state: column.state,
+            title: unit.title,
+            count: unit.agents.length,
+            expanded: !folded,
+            label,
+            onToggle: onToggleGroup,
+            subgroup: true,
+          }),
+          folded
+            ? null
+            : h(GroupBody, {
+              groupId: subgroupId,
+              count: unit.agents.length,
+              t,
+              renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
+              renderItem: index => renderRow(unit.agents[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            }))
+      }
       return h('section', { className: 'tk-agents', 'data-agent-team-viewer': 'agents' },
         h('div', { className: 'tk-agents-head' },
           h(FoldToggle, {
@@ -3687,28 +3868,23 @@ window.__ModuleLoader__.load({
                 }),
                 folded
                   ? null
-                  : h(GroupBody, {
-                    groupId,
-                    count,
-                    t,
-                    renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-                    renderItem: index => {
-                      const agent = column.agents[index]
-                      return h(AgentRow, {
-                        key: agent.id,
-                        agent,
-                        stats: agentStats[agent.id],
-                        jobs: jobsByAgent[agent.id],
-                        now,
-                        t,
-                        tAgent,
-                        onOpenAgent,
-                        onInspect,
-                      })
-                    },
-                    onExpand: onExpandGroup,
-                    onCollapse: onCollapseGroup,
-                  }))
+                  : (column.groups === null
+                    ? h(GroupBody, {
+                      groupId,
+                      count,
+                      t,
+                      renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
+                      renderItem: index => renderRow(column.agents[index]),
+                      onExpand: onExpandGroup,
+                      onCollapse: onCollapseGroup,
+                    })
+                    : h('div', { className: 'tk-col-body', 'data-group-body': groupId },
+                      count === 0
+                        ? h('span', { className: 'tk-col-empty' }, t('emptyColumn'))
+                        : [
+                          column.lead === undefined ? null : renderRow(column.lead),
+                          ...column.groups.map(unit => renderUnit(column, unit)),
+                        ])))
               }))))
     }
 
@@ -3760,7 +3936,15 @@ window.__ModuleLoader__.load({
       /** How many items each status group holds, keyed by the stable group id. */
       const groupCounts = useMemo(() => {
         const counts = {}
-        for (const column of model.agentColumns) counts[groupIdOf('agents', column.key)] = column.agents.length
+        for (const column of model.agentColumns) {
+          counts[groupIdOf('agents', column.key)] = column.agents.length
+          // A nested role/custom group folds itself like a status group does.
+          for (const unit of column.groups ?? []) {
+            if (unit.head === true) {
+              counts[groupIdOf('agents', column.key + ':' + unit.key)] = unit.agents.length
+            }
+          }
+        }
         for (const column of model.columns) counts[groupIdOf('tasks', column.key)] = column.tasks.length
         return counts
       }, [model.agentColumns, model.columns])

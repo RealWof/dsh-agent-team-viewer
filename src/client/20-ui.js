@@ -44,6 +44,9 @@
   color:inherit;font:inherit;text-align:left;cursor:pointer}
 .tk-col-fold:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 7%,transparent))}
 .tk-col-fold:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-col [data-subgroup="true"]{padding-left:3px}
+.tk-col [data-subgroup="true"] .tk-col-title{font-size:9px;letter-spacing:.1px;text-transform:none}
+.tk-col [data-subgroup="true"] .tk-col-count{padding:0 4px;font-size:9px}
 .tk-more{display:flex;align-items:center;justify-content:center;gap:4px;width:100%;min-width:0;padding:2px 6px;
   border:1px dashed var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:transparent;
   color:var(--dsw-alias-label-secondary);font:inherit;font-size:10px;line-height:14px;cursor:pointer}

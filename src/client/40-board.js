@@ -147,15 +147,19 @@
     /**
      * One status group's header. The whole row is the disclosure button, so a
      * click anywhere on it folds the pile; the count sits in the row and
-     * therefore stays visible while the group is folded.
-     * @param props - `groupId`, `state`, `title`, `count`, `expanded`, `label`, `onToggle`.
+     * therefore stays visible while the group is folded. A nested head (a
+     * role or custom group inside an agent status column) is marked with
+     * `data-subgroup` and painted slightly smaller.
+     * @param props - `groupId`, `state`, `title`, `count`, `expanded`, `label`,
+     *   `onToggle`, and `subgroup` for a nested head.
      */
-    function GroupHead({ groupId, state, title, count, expanded, label, onToggle }) {
+    function GroupHead({ groupId, state, title, count, expanded, label, onToggle, subgroup = false }) {
       return h('button', {
         type: 'button',
         className: 'tk-col-head tk-col-fold',
         'data-fold': 'group',
         'data-target': groupId,
+        'data-subgroup': subgroup === true ? 'true' : undefined,
         'aria-expanded': expanded === true ? 'true' : 'false',
         'aria-label': label,
         title: label,
@@ -359,7 +363,9 @@
 
     /**
      * The agents of the tree, broken down by the same statuses the task board
-     * uses — the Lead first inside its own group, then every subagent.
+     * uses — the Lead first inside its own group, then every subagent. When a
+     * grouping switch is on, each status column renders custom and role groups
+     * with their own foldable headers; otherwise it stays a flat list.
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
      *   `onToggleSection`, `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`.
@@ -373,6 +379,48 @@
       const countLabel = plural(t, subagents, ['agentsOne', 'agentsFew', 'agentsMany'])
       const seenCols = columnCount >= 4 ? 3 : columnCount
       const collapsed = isSectionCollapsed('agents')
+      const renderRow = agent => h(AgentRow, {
+        key: agent.id,
+        agent,
+        stats: agentStats[agent.id],
+        jobs: jobsByAgent[agent.id],
+        now,
+        t,
+        tAgent,
+        onOpenAgent,
+        onInspect,
+      })
+      /** Whether a nested group is a head, and the body it reveals when open. */
+      const renderUnit = (column, unit) => {
+        if (unit.head !== true) {
+          return h(React.Fragment, { key: unit.key }, unit.agents.map(renderRow))
+        }
+        const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
+        const folded = isGroupCollapsed(subgroupId, unit.agents.length)
+        const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
+        return h(React.Fragment, { key: unit.key },
+          h(GroupHead, {
+            groupId: subgroupId,
+            state: column.state,
+            title: unit.title,
+            count: unit.agents.length,
+            expanded: !folded,
+            label,
+            onToggle: onToggleGroup,
+            subgroup: true,
+          }),
+          folded
+            ? null
+            : h(GroupBody, {
+              groupId: subgroupId,
+              count: unit.agents.length,
+              t,
+              renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
+              renderItem: index => renderRow(unit.agents[index]),
+              onExpand: onExpandGroup,
+              onCollapse: onCollapseGroup,
+            }))
+      }
       return h('section', { className: 'tk-agents', 'data-agent-team-viewer': 'agents' },
         h('div', { className: 'tk-agents-head' },
           h(FoldToggle, {
@@ -415,28 +463,23 @@
                 }),
                 folded
                   ? null
-                  : h(GroupBody, {
-                    groupId,
-                    count,
-                    t,
-                    renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
-                    renderItem: index => {
-                      const agent = column.agents[index]
-                      return h(AgentRow, {
-                        key: agent.id,
-                        agent,
-                        stats: agentStats[agent.id],
-                        jobs: jobsByAgent[agent.id],
-                        now,
-                        t,
-                        tAgent,
-                        onOpenAgent,
-                        onInspect,
-                      })
-                    },
-                    onExpand: onExpandGroup,
-                    onCollapse: onCollapseGroup,
-                  }))
+                  : (column.groups === null
+                    ? h(GroupBody, {
+                      groupId,
+                      count,
+                      t,
+                      renderEmpty: () => h('span', { className: 'tk-col-empty' }, t('emptyColumn')),
+                      renderItem: index => renderRow(column.agents[index]),
+                      onExpand: onExpandGroup,
+                      onCollapse: onCollapseGroup,
+                    })
+                    : h('div', { className: 'tk-col-body', 'data-group-body': groupId },
+                      count === 0
+                        ? h('span', { className: 'tk-col-empty' }, t('emptyColumn'))
+                        : [
+                          column.lead === undefined ? null : renderRow(column.lead),
+                          ...column.groups.map(unit => renderUnit(column, unit)),
+                        ])))
               }))))
     }
 
@@ -488,7 +531,15 @@
       /** How many items each status group holds, keyed by the stable group id. */
       const groupCounts = useMemo(() => {
         const counts = {}
-        for (const column of model.agentColumns) counts[groupIdOf('agents', column.key)] = column.agents.length
+        for (const column of model.agentColumns) {
+          counts[groupIdOf('agents', column.key)] = column.agents.length
+          // A nested role/custom group folds itself like a status group does.
+          for (const unit of column.groups ?? []) {
+            if (unit.head === true) {
+              counts[groupIdOf('agents', column.key + ':' + unit.key)] = unit.agents.length
+            }
+          }
+        }
         for (const column of model.columns) counts[groupIdOf('tasks', column.key)] = column.tasks.length
         return counts
       }, [model.agentColumns, model.columns])
