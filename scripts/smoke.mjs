@@ -321,12 +321,15 @@ check(boardServices !== undefined, 'the board registration injects no services')
 check(typeof boardServices?.loadAgentReport === 'function', 'the board has no agent-report reader')
 check(typeof boardServices?.openFileLink === 'function', 'the board has no write-scope opener')
 
-/* The local-path checker: folders use `list`, files use `stat`. */
+/* The local-path checker: folders use `list`, files use `stat`, and a file
+   miss falls back to `list` because an API may not classify a directory. */
 const pathCalls = []
 const fakeWorkspaceFiles = {
   stat: async (sessionId, path) => {
     pathCalls.push(['stat', sessionId, path])
-    if (path === 'gone.js') return { ok: false, error: { code: 'workspace-file/not-found' } }
+    if (path === 'gone.js' || path === 'plainfolder' || path === 'listerr') {
+      return { ok: false, error: { code: 'workspace-file/not-found' } }
+    }
     if (path === 'dir') {
       return { ok: false, error: { code: 'workspace-file/not-regular-file', details: { kind: 'directory' } } }
     }
@@ -335,7 +338,8 @@ const fakeWorkspaceFiles = {
   },
   list: async (sessionId, path) => {
     pathCalls.push(['list', sessionId, path])
-    if (path === 'nodir') return { ok: false, error: { code: 'workspace-file/not-found' } }
+    if (path === 'nodir' || path === 'gone.js') return { ok: false, error: { code: 'workspace-file/not-found' } }
+    if (path === 'listerr') return { ok: false, error: { code: 'gateway/bad-request' } }
     return { ok: true, value: { entries: [], truncated: false } }
   },
 }
@@ -361,6 +365,21 @@ check(await boardServices.checkLocalPath('root', 'nodir/', undefined) === false,
   'a missing folder is not reported as missing')
 check(await boardServices.checkLocalPath('root', 'weird', undefined) === undefined,
   'an unclassifiable Remote error is reported as a verdict')
+check(await boardServices.checkLocalPath('root', 'plainfolder', undefined) === true,
+  'a folder a file stat calls not-found is not confirmed through list')
+check(pathCalls[pathCalls.length - 2]?.[0] === 'stat'
+  && pathCalls[pathCalls.length - 2]?.[2] === 'plainfolder'
+  && pathCalls[pathCalls.length - 1]?.[0] === 'list'
+  && pathCalls[pathCalls.length - 1]?.[2] === 'plainfolder',
+'a stat miss did not fall back to the workspace list for the same path: '
+  + JSON.stringify(pathCalls.slice(-2)))
+check(await boardServices.checkLocalPath('root', 'listerr', undefined) === undefined,
+  'a list error after a stat miss is reported as a verdict')
+check(await boardServices.checkLocalPath('root', 'src/unity-integration/Assets/Plugins/CUE4Parse/', undefined) === true,
+  'a nested folder scope with a trailing slash is not reported as present')
+check(pathCalls[pathCalls.length - 1]?.[0] === 'list'
+  && pathCalls[pathCalls.length - 1]?.[2] === 'src/unity-integration/Assets/Plugins/CUE4Parse',
+'a folder scope did not delegate to the workspace list: ' + JSON.stringify(pathCalls[pathCalls.length - 1]))
 ctxGet = () => undefined
 check(await boardServices.checkLocalPath('root', 'src/client', undefined) === undefined,
   'the checker reports a verdict without the workspace-files Remote')
@@ -978,19 +997,40 @@ check(artifact.includes('.tk-sec-head>.tk-sec-title{flex:1 1 auto;min-width:0}')
   'section titles cannot shrink beside a note')
 check(artifact.includes('.tk-sec-note{min-width:0;flex:0 1 auto;max-width:100%;margin-left:auto;'),
   'section notes are not shrinkable and right-aligned on their line')
+check(artifact.includes('.tk-sec-note-below{display:block;width:100%;flex:0 0 auto;margin-left:0;text-align:left}'),
+  'a note below its heading is not a full-width, left-aligned line')
 check(artifact.includes('.tk-kv dd{min-width:0;margin:0;overflow-wrap:anywhere;word-break:break-word;font-variant-numeric:tabular-nums}'),
   'definition-list values do not wrap in the narrow metadata column')
 check(artifact.includes('font-variant-numeric:tabular-nums;\n  min-width:0;overflow-wrap:anywhere}'),
   'mono values have no wrapping rule')
-const depsHead = within(taskDialogNode, node => {
-  if (node.props?.className !== 'tk-sec-head') return false
+
+/** The rendered `.tk-sec` block whose heading is `title`. */
+const sectionBlock = (rendered, title) => rendered.nodes.find(node => {
+  if (node.props?.className !== 'tk-sec') return false
   const kids = Array.isArray(node.props?.children) ? node.props.children : []
-  return kids.some(child => child?.props?.className === 'tk-sec-title' && child.props.children === 'dependencies')
-})[0]
-const depsHeadKids = Array.isArray(depsHead?.props?.children) ? depsHead.props.children : []
-check(depsHeadKids.some(child => child?.props?.className === 'tk-sec-note'
-  && child.props.children === 'noDependencies'),
-'the dependencies note is not a sibling of its heading in the shared section row')
+  return kids.some(child => child?.props?.className === 'tk-sec-head'
+    && (Array.isArray(child.props.children) ? child.props.children : [])
+      .some(grand => grand?.props?.className === 'tk-sec-title' && grand.props.children === title))
+})
+/** The heading row, its children, and the line directly under it. */
+const sectionParts = block => {
+  const kids = Array.isArray(block?.props?.children) ? block.props.children : []
+  const head = kids.find(child => child?.props?.className === 'tk-sec-head')
+  const headKids = Array.isArray(head?.props?.children) ? head.props.children : []
+  return { kids, head, headKids, below: kids[kids.indexOf(head) + 1] }
+}
+const noteIn = headKids => headKids.some(child => child?.props?.className === 'tk-sec-note')
+
+/* An empty section states its absence under the heading, full width and
+   left-aligned, instead of keeping the note beside the title. */
+const depsParts = sectionParts(sectionBlock(withTask, 'dependencies'))
+check(!noteIn(depsParts.headKids),
+  'the empty dependencies note still sits in the shared section heading row')
+check(depsParts.below?.props?.className === 'tk-sec-note tk-sec-note-below'
+  && depsParts.below.props.children === 'noDependencies',
+'the empty dependencies note is not a full-width line under its heading')
+const timelineParts = sectionParts(sectionBlock(withTask, 'taskTimeline'))
+check(noteIn(timelineParts.headKids), 'a default section note left the shared heading row')
 
 /* Every write scope is a real link; a folder asks for the Files page instead. */
 const scopeLinks = withTask.nodes.filter(node => node.props?.className === 'tk-file-link')
@@ -2690,6 +2730,8 @@ markdownTask.description = [
   'Bare paths: docs/stats.md and src/a.js:12, plus 1.2.3 and https://example.com/a/b.',
   'A [docs/stats.md](https://example.com/page) link label stays plain.',
   'Read docs/guide.md. but leave `docs/code.md` in code.',
+  'Folder src/unity-integration/Assets/Plugins/CUE4Parse/ opens it.',
+  'A file ProjectSettings/ProjectSettings.asset exists.',
   '![diagram](https://example.com/pic.png)',
   '<script>alert("x")</script>',
 ].join('\n')
@@ -2808,6 +2850,28 @@ check(openedFiles.length === bareFilesBefore + 1
   && openedFiles[openedFiles.length - 1][1] === 'docs/stats.md',
   'clicking a bare workspace path did not call onOpenFile')
 
+// A bare folder keeps its trailing slash in the label and the open path, so
+// the link draws the folder icon and asks for the Files page.
+const bareFolder = withMarkdown.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/unity-integration/Assets/Plugins/CUE4Parse/')
+check(bareFolder !== undefined, 'a bare folder path with a trailing slash did not become a file button')
+check(surface(bareFolder).texts.includes('src/unity-integration/Assets/Plugins/CUE4Parse/'),
+  'a bare folder path lost its trailing slash in the label')
+check(bareFolder?.props?.title === 'openFolderHint', 'a bare folder path has no folder hint')
+const bareFolderKids = Array.isArray(bareFolder?.props?.children) ? bareFolder.props.children : []
+check(bareFolderKids[0]?.props?.name === 'folder', 'a bare folder path did not get the folder icon')
+const bareProjectFile = withMarkdown.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'ProjectSettings/ProjectSettings.asset')
+check(bareProjectFile !== undefined, 'a bare file path did not become a file button')
+check(bareProjectFile?.props?.title === 'openFileHint', 'a bare file path has no file hint')
+const bareProjectKids = Array.isArray(bareProjectFile?.props?.children) ? bareProjectFile.props.children : []
+check(bareProjectKids[0]?.props?.name === 'pen', 'a bare file path did not get the file icon')
+const bareFolderBefore = openedFiles.length
+bareFolder?.props?.onClick?.()
+check(openedFiles.length === bareFolderBefore + 1
+  && openedFiles[openedFiles.length - 1][1] === 'src/unity-integration/Assets/Plugins/CUE4Parse/',
+  'clicking a bare folder path did not keep the trailing slash for the workspace')
+
 // A Markdown link whose label looks like a path keeps the label plain: an
 // anchor must not contain a nested anchor or file button.
 const labelAnchor = withMarkdown.nodes.find(node => node.type === 'a'
@@ -2854,8 +2918,16 @@ const localPathState = JSON.parse(JSON.stringify(listState))
 const localPathTask = localPathState.projectionsBySession.root.values.agentTeam.tasks
   .find(task => task.id === 'task-1')
 localPathTask.description = 'See src/client/10-settings.js and missing/gone.js.'
+  + ' Folder src/unity-integration/Assets/Plugins/CUE4Parse/ and'
+  + ' ProjectSettings/ProjectSettings.asset.'
 localPathTask.writeScopes = ['src/client', 'missing/folder/']
 const localChecks = []
+const localExistingPaths = [
+  'src/client',
+  'src/client/10-settings.js',
+  'src/unity-integration/Assets/Plugins/CUE4Parse/',
+  'ProjectSettings/ProjectSettings.asset',
+]
 const localPathProps = {
   ...props,
   useSessions: selector => selector(localPathState),
@@ -2863,8 +2935,7 @@ const localPathProps = {
     ...props.services,
     checkLocalPath: async (sessionId, path) => {
       localChecks.push([sessionId, path])
-      if (path === 'src/client' || path === 'src/client/10-settings.js') return true
-      return false
+      return localExistingPaths.includes(path)
     },
   },
 }
@@ -2885,9 +2956,7 @@ deferCleanups = true
 resetHooks()
 const localPending = await openLocalPathTask(0)
 const pendingPlain = view => view.nodes.every(node => node.type !== 'button'
-  || (node.props?.['data-scope'] !== 'src/client/10-settings.js'
-    && node.props?.['data-scope'] !== 'missing/folder/'
-    && node.props?.['data-scope'] !== 'src/client'))
+  || ![...localExistingPaths, 'missing/folder/', 'missing/gone.js'].includes(node.props?.['data-scope']))
 check(pendingPlain(localPending.opened) && pendingPlain(localPending.checked),
   'pending local paths rendered as clickable links before the check answered')
 for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
@@ -2896,6 +2965,14 @@ const localView = surface(tabBody(localPathProps))
 const localExisting = localView.nodes.find(node => node.type === 'button'
   && node.props?.['data-scope'] === 'src/client/10-settings.js')
 check(localExisting !== undefined, 'an existing local file is not a clickable link')
+const localFolderLink = localView.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/unity-integration/Assets/Plugins/CUE4Parse/')
+check(localFolderLink !== undefined, 'the validated description folder is not a clickable link')
+check(localFolderLink?.props?.title === 'openFolderHint', 'the validated description folder has no folder hint')
+const localProjectFile = localView.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'ProjectSettings/ProjectSettings.asset')
+check(localProjectFile !== undefined, 'the validated bare file is not a clickable link')
+check(localProjectFile?.props?.title === 'openFileHint', 'the validated bare file has no file hint')
 const localMissing = localView.nodes.find(node => typeof node.props?.className === 'string'
   && node.props.className.includes('tk-md-missing'))
 check(localMissing !== undefined && surface(localMissing).joined.includes('missing/gone.js'),
@@ -2919,9 +2996,11 @@ check(localScopeMissing !== undefined && surface(localScopeMissing).joined.inclu
 check(localView.nodes.every(node => node.type !== 'button'
   || node.props?.['data-scope'] !== 'missing/folder/'), 'a missing write scope is still a button')
 const localPaths = new Set(localChecks.map(call => call[1]))
-check(localPaths.size === 4 && localChecks.length === localPaths.size,
+check(localPaths.size === 6 && localChecks.length === localPaths.size,
   'the dialog did not check every unique path exactly once: ' + JSON.stringify(localChecks))
 check(localChecks.every(call => call[0] === 'root'), 'the path checker got the wrong session id')
+check(localChecks.some(call => call[1] === 'src/unity-integration/Assets/Plugins/CUE4Parse/'),
+  'the description folder was not checked with its trailing slash: ' + JSON.stringify(localChecks))
 const cachedPathCalls = localChecks.length
 // A later render of the same open dialog reads the cache and asks nothing new.
 resetHooks()
@@ -2934,12 +3013,45 @@ resetSlots()
 flushCleanups()
 resetHooks()
 await openLocalPathTask(4)
-check(localChecks.length === cachedPathCalls + 4,
+check(localChecks.length === cachedPathCalls + 6,
   'reopening the task dialog did not check the paths again: ' + JSON.stringify(localChecks))
 flushCleanups()
 deferCleanups = false
 persistRefs = false
 resetSlots()
+
+/* --- Empty sections: the absence note sits under the heading ----------- */
+
+const emptySectionsState = JSON.parse(JSON.stringify(listState))
+const emptySectionsTask = emptySectionsState.projectionsBySession.root.values.agentTeam.tasks
+  .find(task => task.id === 'task-1')
+emptySectionsTask.blockedBy = []
+emptySectionsTask.writeScopes = []
+const emptySectionsProps = {
+  ...props,
+  useSessions: selector => selector(emptySectionsState),
+}
+resetHooks()
+const emptySectionsBoard = surface(tabBody(emptySectionsProps))
+emptySectionsBoard.nodes.find(node => typeof node.type === 'function' && node.type.name === 'TaskCard'
+  && node.props?.task?.id === 'task-1')?.props?.onOpen?.('task-1')
+resetHooks()
+const emptySectionsView = surface(tabBody(emptySectionsProps))
+const emptySectionsDialog = emptySectionsView.nodes.find(node => node.props?.['data-task-id'] === 'task-1'
+  && node.props?.role === 'dialog')
+check(emptySectionsDialog !== undefined, 'the empty-sections task dialog did not open')
+const emptyDepsParts = sectionParts(sectionBlock(emptySectionsView, 'dependencies'))
+check(!noteIn(emptyDepsParts.headKids)
+  && emptyDepsParts.below?.props?.className === 'tk-sec-note tk-sec-note-below'
+  && emptyDepsParts.below.props.children === 'noDependencies',
+'the empty dependencies note is not a full-width line under its heading')
+const emptyScopesParts = sectionParts(sectionBlock(emptySectionsView, 'writeScopes'))
+check(!noteIn(emptyScopesParts.headKids)
+  && emptyScopesParts.below?.props?.className === 'tk-sec-note tk-sec-note-below'
+  && emptyScopesParts.below.props.children === 'noWriteScopes',
+'the empty write-scopes note is not a full-width line under its heading')
+check(emptyScopesParts.kids.every(child => child?.props?.className !== 'tk-list'),
+  'the empty write-scopes section still renders a list')
 
 /* --- loadAgentReport waits for the chat snapshot ----------------------- */
 

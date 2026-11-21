@@ -2212,6 +2212,7 @@ window.__ModuleLoader__.load({
   color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .tk-sec-note{min-width:0;flex:0 1 auto;max-width:100%;margin-left:auto;font-size:10px;line-height:14px;
   color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));overflow-wrap:anywhere}
+.tk-sec-note-below{display:block;width:100%;flex:0 0 auto;margin-left:0;text-align:left}
 .tk-body-text{margin:0;font-size:12px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere}
 .tk-body-text[data-empty="true"]{color:var(--dsw-alias-label-secondary);font-style:italic}
 .tk-kv{display:grid;grid-template-columns:minmax(0,132px) minmax(0,1fr);gap:3px 10px;margin:0;font-size:11px;line-height:16px}
@@ -2340,15 +2341,23 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * One titled block of the inspector or the board.
-     * @param props - `title`, optional `note`, and the block content.
+     * One titled block of the inspector or the board. A `noteBelow` note is
+     * the block's own leading line, full width under the heading row, for a
+     * section whose only content is its absence message; the default keeps
+     * the note beside the title.
+     * @param props - `title`, optional `note`, `noteBelow` and `icon`, and the
+     *   block content.
      */
-    function Section({ title, note = undefined, icon = undefined, children }) {
+    function Section({ title, note = undefined, noteBelow = false, icon = undefined, children }) {
+      const noteNode = note === undefined || note === null
+        ? null
+        : h('span', { className: noteBelow === true ? 'tk-sec-note tk-sec-note-below' : 'tk-sec-note' }, note)
       return h('section', { className: 'tk-sec' },
         h('div', { className: 'tk-sec-head' },
           icon === undefined ? null : h(Icon, { name: icon, size: 11 }),
           h('h3', { className: 'tk-sec-title' }, title),
-          note === undefined || note === null ? null : h('span', { className: 'tk-sec-note' }, note)),
+          noteBelow === true ? null : noteNode),
+        noteBelow === true ? noteNode : null,
         children)
     }
 
@@ -2432,8 +2441,8 @@ window.__ModuleLoader__.load({
     const MD_SCHEME = /^[a-z][a-z0-9+.-]*:/i
     /** An autolinkable URL inside running text. */
     const MD_AUTOLINK = /^https?:\/\/[^\s<>"']+/i
-    /** A bare workspace path: at least one `/`, optional `:line`. */
-    const MD_WORKSPACE_PATH = /^[\w.@+-]+(?:\/[\w.@+-]+)+(?::\d+)?/
+    /** A bare workspace path: at least one `/`, optional trailing `/` and `:line`. */
+    const MD_WORKSPACE_PATH = /^[\w.@+-]+(?:\/[\w.@+-]+)*\/?(?::\d+)?/
     /** A character that would make a path match only part of a longer token. */
     const MD_PATH_EDGE = /[\w./@+:-]/
 
@@ -2608,8 +2617,10 @@ window.__ModuleLoader__.load({
      * Find a bare workspace path that starts at `index` in running prose.
      *
      * A path needs at least one `/`; a domain followed by a slash stays a URL
-     * and a version string has no slash at all. The `:line` suffix belongs to
-     * the visible label only, so the click opens the file itself. Trailing
+     * and a version string has no slash at all. A trailing `/` names a folder
+     * and stays in both the label and the open path, so the link uses the
+     * folder icon and the Files page. The `:line` suffix belongs to the
+     * visible label only, so the click opens the file itself. Trailing
      * sentence punctuation is left outside the link.
      * @param text - the inline source.
      * @param index - the candidate offset.
@@ -2620,11 +2631,12 @@ window.__ModuleLoader__.load({
       if (match === null) return undefined
       const previous = index === 0 ? '' : text[index - 1]
       if (previous !== '' && MD_PATH_EDGE.test(previous)) return undefined
-      // A domain with a path (`example.com/readme`) is a URL, not a file.
-      const firstSegment = match[0].slice(0, match[0].indexOf('/'))
-      if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(firstSegment)) return undefined
       const label = match[0].replace(/[.,;!?]+$/, '')
-      if (label === '' || label.indexOf('/') < 0) return undefined
+      const slash = label.indexOf('/')
+      if (label === '' || slash < 0) return undefined
+      // A domain with a path (`example.com/readme`) is a URL, not a file.
+      const firstSegment = label.slice(0, slash)
+      if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(firstSegment)) return undefined
       return { label, path: label.replace(/:\d+$/, '') }
     }
 
@@ -6357,7 +6369,9 @@ window.__ModuleLoader__.load({
             modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })))
 
       const depsBlock = h(Section, {
-        title: t('dependencies'), icon: 'link', note: deps.length === 0 ? t('noDependencies') : undefined,
+        title: t('dependencies'), icon: 'link',
+        note: deps.length === 0 ? t('noDependencies') : undefined,
+        noteBelow: deps.length === 0,
       },
       deps.length === 0 ? null : h('ul', { className: 'tk-list' }, deps.map(id => h('li', { key: id },
         h(Icon, { name: 'chevron-right', size: 10 }),
@@ -6369,7 +6383,9 @@ window.__ModuleLoader__.load({
           h('span', { className: 'tk-warn' }, h(Icon, { name: 'alert', size: 10 }), h('span', null, warning)))))
 
       const scopesBlock = h(Section, {
-        title: t('writeScopes'), icon: 'folder', note: scopes.length === 0 ? t('noWriteScopes') : undefined,
+        title: t('writeScopes'), icon: 'folder',
+        note: scopes.length === 0 ? t('noWriteScopes') : undefined,
+        noteBelow: scopes.length === 0,
       },
       scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => {
         const folder = isFolderScope(scope)
@@ -7058,11 +7074,12 @@ window.__ModuleLoader__.load({
          * Whether one workspace path exists, for the links the board draws.
          * A trailing separator names a folder, which is listed (folder
          * existence is workspace-scoped); every other path is `stat`ed as a
-         * file. The Remote answers with `{ ok }` instead of throwing, so a
-         * missing path is `false`. An absent namespace, an aborted call or an
-         * error that does not prove absence is `undefined`: the caller then
-         * keeps its link, because a viewer without the file API must not lose
-         * every link.
+         * file, and a file miss is retried through `list` because an API may
+         * not expose the directory kind on `stat`. The Remote answers with
+         * `{ ok }` instead of throwing, so a missing path is `false`. An
+         * absent namespace, an aborted call or an error that does not prove
+         * absence is `undefined`: the caller then keeps its link, because a
+         * viewer without the file API must not lose every link.
          * @param sessionId - the session whose workspace root owns the path.
          * @param path - workspace-relative or absolute path, either separator.
          * @param signal - optional abort signal from the caller.
@@ -7100,7 +7117,17 @@ window.__ModuleLoader__.load({
             if (answer === null || typeof answer !== 'object') return undefined
             if (answer.ok === true) return true
             const code = answer.error?.code
-            if (code === 'workspace-file/not-found') return false
+            if (code === 'workspace-file/not-found') {
+              // A file API may not expose the directory kind on `stat`, so a
+              // file miss is only final for a trailing-slash folder; for a
+              // bare path, a successful listing proves the folder exists.
+              if (folder || typeof service.list !== 'function') return false
+              const listing = await service.list(sessionId, target, signal)
+              if (listing === null || typeof listing !== 'object') return undefined
+              if (listing.ok === true) return true
+              if (listing.error?.code === 'workspace-file/not-found') return false
+              return undefined
+            }
             // The path exists as the other kind, so its link still resolves.
             if (code === 'workspace-file/not-regular-file') {
               return answer.error?.details?.kind === 'directory' ? true : undefined

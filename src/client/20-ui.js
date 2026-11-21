@@ -241,6 +241,7 @@
   color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .tk-sec-note{min-width:0;flex:0 1 auto;max-width:100%;margin-left:auto;font-size:10px;line-height:14px;
   color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));overflow-wrap:anywhere}
+.tk-sec-note-below{display:block;width:100%;flex:0 0 auto;margin-left:0;text-align:left}
 .tk-body-text{margin:0;font-size:12px;line-height:18px;white-space:pre-wrap;overflow-wrap:anywhere}
 .tk-body-text[data-empty="true"]{color:var(--dsw-alias-label-secondary);font-style:italic}
 .tk-kv{display:grid;grid-template-columns:minmax(0,132px) minmax(0,1fr);gap:3px 10px;margin:0;font-size:11px;line-height:16px}
@@ -369,15 +370,23 @@
     }
 
     /**
-     * One titled block of the inspector or the board.
-     * @param props - `title`, optional `note`, and the block content.
+     * One titled block of the inspector or the board. A `noteBelow` note is
+     * the block's own leading line, full width under the heading row, for a
+     * section whose only content is its absence message; the default keeps
+     * the note beside the title.
+     * @param props - `title`, optional `note`, `noteBelow` and `icon`, and the
+     *   block content.
      */
-    function Section({ title, note = undefined, icon = undefined, children }) {
+    function Section({ title, note = undefined, noteBelow = false, icon = undefined, children }) {
+      const noteNode = note === undefined || note === null
+        ? null
+        : h('span', { className: noteBelow === true ? 'tk-sec-note tk-sec-note-below' : 'tk-sec-note' }, note)
       return h('section', { className: 'tk-sec' },
         h('div', { className: 'tk-sec-head' },
           icon === undefined ? null : h(Icon, { name: icon, size: 11 }),
           h('h3', { className: 'tk-sec-title' }, title),
-          note === undefined || note === null ? null : h('span', { className: 'tk-sec-note' }, note)),
+          noteBelow === true ? null : noteNode),
+        noteBelow === true ? noteNode : null,
         children)
     }
 
@@ -461,8 +470,8 @@
     const MD_SCHEME = /^[a-z][a-z0-9+.-]*:/i
     /** An autolinkable URL inside running text. */
     const MD_AUTOLINK = /^https?:\/\/[^\s<>"']+/i
-    /** A bare workspace path: at least one `/`, optional `:line`. */
-    const MD_WORKSPACE_PATH = /^[\w.@+-]+(?:\/[\w.@+-]+)+(?::\d+)?/
+    /** A bare workspace path: at least one `/`, optional trailing `/` and `:line`. */
+    const MD_WORKSPACE_PATH = /^[\w.@+-]+(?:\/[\w.@+-]+)*\/?(?::\d+)?/
     /** A character that would make a path match only part of a longer token. */
     const MD_PATH_EDGE = /[\w./@+:-]/
 
@@ -637,8 +646,10 @@
      * Find a bare workspace path that starts at `index` in running prose.
      *
      * A path needs at least one `/`; a domain followed by a slash stays a URL
-     * and a version string has no slash at all. The `:line` suffix belongs to
-     * the visible label only, so the click opens the file itself. Trailing
+     * and a version string has no slash at all. A trailing `/` names a folder
+     * and stays in both the label and the open path, so the link uses the
+     * folder icon and the Files page. The `:line` suffix belongs to the
+     * visible label only, so the click opens the file itself. Trailing
      * sentence punctuation is left outside the link.
      * @param text - the inline source.
      * @param index - the candidate offset.
@@ -649,11 +660,12 @@
       if (match === null) return undefined
       const previous = index === 0 ? '' : text[index - 1]
       if (previous !== '' && MD_PATH_EDGE.test(previous)) return undefined
-      // A domain with a path (`example.com/readme`) is a URL, not a file.
-      const firstSegment = match[0].slice(0, match[0].indexOf('/'))
-      if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(firstSegment)) return undefined
       const label = match[0].replace(/[.,;!?]+$/, '')
-      if (label === '' || label.indexOf('/') < 0) return undefined
+      const slash = label.indexOf('/')
+      if (label === '' || slash < 0) return undefined
+      // A domain with a path (`example.com/readme`) is a URL, not a file.
+      const firstSegment = label.slice(0, slash)
+      if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(firstSegment)) return undefined
       return { label, path: label.replace(/:\d+$/, '') }
     }
 

@@ -252,11 +252,12 @@
          * Whether one workspace path exists, for the links the board draws.
          * A trailing separator names a folder, which is listed (folder
          * existence is workspace-scoped); every other path is `stat`ed as a
-         * file. The Remote answers with `{ ok }` instead of throwing, so a
-         * missing path is `false`. An absent namespace, an aborted call or an
-         * error that does not prove absence is `undefined`: the caller then
-         * keeps its link, because a viewer without the file API must not lose
-         * every link.
+         * file, and a file miss is retried through `list` because an API may
+         * not expose the directory kind on `stat`. The Remote answers with
+         * `{ ok }` instead of throwing, so a missing path is `false`. An
+         * absent namespace, an aborted call or an error that does not prove
+         * absence is `undefined`: the caller then keeps its link, because a
+         * viewer without the file API must not lose every link.
          * @param sessionId - the session whose workspace root owns the path.
          * @param path - workspace-relative or absolute path, either separator.
          * @param signal - optional abort signal from the caller.
@@ -294,7 +295,17 @@
             if (answer === null || typeof answer !== 'object') return undefined
             if (answer.ok === true) return true
             const code = answer.error?.code
-            if (code === 'workspace-file/not-found') return false
+            if (code === 'workspace-file/not-found') {
+              // A file API may not expose the directory kind on `stat`, so a
+              // file miss is only final for a trailing-slash folder; for a
+              // bare path, a successful listing proves the folder exists.
+              if (folder || typeof service.list !== 'function') return false
+              const listing = await service.list(sessionId, target, signal)
+              if (listing === null || typeof listing !== 'object') return undefined
+              if (listing.ok === true) return true
+              if (listing.error?.code === 'workspace-file/not-found') return false
+              return undefined
+            }
             // The path exists as the other kind, so its link still resolves.
             if (code === 'workspace-file/not-regular-file') {
               return answer.error?.details?.kind === 'directory' ? true : undefined

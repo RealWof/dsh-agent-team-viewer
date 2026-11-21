@@ -243,7 +243,9 @@
             modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })))
 
       const depsBlock = h(Section, {
-        title: t('dependencies'), icon: 'link', note: deps.length === 0 ? t('noDependencies') : undefined,
+        title: t('dependencies'), icon: 'link',
+        note: deps.length === 0 ? t('noDependencies') : undefined,
+        noteBelow: deps.length === 0,
       },
       deps.length === 0 ? null : h('ul', { className: 'tk-list' }, deps.map(id => h('li', { key: id },
         h(Icon, { name: 'chevron-right', size: 10 }),
@@ -255,7 +257,9 @@
           h('span', { className: 'tk-warn' }, h(Icon, { name: 'alert', size: 10 }), h('span', null, warning)))))
 
       const scopesBlock = h(Section, {
-        title: t('writeScopes'), icon: 'folder', note: scopes.length === 0 ? t('noWriteScopes') : undefined,
+        title: t('writeScopes'), icon: 'folder',
+        note: scopes.length === 0 ? t('noWriteScopes') : undefined,
+        noteBelow: scopes.length === 0,
       },
       scopes.length === 0 ? null : h('ul', { className: 'tk-list' }, scopes.map(scope => {
         const folder = isFolderScope(scope)

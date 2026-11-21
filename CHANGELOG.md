@@ -27,7 +27,7 @@ All notable changes to this plugin are documented here. The format follows
 - A compact line with the agent's model, provider and reasoning effort, with separate part switches;
   it shares the statistics row when it fits and wraps only when needed.
 - Safe Markdown in task descriptions and reports: headings, emphasis, lists, code, quotes, links,
-  images and autolinks. Bare workspace paths become links too.
+  images and autolinks. Bare workspace paths and folders become links too.
 - Local links are checked against the workspace before they become clickable; missing files stay plain
   text, and the result is cached for as long as the task dialog is open.
 - File references in text appear as attachment chips, and write scopes in the task dialog are links.
@@ -43,7 +43,8 @@ All notable changes to this plugin are documented here. The format follows
 ### Changed
 
 - The task dialog is two columns now: its agent statistics moved into the header, secondary notes wrap
-  below their headings, and its **Open** and **Aside** actions sit in the header instead of a footer.
+  below their headings (an empty section's note always does), and its **Open** and **Aside** actions sit
+  in the header instead of a footer.
 - The agent dialog's **Open** and **Aside** actions moved into its header, and its lists now show tasks
   before background processes.
 - Cost figures now explain both the real API spend and the subscription-equivalent value.
