@@ -139,4 +139,8 @@
       setDialogScaleHint: 'Solo escala los diálogos abiertos; el tablero y la cabecera no cambian.',
       setShowAgentModel: 'Mostrar el modelo del agente',
       setShowAgentModelHint: 'Añade una línea compacta de proveedor · modelo · esfuerzo bajo el nombre del agente.',
+      aboutHeading: 'Acerca de',
+      aboutRepository: 'Repositorio',
+      aboutReadme: 'README',
+      aboutChangelog: 'Registro de cambios',
     }

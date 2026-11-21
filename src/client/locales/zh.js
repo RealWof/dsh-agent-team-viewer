@@ -139,4 +139,8 @@
       setDialogScaleHint: '仅缩放打开的对话框，看板和顶栏保持原尺寸。',
       setShowAgentModel: '显示代理模型',
       setShowAgentModelHint: '在代理名称下方显示提供商 · 模型 · 推理强度的紧凑一行。',
+      aboutHeading: '关于',
+      aboutRepository: '仓库',
+      aboutReadme: 'README',
+      aboutChangelog: '更新日志',
     }

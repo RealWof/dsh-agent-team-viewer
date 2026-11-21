@@ -271,6 +271,14 @@ window.__ModuleLoader__.load({
     const VIEW_SCALE_STEP = 0.05
     /** The task orders the board offers; the first one is the default. */
     const VIEW_SORTS = ['newest', 'oldest', 'name']
+    /**
+     * The project's public pages, linked from the Settings page's About block.
+     * The base is package.json's repository URL without the `git+` prefix and
+     * the trailing `.git`, so the three links cannot drift apart.
+     */
+    const ABOUT_REPOSITORY = 'https://github.com/RealWof/dsh-agent-team-viewer'
+    const ABOUT_README = ABOUT_REPOSITORY + '/blob/main/README.md'
+    const ABOUT_CHANGELOG = ABOUT_REPOSITORY + '/blob/main/CHANGELOG.md'
 
     /**
      * Every view preference and its shipped default. `newest` keeps the board
@@ -595,7 +603,28 @@ window.__ModuleLoader__.load({
               onChange: event => { update({ showAgentModel: event.target.checked }) },
             }),
             h('span', null, t('setShowAgentModel'))),
-          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))))
+          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))),
+
+        h(Section, { title: t('aboutHeading'), icon: 'link' },
+          h('div', { className: 'tk-set-about' },
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_REPOSITORY,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'link', size: 11 }), t('aboutRepository')),
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_README,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'eye', size: 11 }), t('aboutReadme')),
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_CHANGELOG,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'pen', size: 11 }), t('aboutChangelog')))))
     }
 
 /**
@@ -738,6 +767,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: 'Zooms the opened dialogs only; the board and header keep their size.',
       setShowAgentModel: 'Show the agent model',
       setShowAgentModelHint: 'Adds a compact provider · model · effort line under each agent name.',
+      aboutHeading: 'About',
+      aboutRepository: 'Repository',
+      aboutReadme: 'README',
+      aboutChangelog: 'Changelog',
     }
 
 /**
@@ -881,6 +914,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: 'Масштабируются только открытые диалоги; доска и шапка не меняются.',
       setShowAgentModel: 'Показывать модель агента',
       setShowAgentModelHint: 'Добавляет компактную строку «провайдер · модель · усилие» под именем агента.',
+      aboutHeading: 'О плагине',
+      aboutRepository: 'Репозиторий',
+      aboutReadme: 'README',
+      aboutChangelog: 'Журнал изменений',
     }
 
 /**
@@ -1024,6 +1061,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: '仅缩放打开的对话框，看板和顶栏保持原尺寸。',
       setShowAgentModel: '显示代理模型',
       setShowAgentModelHint: '在代理名称下方显示提供商 · 模型 · 推理强度的紧凑一行。',
+      aboutHeading: '关于',
+      aboutRepository: '仓库',
+      aboutReadme: 'README',
+      aboutChangelog: '更新日志',
     }
 
 /**
@@ -1167,6 +1208,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: '開いたダイアログのみを拡大します。ボードとヘッダーは変わりません。',
       setShowAgentModel: 'エージェントのモデルを表示',
       setShowAgentModelHint: 'エージェント名の下にプロバイダー · モデル · 推論強度を 1 行で表示します。',
+      aboutHeading: 'このプラグインについて',
+      aboutRepository: 'リポジトリ',
+      aboutReadme: 'README',
+      aboutChangelog: '変更履歴',
     }
 
 /**
@@ -1310,6 +1355,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: 'Solo escala los diálogos abiertos; el tablero y la cabecera no cambian.',
       setShowAgentModel: 'Mostrar el modelo del agente',
       setShowAgentModelHint: 'Añade una línea compacta de proveedor · modelo · esfuerzo bajo el nombre del agente.',
+      aboutHeading: 'Acerca de',
+      aboutRepository: 'Repositorio',
+      aboutReadme: 'README',
+      aboutChangelog: 'Registro de cambios',
     }
 
 /**
@@ -1453,6 +1502,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: 'Zoome seulement les dialogues ouverts ; le tableau et la barre gardent leur taille.',
       setShowAgentModel: 'Afficher le modèle de l\u2019agent',
       setShowAgentModelHint: 'Ajoute une ligne compacte fournisseur · modèle · effort sous le nom de l\u2019agent.',
+      aboutHeading: 'À propos',
+      aboutRepository: 'Dépôt',
+      aboutReadme: 'README',
+      aboutChangelog: 'Journal des modifications',
     }
 
 /**
@@ -1596,6 +1649,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: 'Skaliert nur die geöffneten Dialoge; Board und Kopfzeile bleiben unverändert.',
       setShowAgentModel: 'Agentenmodell anzeigen',
       setShowAgentModelHint: 'Zeigt eine kompakte Zeile Anbieter · Modell · Aufwand unter dem Agentennamen.',
+      aboutHeading: 'Über',
+      aboutRepository: 'Repository',
+      aboutReadme: 'README',
+      aboutChangelog: 'Änderungsprotokoll',
     }
 
 /**
@@ -1739,6 +1796,10 @@ window.__ModuleLoader__.load({
       setDialogScaleHint: 'Amplia apenas as caixas de diálogo abertas; o quadro e o cabeçalho não mudam.',
       setShowAgentModel: 'Mostrar o modelo do agente',
       setShowAgentModelHint: 'Adiciona uma linha compacta de provedor · modelo · esforço sob o nome do agente.',
+      aboutHeading: 'Sobre',
+      aboutRepository: 'Repositório',
+      aboutReadme: 'README',
+      aboutChangelog: 'Registro de alterações',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1999,6 +2060,8 @@ window.__ModuleLoader__.load({
 .tk-set-hint{display:block;margin:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
   overflow-wrap:anywhere}
 .tk-set-example{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace)}
+.tk-set-about{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.tk-set-about .tk-btn{text-decoration:none}
 .tk-set-check{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;line-height:17px;cursor:pointer}
 .tk-set-check input{flex:none;margin:0;accent-color:var(--dsw-alias-brand-primary)}
 .tk-set-check input:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}

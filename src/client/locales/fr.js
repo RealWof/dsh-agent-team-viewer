@@ -139,4 +139,8 @@
       setDialogScaleHint: 'Zoome seulement les dialogues ouverts ; le tableau et la barre gardent leur taille.',
       setShowAgentModel: 'Afficher le modèle de l\u2019agent',
       setShowAgentModelHint: 'Ajoute une ligne compacte fournisseur · modèle · effort sous le nom de l\u2019agent.',
+      aboutHeading: 'À propos',
+      aboutRepository: 'Dépôt',
+      aboutReadme: 'README',
+      aboutChangelog: 'Journal des modifications',
     }

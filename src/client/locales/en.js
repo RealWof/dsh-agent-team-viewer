@@ -138,4 +138,8 @@
       setDialogScaleHint: 'Zooms the opened dialogs only; the board and header keep their size.',
       setShowAgentModel: 'Show the agent model',
       setShowAgentModelHint: 'Adds a compact provider · model · effort line under each agent name.',
+      aboutHeading: 'About',
+      aboutRepository: 'Repository',
+      aboutReadme: 'README',
+      aboutChangelog: 'Changelog',
     }

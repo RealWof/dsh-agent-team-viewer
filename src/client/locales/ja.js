@@ -139,4 +139,8 @@
       setDialogScaleHint: '開いたダイアログのみを拡大します。ボードとヘッダーは変わりません。',
       setShowAgentModel: 'エージェントのモデルを表示',
       setShowAgentModelHint: 'エージェント名の下にプロバイダー · モデル · 推論強度を 1 行で表示します。',
+      aboutHeading: 'このプラグインについて',
+      aboutRepository: 'リポジトリ',
+      aboutReadme: 'README',
+      aboutChangelog: '変更履歴',
     }

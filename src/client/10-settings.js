@@ -16,6 +16,14 @@
     const VIEW_SCALE_STEP = 0.05
     /** The task orders the board offers; the first one is the default. */
     const VIEW_SORTS = ['newest', 'oldest', 'name']
+    /**
+     * The project's public pages, linked from the Settings page's About block.
+     * The base is package.json's repository URL without the `git+` prefix and
+     * the trailing `.git`, so the three links cannot drift apart.
+     */
+    const ABOUT_REPOSITORY = 'https://github.com/RealWof/dsh-agent-team-viewer'
+    const ABOUT_README = ABOUT_REPOSITORY + '/blob/main/README.md'
+    const ABOUT_CHANGELOG = ABOUT_REPOSITORY + '/blob/main/CHANGELOG.md'
 
     /**
      * Every view preference and its shipped default. `newest` keeps the board
@@ -340,5 +348,26 @@
               onChange: event => { update({ showAgentModel: event.target.checked }) },
             }),
             h('span', null, t('setShowAgentModel'))),
-          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))))
+          h('span', { className: 'tk-set-hint' }, t('setShowAgentModelHint'))),
+
+        h(Section, { title: t('aboutHeading'), icon: 'link' },
+          h('div', { className: 'tk-set-about' },
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_REPOSITORY,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'link', size: 11 }), t('aboutRepository')),
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_README,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'eye', size: 11 }), t('aboutReadme')),
+            h('a', {
+              className: 'tk-btn',
+              href: ABOUT_CHANGELOG,
+              target: '_blank',
+              rel: 'noreferrer noopener',
+            }, h(Icon, { name: 'pen', size: 11 }), t('aboutChangelog')))))
     }

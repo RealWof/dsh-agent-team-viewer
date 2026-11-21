@@ -256,6 +256,8 @@
 .tk-set-hint{display:block;margin:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
   overflow-wrap:anywhere}
 .tk-set-example{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace)}
+.tk-set-about{display:flex;flex-wrap:wrap;gap:6px;min-width:0}
+.tk-set-about .tk-btn{text-decoration:none}
 .tk-set-check{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;line-height:17px;cursor:pointer}
 .tk-set-check input{flex:none;margin:0;accent-color:var(--dsw-alias-brand-primary)}
 .tk-set-check input:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}

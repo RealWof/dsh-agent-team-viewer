@@ -11,6 +11,8 @@ All notable changes to this plugin are documented here. The format follows
 - A **Show the agent model** view setting (off by default) adds a compact, ellipsized
   `provider · model · effort` line under each agent name, with the full text in its tooltip. An agent
   whose selection is unknown gets no line, and the agent dialog is unchanged.
+- The Settings page ends with an **About** block whose localized button links open the repository,
+  the README and the CHANGELOG on GitHub in a new tab.
 - `agentsLimit` — how many subagents the board walks and draws — is now the profile row's Config field:
   the default is `-1` (no limit), because a session appends every new agent to the end of its catalog and
   a cap therefore hides the newest, busiest agents; a positive number is available for a profile that must

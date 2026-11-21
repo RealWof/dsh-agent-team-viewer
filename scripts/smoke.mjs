@@ -1811,6 +1811,30 @@ check(artifact.includes('.tk-agent-model{'), 'the model line has no ellipsizing 
 if (settingsBeforeModel === undefined) storage.delete(SETTINGS_STORAGE_KEY)
 else storage.set(SETTINGS_STORAGE_KEY, settingsBeforeModel)
 
+/* --- Settings About: the three public project links -------------------- */
+
+resetSlots()
+const aboutSettings = surface(settingsSection({ t: key => key }))
+const aboutLinks = aboutSettings.nodes.filter(node => node.type === 'a' && node.props?.target === '_blank')
+check(aboutLinks.length === 3, 'the Settings About block does not link three project pages')
+check(aboutLinks.every(node => String(node.props?.rel).includes('noreferrer')
+  && String(node.props?.rel).includes('noopener')),
+'the Settings About links are not noreferrer noopener')
+check(aboutLinks.every(node => String(node.props?.className).includes('tk-btn')),
+  'the Settings About links do not use the settings button style')
+const repositoryUrl = String(JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).repository.url)
+  .replace(/^git\+/, '').replace(/\.git$/, '')
+check(repositoryUrl === 'https://github.com/RealWof/dsh-agent-team-viewer',
+  'package.json no longer names the public repository: ' + repositoryUrl)
+const aboutHrefs = aboutLinks.map(node => node.props?.href)
+check(aboutHrefs.includes(repositoryUrl), 'the About block does not link the repository')
+check(aboutHrefs.includes(repositoryUrl + '/blob/main/README.md'), 'the About block does not link the README')
+check(aboutHrefs.includes(repositoryUrl + '/blob/main/CHANGELOG.md'), 'the About block does not link the CHANGELOG')
+check(aboutSettings.texts.includes('aboutHeading') && aboutSettings.texts.includes('aboutRepository')
+  && aboutSettings.texts.includes('aboutReadme') && aboutSettings.texts.includes('aboutChangelog'),
+'the About block labels do not come from the dictionaries')
+check(artifact.includes('.tk-set-about'), 'the About block has no stylesheet rule')
+
 /* --- Task dialog Report: loading, ready and empty ---------------------- */
 
 // A dedicated owner keeps late async updates from the earlier dialog tests,

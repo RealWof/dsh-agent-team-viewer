@@ -139,4 +139,8 @@
       setDialogScaleHint: 'Масштабируются только открытые диалоги; доска и шапка не меняются.',
       setShowAgentModel: 'Показывать модель агента',
       setShowAgentModelHint: 'Добавляет компактную строку «провайдер · модель · усилие» под именем агента.',
+      aboutHeading: 'О плагине',
+      aboutRepository: 'Репозиторий',
+      aboutReadme: 'README',
+      aboutChangelog: 'Журнал изменений',
     }
