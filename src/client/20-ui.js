@@ -183,6 +183,30 @@
 .tk-job-note{min-width:0;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .tk-mono{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;font-variant-numeric:tabular-nums}
 .tk-warn{display:flex;align-items:flex-start;gap:5px;font-size:10px;line-height:15px;color:var(--dsw-alias-state-warn-primary);overflow-wrap:anywhere}
+.tk-set{display:flex;flex-direction:column;gap:12px;min-width:0;max-width:560px;color:var(--dsw-alias-label-primary);
+  font-size:12px;line-height:17px}
+.tk-set-hint{display:block;margin:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
+  overflow-wrap:anywhere}
+.tk-set-example{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace)}
+.tk-set-check{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;line-height:17px;cursor:pointer}
+.tk-set-check input{flex:none;margin:0;accent-color:var(--dsw-alias-brand-primary)}
+.tk-set-check input:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}
+.tk-set-field{display:flex;align-items:center;gap:8px;min-width:0;padding:1px 0}
+.tk-set-field[data-disabled="true"]{opacity:.55}
+.tk-set-label{flex:none;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary)}
+.tk-set-range{flex:1 1 auto;min-width:96px;margin:0;accent-color:var(--dsw-alias-brand-primary)}
+.tk-set-range:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}
+.tk-set-range:disabled{cursor:not-allowed}
+.tk-set-value{flex:none;min-width:56px;text-align:right;font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);
+  font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.tk-set-text{width:100%;min-height:58px;box-sizing:border-box;resize:vertical;padding:5px 7px;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);
+  color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:16px}
+.tk-set-text:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-set-text:disabled{cursor:not-allowed;opacity:.6}
+.tk-set-select{min-width:0;padding:3px 6px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);
+  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
+.tk-set-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 `
 
     /** Attach the stylesheet to one surface. */

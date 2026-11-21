@@ -356,6 +356,18 @@
           inject: () => ({ open: openBoard }),
         }, HeaderBoardAction))
 
+        // The Settings page of the board. Its preferences are browser-local
+        // view state, so the page writes localStorage and never the Host
+        // settings document; `label` is a thunk to follow a language change.
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'agent-team-viewer',
+          order: 80,
+          label: () => t('settingsTitle'),
+          locale: NS,
+          inject: () => ({}),
+        }, SettingsSection))
+
         // The task record keeps no timestamps, so the elapsed labels come from
         // watching the board. This watcher runs for as long as the page does,
         // which is what lets a task that started before the panel was opened

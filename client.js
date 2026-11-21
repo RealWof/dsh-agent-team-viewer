@@ -232,6 +232,294 @@ window.__ModuleLoader__.load({
       }, glyph.map((shape, index) => h(shape.tag, { key: index, ...shape.attrs })))
     }
 
+/* ------------------------------------------------------------------ *
+ * View settings: the browser-local preferences of the board and the
+ * Settings page that edits them. Nothing here reaches the Host — the
+ * profile row keeps its own Config, and the view preferences live in
+ * localStorage beside the observation ledger and the fold state.
+ * ------------------------------------------------------------------ */
+
+    /** Identity of the browser-local view settings. */
+    const VIEW_SETTINGS_KEY = 'dsh.agent-team-viewer.settings.v1'
+    /** The longest and shortest card animation the slider offers, in ms. */
+    const VIEW_ANIMATION_MAX = 1000
+    const VIEW_ANIMATION_STEP = 20
+    /** The panel scale bounds and its slider step. */
+    const VIEW_SCALE_MIN = 0.8
+    const VIEW_SCALE_MAX = 1.4
+    const VIEW_SCALE_STEP = 0.05
+    /** The task orders the board offers; the first one is the default. */
+    const VIEW_SORTS = ['newest', 'oldest', 'name']
+
+    /**
+     * Every view preference and its shipped default. `newest` keeps the board
+     * in the order a session appends tasks: the newest work stays on top.
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number }}
+     */
+    const VIEW_SETTINGS_DEFAULTS = {
+      autoRoleGroups: true,
+      customGroups: false,
+      customGroupsText: '',
+      sort: 'newest',
+      animateCards: true,
+      animationMs: 220,
+      uiScale: 1,
+    }
+
+    /**
+     * Clamp one number to a range and snap it to a step.
+     * @param value - anything the store may hold.
+     * @param min - lower bound.
+     * @param max - upper bound.
+     * @param step - increment.
+     * @param fallback - used when the value is not numeric.
+     * @returns the sanitized number.
+     */
+    function snapSetting(value, min, max, step, fallback) {
+      const number = typeof value === 'number' ? value : Number(value)
+      if (!Number.isFinite(number)) return fallback
+      const snapped = Math.round(number / step) * step
+      const clamped = Math.min(max, Math.max(min, snapped))
+      // A step like 0.05 drifts in binary floating point; four decimals is
+      // exact for every value this slider can produce.
+      return Number(clamped.toFixed(4))
+    }
+
+    /**
+     * Reduce any stored shape to a complete, valid view settings record.
+     * @param input - whatever localStorage or a patch supplied.
+     * @returns the sanitized record, always with every field.
+     */
+    function sanitizeViewSettings(input) {
+      const source = input !== null && typeof input === 'object' && !Array.isArray(input) ? input : {}
+      const has = key => Object.prototype.hasOwnProperty.call(source, key)
+      const read = key => (has(key) ? source[key] : undefined)
+      const boolean = (value, fallback) => (typeof value === 'boolean' ? value : fallback)
+      const sort = VIEW_SORTS.includes(read('sort')) ? read('sort') : VIEW_SETTINGS_DEFAULTS.sort
+      return {
+        autoRoleGroups: boolean(read('autoRoleGroups'), VIEW_SETTINGS_DEFAULTS.autoRoleGroups),
+        customGroups: boolean(read('customGroups'), VIEW_SETTINGS_DEFAULTS.customGroups),
+        customGroupsText: typeof read('customGroupsText') === 'string'
+          ? read('customGroupsText')
+          : VIEW_SETTINGS_DEFAULTS.customGroupsText,
+        sort,
+        animateCards: boolean(read('animateCards'), VIEW_SETTINGS_DEFAULTS.animateCards),
+        animationMs: snapSetting(read('animationMs'), 0, VIEW_ANIMATION_MAX, VIEW_ANIMATION_STEP,
+          VIEW_SETTINGS_DEFAULTS.animationMs),
+        uiScale: snapSetting(read('uiScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
+          VIEW_SETTINGS_DEFAULTS.uiScale),
+      }
+    }
+
+    /**
+     * Read the stored view settings.
+     * @returns the sanitized record; the defaults on a blocked or corrupt store.
+     */
+    function readViewSettings() {
+      try {
+        const raw = window.localStorage.getItem(VIEW_SETTINGS_KEY)
+        if (raw === null || raw === '') return { ...VIEW_SETTINGS_DEFAULTS }
+        return sanitizeViewSettings(JSON.parse(raw))
+      } catch {
+        // A blocked store only costs the remembered preferences.
+        return { ...VIEW_SETTINGS_DEFAULTS }
+      }
+    }
+
+    /** Module-wide view settings: the stored record plus this page's listeners. */
+    const VIEW_SETTINGS = {
+      value: readViewSettings(),
+      listeners: new Set(),
+    }
+
+    /** Tell every mounted surface that the preferences moved. */
+    function notifyViewSettings() {
+      for (const listener of VIEW_SETTINGS.listeners) {
+        try {
+          listener()
+        } catch {
+          // One broken listener must not stop the others.
+        }
+      }
+    }
+
+    /**
+     * Merge a patch into the view settings, sanitize, persist and notify.
+     * @param patch - the fields to change.
+     * @returns the new record.
+     */
+    function writeViewSettings(patch) {
+      const valid = patch !== null && typeof patch === 'object' && !Array.isArray(patch)
+      const merged = valid ? { ...VIEW_SETTINGS.value, ...patch } : { ...VIEW_SETTINGS.value }
+      const next = sanitizeViewSettings(merged)
+      VIEW_SETTINGS.value = next
+      try {
+        window.localStorage.setItem(VIEW_SETTINGS_KEY, JSON.stringify(next))
+      } catch {
+        // A blocked store keeps the change for this page only.
+      }
+      notifyViewSettings()
+      return next
+    }
+
+    /**
+     * Subscribe one surface to the view settings.
+     * @param listener - called after every accepted write.
+     * @returns the disposer.
+     */
+    function subscribeViewSettings(listener) {
+      if (typeof listener !== 'function') return () => {}
+      VIEW_SETTINGS.listeners.add(listener)
+      return () => { VIEW_SETTINGS.listeners.delete(listener) }
+    }
+
+    /**
+     * The view settings and a writer, as a hook.
+     * @returns `[settings, update]`, where `update(patch)` writes one change.
+     */
+    function useViewSettings() {
+      const [settings, setSettings] = useState(() => VIEW_SETTINGS.value)
+      useEffect(() => subscribeViewSettings(() => { setSettings(VIEW_SETTINGS.value) }), [])
+      const update = useCallback(patch => { writeViewSettings(patch) }, [])
+      return [settings, update]
+    }
+
+    /**
+     * Parse the custom-group editor into groups.
+     *
+     * One group per line, `Group name: pattern, pattern`; blank lines are
+     * skipped and a later line reusing a name (case-insensitive) is dropped.
+     * @param text - the editor's text.
+     * @returns `[{ name, patterns }]`, in editor order.
+     */
+    function parseCustomGroups(text) {
+      const groups = []
+      const seen = new Set()
+      if (typeof text !== 'string') return groups
+      for (const line of text.split(/\r?\n/)) {
+        const trimmed = line.trim()
+        if (trimmed === '') continue
+        const colon = trimmed.indexOf(':')
+        if (colon < 0) continue
+        const name = trimmed.slice(0, colon).trim()
+        if (name === '') continue
+        const key = name.toLowerCase()
+        if (seen.has(key)) continue
+        const patterns = trimmed.slice(colon + 1).split(',').map(part => part.trim()).filter(part => part !== '')
+        if (patterns.length === 0) continue
+        seen.add(key)
+        groups.push({ name, patterns })
+      }
+      return groups
+    }
+
+    /**
+     * Format the panel scale for the slider: `x1.00`.
+     * @param value - the scale factor.
+     * @returns the label.
+     */
+    function formatScale(value) {
+      const scale = typeof value === 'number' && Number.isFinite(value) ? value : VIEW_SETTINGS_DEFAULTS.uiScale
+      return 'x' + scale.toFixed(2)
+    }
+
+    /**
+     * The view settings page of the Settings panel. The preferences are
+     * browser-local, so every control writes localStorage directly and the
+     * board picks the change up through the shared store.
+     * @param props - `t` from the slot's locale register, plus the shell's `close`.
+     */
+    function SettingsSection(props) {
+      const { t } = props
+      const [settings, update] = useViewSettings()
+      // The stylesheet normally arrives with the board; the Settings page may
+      // be the only surface mounted, so it carries its own copy.
+      return h('div', { className: 'tk-set', 'data-view-settings': 'true' },
+        h(Styles, null),
+        h('p', { className: 'tk-set-hint' }, t('settingsNote')),
+
+        h(Section, { title: t('setGrouping'), icon: 'layers' },
+          h('label', { className: 'tk-set-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.autoRoleGroups,
+              onChange: event => { update({ autoRoleGroups: event.target.checked }) },
+            }),
+            h('span', null, t('setAutoRoleGroups'))),
+          h('span', { className: 'tk-set-hint' }, t('setAutoRoleGroupsHint')),
+          h('label', { className: 'tk-set-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.customGroups,
+              onChange: event => { update({ customGroups: event.target.checked }) },
+            }),
+            h('span', null, t('setCustomGroups'))),
+          h('span', { className: 'tk-set-hint' }, t('setCustomGroupsHint')),
+          h('textarea', {
+            className: 'tk-set-text',
+            rows: 3,
+            value: settings.customGroupsText,
+            placeholder: t('setCustomGroupsExample'),
+            'aria-label': t('setCustomGroups'),
+            disabled: settings.customGroups !== true,
+            onChange: event => { update({ customGroupsText: event.target.value }) },
+          }),
+          h('span', { className: 'tk-set-hint tk-set-example' }, t('setCustomGroupsNote'))),
+
+        h(Section, { title: t('setSorting'), icon: 'hash' },
+          h('div', { className: 'tk-set-field' },
+            h('span', { className: 'tk-set-label' }, t('setSorting')),
+            h('select', {
+              className: 'tk-set-select',
+              'aria-label': t('setSorting'),
+              value: settings.sort,
+              onChange: event => { update({ sort: event.target.value }) },
+            },
+            h('option', { value: 'newest' }, t('setSortNewest')),
+            h('option', { value: 'oldest' }, t('setSortOldest')),
+            h('option', { value: 'name' }, t('setSortName'))))),
+
+        h(Section, { title: t('setMotion'), icon: 'activity' },
+          h('label', { className: 'tk-set-check' },
+            h('input', {
+              type: 'checkbox',
+              checked: settings.animateCards,
+              onChange: event => { update({ animateCards: event.target.checked }) },
+            }),
+            h('span', null, t('setAnimateCards'))),
+          h('span', { className: 'tk-set-hint' }, t('setAnimateCardsHint')),
+          h('div', { className: 'tk-set-field', 'data-disabled': settings.animateCards !== true },
+            h('span', { className: 'tk-set-label' }, t('setAnimationDuration')),
+            h('input', {
+              className: 'tk-set-range',
+              type: 'range',
+              min: 0,
+              max: VIEW_ANIMATION_MAX,
+              step: VIEW_ANIMATION_STEP,
+              value: settings.animationMs,
+              'aria-label': t('setAnimationDuration'),
+              disabled: settings.animateCards !== true,
+              onChange: event => { update({ animationMs: Number(event.target.value) }) },
+            }),
+            h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs')))),
+
+        h(Section, { title: t('setScale'), icon: 'gauge' },
+          h('div', { className: 'tk-set-field' },
+            h('span', { className: 'tk-set-label' }, t('setScale')),
+            h('input', {
+              className: 'tk-set-range',
+              type: 'range',
+              min: VIEW_SCALE_MIN,
+              max: VIEW_SCALE_MAX,
+              step: VIEW_SCALE_STEP,
+              value: settings.uiScale,
+              'aria-label': t('setScale'),
+              onChange: event => { update({ uiScale: Number(event.target.value) }) },
+            }),
+            h('span', { className: 'tk-set-value' }, formatScale(settings.uiScale))),
+          h('span', { className: 'tk-set-hint' }, t('setScaleHint'))))
+    }
+
 /**
  * English copy for the Team board. Keys must match locales/ru.js exactly.
  * @type {Record<string, string>}
@@ -339,6 +627,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Running',
       jobsLongest: 'longest',
       jobsEmpty: 'No background processes',
+      settingsTitle: 'Agent Team viewer',
+      settingsNote: 'These preferences are stored in this browser only.',
+      setGrouping: 'Grouping',
+      setAutoRoleGroups: 'Automatic grouping by roles',
+      setAutoRoleGroupsHint: 'Files agents under their role: lead, subagents and executors.',
+      setCustomGroups: 'Custom groups',
+      setCustomGroupsHint: 'Group agents by the name patterns below instead of by role.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'One group per line: Group name: pattern, pattern',
+      setSorting: 'Task order',
+      setSortNewest: 'Newest first',
+      setSortOldest: 'Oldest first',
+      setSortName: 'By name',
+      setMotion: 'Motion',
+      setAnimateCards: 'Animate cards',
+      setAnimateCardsHint: 'Fade a card in when it appears or changes status.',
+      setAnimationDuration: 'Duration',
+      setMs: 'ms',
+      setScale: 'Panel scale',
+      setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
     }
 
 /**
@@ -449,6 +757,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Выполняется',
       jobsLongest: 'дольше всех',
       jobsEmpty: 'Фоновых процессов нет',
+      settingsTitle: 'Просмотр доски команды',
+      settingsNote: 'Эти настройки хранятся только в этом браузере.',
+      setGrouping: 'Группировка',
+      setAutoRoleGroups: 'Автоматическая группировка по ролям',
+      setAutoRoleGroupsHint: 'Агенты группируются по роли: лид, субагенты и исполнители.',
+      setCustomGroups: 'Пользовательские группы',
+      setCustomGroupsHint: 'Группировать агентов по шаблонам имён ниже, а не по роли.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Одна группа на строку: Имя группы: шаблон, шаблон',
+      setSorting: 'Порядок задач',
+      setSortNewest: 'Сначала новые',
+      setSortOldest: 'Сначала старые',
+      setSortName: 'По имени',
+      setMotion: 'Анимация',
+      setAnimateCards: 'Анимировать карточки',
+      setAnimateCardsHint: 'Карточка плавно появляется и при смене статуса.',
+      setAnimationDuration: 'Длительность',
+      setMs: 'мс',
+      setScale: 'Масштаб панели',
+      setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
     }
 
 /**
@@ -559,6 +887,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: '运行中',
       jobsLongest: '最久',
       jobsEmpty: '没有后台进程',
+      settingsTitle: 'Agent Team 看板查看器',
+      settingsNote: '这些设置仅保存在当前浏览器中。',
+      setGrouping: '分组',
+      setAutoRoleGroups: '按角色自动分组',
+      setAutoRoleGroupsHint: '按角色分组：主控、子代理和执行者。',
+      setCustomGroups: '自定义分组',
+      setCustomGroupsHint: '改为按下方名称模式分组，而不是按角色。',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: '每行一个分组：分组名：模式，模式',
+      setSorting: '任务顺序',
+      setSortNewest: '最新优先',
+      setSortOldest: '最早优先',
+      setSortName: '按名称',
+      setMotion: '动效',
+      setAnimateCards: '卡片动画',
+      setAnimateCardsHint: '卡片出现或状态变化时淡入。',
+      setAnimationDuration: '持续时间',
+      setMs: '毫秒',
+      setScale: '面板缩放',
+      setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
     }
 
 /**
@@ -669,6 +1017,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: '実行中',
       jobsLongest: '最長',
       jobsEmpty: 'バックグラウンドプロセスはありません',
+      settingsTitle: 'エージェントチームビューア',
+      settingsNote: 'これらの設定はこのブラウザにのみ保存されます。',
+      setGrouping: 'グループ化',
+      setAutoRoleGroups: 'ロールによる自動グループ化',
+      setAutoRoleGroupsHint: 'エージェントをロール（リード、サブエージェント、実行者）ごとにまとめます。',
+      setCustomGroups: 'カスタムグループ',
+      setCustomGroupsHint: 'ロールではなく、下の名前パターンでエージェントをグループ化します。',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: '1 行に 1 グループ：グループ名：パターン、パターン',
+      setSorting: 'タスクの並び順',
+      setSortNewest: '新しい順',
+      setSortOldest: '古い順',
+      setSortName: '名前順',
+      setMotion: 'モーション',
+      setAnimateCards: 'カードをアニメーション',
+      setAnimateCardsHint: 'カードの表示時やステータス変更時にフェードします。',
+      setAnimationDuration: '再生時間',
+      setMs: 'ms',
+      setScale: 'パネルの拡大率',
+      setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
     }
 
 /**
@@ -779,6 +1147,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'En ejecución',
       jobsLongest: 'más largo',
       jobsEmpty: 'No hay procesos en segundo plano',
+      settingsTitle: 'Visor del equipo de agentes',
+      settingsNote: 'Estas preferencias se guardan solo en este navegador.',
+      setGrouping: 'Agrupación',
+      setAutoRoleGroups: 'Agrupación automática por roles',
+      setAutoRoleGroupsHint: 'Agrupa los agentes por su rol: líder, subagentes y ejecutores.',
+      setCustomGroups: 'Grupos personalizados',
+      setCustomGroupsHint: 'Agrupa los agentes por los patrones de nombre de abajo en lugar del rol.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Un grupo por línea: Nombre del grupo: patrón, patrón',
+      setSorting: 'Orden de las tareas',
+      setSortNewest: 'Más recientes primero',
+      setSortOldest: 'Más antiguas primero',
+      setSortName: 'Por nombre',
+      setMotion: 'Movimiento',
+      setAnimateCards: 'Animar las tarjetas',
+      setAnimateCardsHint: 'Fundido al aparecer una tarjeta o cambiar de estado.',
+      setAnimationDuration: 'Duración',
+      setMs: 'ms',
+      setScale: 'Escala del panel',
+      setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
     }
 
 /**
@@ -889,6 +1277,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'En cours',
       jobsLongest: 'le plus long',
       jobsEmpty: 'Aucun processus en arrière-plan',
+      settingsTitle: 'Visionneuse du tableau Agent Team',
+      settingsNote: 'Ces préférences sont enregistrées uniquement dans ce navigateur.',
+      setGrouping: 'Regroupement',
+      setAutoRoleGroups: 'Regroupement automatique par rôles',
+      setAutoRoleGroupsHint: 'Regroupe les agents par rôle : responsable, sous-agents et exécutants.',
+      setCustomGroups: 'Groupes personnalisés',
+      setCustomGroupsHint: 'Regroupe les agents selon les motifs de nom ci-dessous plutôt que selon le rôle.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Un groupe par ligne : Nom du groupe : motif, motif',
+      setSorting: 'Ordre des tâches',
+      setSortNewest: 'Plus récentes en premier',
+      setSortOldest: 'Plus anciennes en premier',
+      setSortName: 'Par nom',
+      setMotion: 'Animation',
+      setAnimateCards: 'Animer les cartes',
+      setAnimateCardsHint: 'Fondu quand une carte apparaît ou change de statut.',
+      setAnimationDuration: 'Durée',
+      setMs: 'ms',
+      setScale: 'Échelle du panneau',
+      setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
     }
 
 /**
@@ -999,6 +1407,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Läuft',
       jobsLongest: 'am längsten',
       jobsEmpty: 'Keine Hintergrundprozesse',
+      settingsTitle: 'Agent-Team-Viewer',
+      settingsNote: 'Diese Einstellungen werden nur in diesem Browser gespeichert.',
+      setGrouping: 'Gruppierung',
+      setAutoRoleGroups: 'Automatische Gruppierung nach Rollen',
+      setAutoRoleGroupsHint: 'Gruppiert Agenten nach ihrer Rolle: Lead, Subagenten und Ausführende.',
+      setCustomGroups: 'Eigene Gruppen',
+      setCustomGroupsHint: 'Gruppiert Agenten nach den Mustern unten statt nach der Rolle.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Eine Gruppe pro Zeile: Gruppenname: Muster, Muster',
+      setSorting: 'Aufgabenreihenfolge',
+      setSortNewest: 'Neueste zuerst',
+      setSortOldest: 'Älteste zuerst',
+      setSortName: 'Nach Name',
+      setMotion: 'Bewegung',
+      setAnimateCards: 'Karten animieren',
+      setAnimateCardsHint: 'Karten blenden beim Erscheinen oder Statuswechsel weich ein.',
+      setAnimationDuration: 'Dauer',
+      setMs: 'ms',
+      setScale: 'Panel-Skalierung',
+      setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
     }
 
 /**
@@ -1109,6 +1537,26 @@ window.__ModuleLoader__.load({
       jobsRunningCount: 'Em execução',
       jobsLongest: 'mais longo',
       jobsEmpty: 'Nenhum processo em segundo plano',
+      settingsTitle: 'Visualizador da equipe de agentes',
+      settingsNote: 'Estas preferências são salvas apenas neste navegador.',
+      setGrouping: 'Agrupamento',
+      setAutoRoleGroups: 'Agrupamento automático por funções',
+      setAutoRoleGroupsHint: 'Agrupa os agentes por função: líder, subagentes e executores.',
+      setCustomGroups: 'Grupos personalizados',
+      setCustomGroupsHint: 'Agrupa os agentes pelos padrões de nome abaixo em vez da função.',
+      setCustomGroupsExample: 'review: reviewer, auditor',
+      setCustomGroupsNote: 'Um grupo por linha: Nome do grupo: padrão, padrão',
+      setSorting: 'Ordem das tarefas',
+      setSortNewest: 'Mais recentes primeiro',
+      setSortOldest: 'Mais antigas primeiro',
+      setSortName: 'Por nome',
+      setMotion: 'Movimento',
+      setAnimateCards: 'Animar os cartões',
+      setAnimateCardsHint: 'Fusão quando um cartão aparece ou muda de estado.',
+      setAnimationDuration: 'Duração',
+      setMs: 'ms',
+      setScale: 'Escala do painel',
+      setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
     }
 
 /* ------------------------------------------------------------------ *
@@ -1296,6 +1744,30 @@ window.__ModuleLoader__.load({
 .tk-job-note{min-width:0;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);overflow-wrap:anywhere}
 .tk-mono{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);font-size:10px;font-variant-numeric:tabular-nums}
 .tk-warn{display:flex;align-items:flex-start;gap:5px;font-size:10px;line-height:15px;color:var(--dsw-alias-state-warn-primary);overflow-wrap:anywhere}
+.tk-set{display:flex;flex-direction:column;gap:12px;min-width:0;max-width:560px;color:var(--dsw-alias-label-primary);
+  font-size:12px;line-height:17px}
+.tk-set-hint{display:block;margin:0;font-size:10px;line-height:14px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary));
+  overflow-wrap:anywhere}
+.tk-set-example{font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace)}
+.tk-set-check{display:flex;align-items:center;gap:7px;min-width:0;font-size:12px;line-height:17px;cursor:pointer}
+.tk-set-check input{flex:none;margin:0;accent-color:var(--dsw-alias-brand-primary)}
+.tk-set-check input:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}
+.tk-set-field{display:flex;align-items:center;gap:8px;min-width:0;padding:1px 0}
+.tk-set-field[data-disabled="true"]{opacity:.55}
+.tk-set-label{flex:none;font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary)}
+.tk-set-range{flex:1 1 auto;min-width:96px;margin:0;accent-color:var(--dsw-alias-brand-primary)}
+.tk-set-range:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:2px}
+.tk-set-range:disabled{cursor:not-allowed}
+.tk-set-value{flex:none;min-width:56px;text-align:right;font-family:var(--ds-font-family-code,ui-monospace,Consolas,monospace);
+  font-size:11px;line-height:16px;color:var(--dsw-alias-label-secondary);font-variant-numeric:tabular-nums}
+.tk-set-text{width:100%;min-height:58px;box-sizing:border-box;resize:vertical;padding:5px 7px;
+  border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);background:var(--dsw-alias-bg-layer-1);
+  color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:16px}
+.tk-set-text:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-set-text:disabled{cursor:not-allowed;opacity:.6}
+.tk-set-select{min-width:0;padding:3px 6px;border:1px solid var(--dsw-alias-border-l1);border-radius:var(--dsw-radius-sm);
+  background:var(--dsw-alias-bg-layer-1);color:var(--dsw-alias-label-primary);font:inherit;font-size:11px;line-height:15px;cursor:pointer}
+.tk-set-select:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
 `
 
     /** Attach the stylesheet to one surface. */
@@ -4222,6 +4694,18 @@ window.__ModuleLoader__.load({
           locale: NS,
           inject: () => ({ open: openBoard }),
         }, HeaderBoardAction))
+
+        // The Settings page of the board. Its preferences are browser-local
+        // view state, so the page writes localStorage and never the Host
+        // settings document; `label` is a thunk to follow a language change.
+        ctx.slots.inject('settings.section', () => ctx.slots.register({
+          name: 'settings.section',
+          id: 'agent-team-viewer',
+          order: 80,
+          label: () => t('settingsTitle'),
+          locale: NS,
+          inject: () => ({}),
+        }, SettingsSection))
 
         // The task record keeps no timestamps, so the elapsed labels come from
         // watching the board. This watcher runs for as long as the page does,
