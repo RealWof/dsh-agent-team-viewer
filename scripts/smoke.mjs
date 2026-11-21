@@ -1851,6 +1851,8 @@ markdownTask.description = [
   '',
   'A [https link](https://example.com/docs), a [file](src/client/10-settings.js), a [folder](src/client/), and a [resource](dsh-resource://file/session/root/src/client/20-ui.js).',
   'A [bad](javascript:alert) link and ![bad](javascript:alert).',
+  'Bare paths: docs/stats.md and src/a.js:12, plus 1.2.3 and https://example.com/a/b.',
+  'Read docs/guide.md. but leave `docs/code.md` in code.',
   '![diagram](https://example.com/pic.png)',
   '<script>alert("x")</script>',
 ].join('\n')
@@ -1939,6 +1941,35 @@ check(surface(mdAttachments).texts.includes('attachments'),
 check(surface(mdAttachments).texts.includes('src/client/10-settings.js')
   && surface(mdAttachments).texts.includes('src/client/'),
 'the attachment chips do not list the referenced files')
+
+/* Bare workspace paths in prose become the same file buttons. */
+const barePathFile = withMarkdown.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'docs/stats.md')
+check(barePathFile !== undefined, 'a bare workspace path did not become a file button')
+check(surface(barePathFile).texts.includes('docs/stats.md'), 'a bare workspace path lost its label')
+const barePathLine = withMarkdown.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'src/a.js')
+check(barePathLine !== undefined, 'a bare path with :line did not strip the line from the open path')
+check(surface(barePathLine).texts.includes('src/a.js:12'),
+  'a bare path with :line lost the full label, got: ' + surface(barePathLine).joined)
+check(withMarkdown.nodes.every(node => node.type !== 'button' || node.props?.['data-scope'] !== '1.2.3'),
+  'a version string was linked as a workspace path')
+check(!withMarkdown.nodes.some(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'docs/code.md'), 'a path inside inline code was linked')
+check(withMarkdown.nodes.some(node => node.type === 'code' && mdText(node).includes('docs/code.md')),
+  'the inline-code path lost its code span')
+check(withMarkdown.nodes.some(node => node.type === 'a'
+  && node.props?.href === 'https://example.com/a/b'), 'a bare URL was not left to the URL autolinker')
+const guidePath = withMarkdown.nodes.find(node => node.type === 'button'
+  && node.props?.['data-scope'] === 'docs/guide.md')
+check(guidePath !== undefined, 'a path followed by sentence punctuation was not linked')
+check(surface(guidePath).texts.includes('docs/guide.md'),
+  'the sentence punctuation leaked into the path label: ' + surface(guidePath).joined)
+const bareFilesBefore = openedFiles.length
+barePathFile?.props?.onClick?.()
+check(openedFiles.length === bareFilesBefore + 1
+  && openedFiles[openedFiles.length - 1][1] === 'docs/stats.md',
+  'clicking a bare workspace path did not call onOpenFile')
 
 // The report text goes through the same renderer.
 resetSlots()

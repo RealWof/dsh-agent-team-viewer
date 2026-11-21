@@ -2108,6 +2108,10 @@ window.__ModuleLoader__.load({
     const MD_SCHEME = /^[a-z][a-z0-9+.-]*:/i
     /** An autolinkable URL inside running text. */
     const MD_AUTOLINK = /^https?:\/\/[^\s<>"']+/i
+    /** A bare workspace path: at least one `/`, optional `:line`. */
+    const MD_WORKSPACE_PATH = /^[\w.@+-]+(?:\/[\w.@+-]+)+(?::\d+)?/
+    /** A character that would make a path match only part of a longer token. */
+    const MD_PATH_EDGE = /[\w./@+:-]/
 
     /**
      * The workspace path inside one `dsh-resource://file/session/<id>/<path>` address.
@@ -2237,6 +2241,30 @@ window.__ModuleLoader__.load({
     }
 
     /**
+     * Find a bare workspace path that starts at `index` in running prose.
+     *
+     * A path needs at least one `/`; a domain followed by a slash stays a URL
+     * and a version string has no slash at all. The `:line` suffix belongs to
+     * the visible label only, so the click opens the file itself. Trailing
+     * sentence punctuation is left outside the link.
+     * @param text - the inline source.
+     * @param index - the candidate offset.
+     * @returns `{ label, path }`, or undefined when no path starts here.
+     */
+    function markdownWorkspacePathAt(text, index) {
+      const match = MD_WORKSPACE_PATH.exec(text.slice(index))
+      if (match === null) return undefined
+      const previous = index === 0 ? '' : text[index - 1]
+      if (previous !== '' && MD_PATH_EDGE.test(previous)) return undefined
+      // A domain with a path (`example.com/readme`) is a URL, not a file.
+      const firstSegment = match[0].slice(0, match[0].indexOf('/'))
+      if (/^(?:[a-z0-9-]+\.)+[a-z]{2,}$/i.test(firstSegment)) return undefined
+      const label = match[0].replace(/[.,;!?]+$/, '')
+      if (label === '' || label.indexOf('/') < 0) return undefined
+      return { label, path: label.replace(/:\d+$/, '') }
+    }
+
+    /**
      * Render inline Markdown: bold, italic, code, links, images and autolinks.
      * The returned children are strings or React elements, so React escapes
      * every piece of text and no HTML is ever injected.
@@ -2332,6 +2360,13 @@ window.__ModuleLoader__.load({
             index += href.length
             continue
           }
+        }
+        const workspacePath = markdownWorkspacePathAt(text, index)
+        if (workspacePath !== undefined) {
+          markdownRemember(context, workspacePath.path)
+          push(markdownFileNode(workspacePath.path, workspacePath.label, context, 'path-' + key))
+          index += workspacePath.label.length
+          continue
         }
         plain += char
         index += 1

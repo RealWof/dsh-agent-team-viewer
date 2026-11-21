@@ -48,6 +48,10 @@ All notable changes to this plugin are documented here. The format follows
   shown as text, and only `http(s):`, `mailto:` and workspace paths become active; `javascript:`,
   `data:` and other schemes stay flat. Workspace file references in the text become attachment-style
   chips, because a task record carries no attachment field of its own.
+- Bare workspace paths in a description or report (`docs/stats.md`, `src/a.js:12`) are links now,
+  rendered as the same `.tk-file-link` button as a Markdown file link. A trailing `:line` stays in the
+  label while the click opens the file, trailing sentence punctuation stays outside the link, and a
+  path inside code ticks, a URL or a version string stays plain text.
 
 ### Changed
 
