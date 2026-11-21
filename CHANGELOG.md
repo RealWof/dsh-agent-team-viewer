@@ -14,6 +14,47 @@ All notable changes to this plugin are documented here. The format follows
   bound a huge tree. The field is volatile, so the browser half reads the live value from the settings
   document, the Plugins page offers it as a form, and the profile patch still sets it
   (`config: { agentsLimit: 128 }`). Without the settings surface the built-in default stands.
+- A **Settings → Agent Team Viewer** page holds browser-local view preferences: automatic role
+  grouping, custom agent groups, custom task groups, the task/agent sort, card animation and its
+  duration, board zoom and dialog zoom. Nothing in this page reaches the Host settings document.
+- The agent strip groups itself by derived role, and both the strip and every task column can group by
+  the custom rules from Settings. A group has a foldable header, a count, a cap for long piles and its
+  own scroll box; the Lead stays pinned above its group, and unmatched rows follow flat.
+- Both section headers and the Settings page carry the sort control (newest first by default, oldest
+  first or by name). Tasks are ordered by their first-seen stamp and agents by their creation time.
+- The task dialog and the agent dialog are opened by the whole card/row surface: a task card opens the
+  task dialog, an agent row opens the agent dialog with Enter or Space as well as a click, while the
+  agent name and the jump control keep their own actions.
+- Write scopes in the task dialog are links: a file opens the shipped workspace file viewer and a scope
+  with a trailing slash opens the Files page.
+- An expanded status group scrolls inside its own column (`.tk-col-items`) instead of growing the panel,
+  and the show-more/show-less control stays below the scroll box.
+- The background-jobs chip stays on an agent row after its jobs settle, counts the page's seen jobs and
+  closes the metric line; its tooltip carries the longest live run and the remembered wall time.
+- Every cost figure explains itself: the agent row, the totals chip and the agent dialog name both the
+  API spend and the plan-inclusive equivalent of the same tokens, including the subscription case.
+- The task dialog has **Description** and **Report** tabs. Report reads the owning agent's final answer
+  from its chat, shows loading and empty states, and offers a jump to that chat; the read waits briefly
+  for a never-opened agent's first snapshot and always releases the retained session.
+- Background wall time is persisted in `localStorage` as merged intervals and unioned with the live
+  roster, so the lifetime figure survives the Host dropping settled jobs with their owner session.
+- A moved card glides between logical columns with a FLIP pass; a layout shift inside the same column no
+  longer animates, and the animation switch, its duration and reduced motion are honored.
+- Board zoom (the whole panel) and dialog zoom (`.tk-insp`) are separate preferences.
+- Hovering a task card's owner highlights that agent's row in the strip, so "who works on this" and
+  "that row" read as one thing.
+- The task description and the agent report render a safe Markdown subset — headings, bold, italic,
+  inline and fenced code, lists, quotes, rules, links, images and autolinks — as React nodes. Raw HTML is
+  shown as text, and only `http(s):`, `mailto:` and workspace paths become active; `javascript:`,
+  `data:` and other schemes stay flat. Workspace file references in the text become attachment-style
+  chips, because a task record carries no attachment field of its own.
+
+### Changed
+
+- The agents header no longer shows the old static open-chat hint; the action moved into each row and
+  its name control.
+- The agents strip now derives a role from the agent's name before its preset, so the harness default
+  `standard` preset no longer collapses distinct builders and integrators into one meaningless group.
 
 ### Fixed
 
@@ -23,6 +64,13 @@ All notable changes to this plugin are documented here. The format follows
   looked stopped. The board now reads the live `useSessionStatus` map first, exactly as the shipped
   Subagents menu does, and falls back to the list summary only when the host supplies no status; the
   agent's run timer and the running-group order follow the same truth.
+- Fold state is stored per board (root session id) instead of once for every board, so two open boards
+  no longer share section or group folds; the old flat shape is dropped once, not applied everywhere.
+- The Report tab no longer shows "no report" for a never-opened agent. The retained session's chat opens
+  asynchronously, so the dialog now subscribes to the Chat target and waits for the first answer (bounded,
+  then falls back to the empty state) and releases the retained reference in every path.
+- The observation ledger keeps a task's first-seen stamp when it prunes old records, so the board order
+  no longer jumps when the ledger is trimmed.
 
 ## [0.1.0] - 2026-11-20
 
