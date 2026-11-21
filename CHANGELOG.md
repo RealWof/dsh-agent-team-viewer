@@ -116,6 +116,9 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Fixed
 
+- The agent model line no longer always takes a line of its own: it closes the metric row and sits
+  beside the statistics when the card is wide, wrapping to a right-aligned line only when the card or
+  panel narrows. A model line with no metric still draws its row.
 - Local file links — Markdown links, bare paths, attachment chips and write scopes — are checked
   against the workspace before they render as clickable buttons. A path the file API reports missing
   stays plain text with a **File not found** tooltip and never enters the attachment row, a path still

@@ -385,9 +385,11 @@
      * a clickable surface that opens the agent dialog, exactly like a task card
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row. `showAgentModel` adds
-     * an opt-in ellipsized model line on the bottom-right; `showModelProvider`,
-     * `showModelName` and `showModelEffort` pick its visible parts — the
-     * tooltip carries the full `provider · model · effort` either way.
+     * an opt-in ellipsized model line that closes the metric row — beside the
+     * statistics when they fit, on its own right-aligned line when the row
+     * wraps; `showModelProvider`, `showModelName` and `showModelEffort` pick
+     * its visible parts — the tooltip carries the full `provider · model ·
+     * effort` either way.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`, `flipGroup`,
      *   `onOpenAgent`, `onInspect`, `hovered` when a card owner is hovered,
      *   and `showAgentModel`, `showModelProvider`, `showModelName`,
@@ -434,6 +436,23 @@
           : t('jobsRunningCount') + ': ' + String(live.length)
             + (longest === undefined ? '' : ' · ' + t('jobsLongest') + ' ' + formatSpan(longest, t)))
           + ' · ' + t('metricBackground') + ' ' + formatSpan(backgroundMs, t)
+      // The metric row wraps, so the model line rides at the end of it: beside
+      // the statistics when they fit, on its own right-aligned line when the
+      // card narrows. Appending it only when visible keeps the jobs chip as the
+      // row's last child otherwise, and keeps the row off an empty card.
+      const metaParts = [...items]
+      if (showJobs === true) {
+        metaParts.push(h('span', {
+          key: 'jobs',
+          className: 'tk-chip tk-agent-jobs',
+          'data-live': live.length > 0 ? 'true' : 'false',
+          title: jobsLabel,
+          'aria-label': jobsLabel,
+        }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length)))
+      }
+      if (modelVisible === true) {
+        metaParts.push(h('span', { key: 'model', className: 'tk-agent-model', title: modelTitle }, modelLine))
+      }
       return h('div', {
         className: 'tk-agent-row',
         role: 'button',
@@ -482,22 +501,13 @@
             onOpenAgent(agent.id, 'aside')
           },
         }, h(Icon, { name: 'panel-right', size: 11 }))),
-      showJobs !== true && items.length === 0
+      metaParts.length === 0
         ? null
         : h('div', { className: 'tk-agent-meta' },
-          // The metrics keep their order and their place; the chip closes the
-          // line, so appearing or vanishing never shifts a metric icon.
-          items,
-          showJobs === true
-            ? h('span', {
-              key: 'jobs',
-              className: 'tk-chip tk-agent-jobs',
-              'data-live': live.length > 0 ? 'true' : 'false',
-              title: jobsLabel,
-              'aria-label': jobsLabel,
-            }, h(Icon, { name: 'clock', size: 10 }), String(agentJobs.length))
-            : null),
-      modelVisible ? h('span', { className: 'tk-agent-model', title: modelTitle }, modelLine) : null)
+          // The metrics keep their order and their place; the chip follows
+          // them and the model line closes the row, so appearing or vanishing
+          // never shifts a metric icon.
+          metaParts))
     }
 
     /** The sort choices the header menu offers, in display order. */

@@ -152,7 +152,7 @@
 .tk-agent-row[data-hover="true"]{border-color:var(--dsw-alias-brand-primary);
   box-shadow:0 0 0 1px color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
 .tk-agent-main{display:flex;align-items:center;gap:4px;min-width:0}
-.tk-agent-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap;min-width:0;padding-left:13px}
+.tk-agent-meta{display:flex;align-items:center;flex-wrap:wrap;row-gap:2px;column-gap:5px;min-width:0;padding-left:13px}
 .tk-agent-jobs{flex:none;margin-left:auto;min-width:24px;justify-content:center;cursor:default;font-variant-numeric:tabular-nums}
 .tk-agent-jobs[data-live="true"]{color:var(--dsw-alias-brand-primary);
   border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent)}
@@ -161,9 +161,8 @@
 .tk-agent-name:hover{text-decoration:underline}
 .tk-agent-name:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px;border-radius:3px}
 .tk-agent-mode{flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
-.tk-agent-model{display:block;width:100%;min-width:0;margin-top:1px;text-align:right;overflow:hidden;
-  text-overflow:ellipsis;white-space:nowrap;font-size:9px;line-height:12px;
-  color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
+.tk-agent-model{flex:none;margin-left:auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  font-size:9px;line-height:12px;color:var(--dsw-alias-label-tertiary,var(--dsw-alias-label-secondary))}
 .tk-agent-jump{width:18px;height:18px}
 .tk-task-link{display:flex;align-items:center;gap:5px;width:100%;min-width:0;padding:3px 4px;border:0;border-radius:4px;
   background:transparent;color:inherit;font:inherit;font-size:11px;line-height:15px;text-align:left;cursor:pointer}

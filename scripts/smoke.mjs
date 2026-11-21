@@ -2261,15 +2261,33 @@ check(String(modelLine?.props?.children) === 'deepseek-chat · high',
   'the model line shows the provider while its switch is off: ' + String(modelLine?.props?.children))
 check(modelLine?.props?.title === 'deepseek · deepseek-chat · high',
   'the model line tooltip lost the provider: ' + String(modelLine?.props?.title))
+const modelMeta = within(modelRow, node => node.props?.className === 'tk-agent-meta')[0]
+const metaChildren = Array.isArray(modelMeta?.props?.children) ? modelMeta.props.children : []
+const metaModelIndex = metaChildren.findIndex(child => child?.props?.className === 'tk-agent-model')
+check(metaModelIndex >= 0 && metaModelIndex === metaChildren.length - 1,
+  'the model line is not the last child of the metric row: ' + metaModelIndex + ' of ' + metaChildren.length)
 const rowChildren = Array.isArray(modelRow?.props?.children) ? modelRow.props.children : []
-const metaIndex = rowChildren.findIndex(child => child?.props?.className === 'tk-agent-meta')
-const modelIndex = rowChildren.findIndex(child => child?.props?.className === 'tk-agent-model')
-check(metaIndex >= 0 && modelIndex === metaIndex + 1 && modelIndex === rowChildren.length - 1,
-  'the model line is not a separate line after the meta line: meta ' + metaIndex + ', model ' + modelIndex)
+check(rowChildren.every(child => child?.props?.className !== 'tk-agent-model'),
+  'the model line is still a separate block after the metric row')
 const modelUnknownRow = modelBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-b'
   && node.props?.className === 'tk-agent-row')
 check(within(modelUnknownRow, node => node.props?.className === 'tk-agent-model').length === 0,
   'an agent without a known model got a model line')
+// A visible model line alone still draws the metric row.
+const modelOnlyState = JSON.parse(JSON.stringify(listState))
+modelOnlyState.projectionsBySession['session-b'].values = {
+  modelSelection: {
+    lastUsed: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' },
+    next: { provider: 'deepseek', model: 'deepseek-chat', reasoningEffort: 'high' },
+  },
+}
+const modelOnlyRow = boardFromFreshBundle(modelOnlyState).nodes.find(node => node.props?.['data-agent-id'] === 'session-b'
+  && node.props?.className === 'tk-agent-row')
+const modelOnlyMeta = within(modelOnlyRow, node => node.props?.className === 'tk-agent-meta')
+check(modelOnlyMeta.length === 1, 'a model line without a metric or a chip did not draw the metric row')
+const modelOnlyChildren = Array.isArray(modelOnlyMeta[0]?.props?.children) ? modelOnlyMeta[0].props.children : []
+check(modelOnlyChildren.length === 1 && modelOnlyChildren[0]?.props?.className === 'tk-agent-model',
+  'the metric row of a model-only agent does not hold just the model line')
 
 // Switching the provider on prepends it to the visible line and keeps the title.
 providerBox?.props?.onChange?.({ target: { checked: true } })
@@ -2283,8 +2301,10 @@ check(String(providerLine?.props?.children) === 'deepseek · deepseek-chat · hi
   'the provider did not join the visible model line: ' + String(providerLine?.props?.children))
 check(providerLine?.props?.title === 'deepseek · deepseek-chat · high',
   'the model line tooltip diverged from the visible full line')
-check(artifact.includes('.tk-agent-model{display:block;width:100%;min-width:0;margin-top:1px;text-align:right;overflow:hidden;'),
-  'the model line is not a truncated bottom-right block')
+check(artifact.includes('.tk-agent-meta{display:flex;align-items:center;flex-wrap:wrap;row-gap:2px;column-gap:5px;'),
+  'the metric row does not wrap the model line onto its own line')
+check(artifact.includes('.tk-agent-model{flex:none;margin-left:auto;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;'),
+  'the model line is not a right-aligned inline item in the metric row')
 check(artifact.includes('font-size:9px;line-height:12px'), 'the model line lost its compact type')
 if (settingsBeforeModel === undefined) storage.delete(SETTINGS_STORAGE_KEY)
 else storage.set(SETTINGS_STORAGE_KEY, settingsBeforeModel)
