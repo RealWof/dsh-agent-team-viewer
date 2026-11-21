@@ -363,6 +363,8 @@ check(board.texts.some(text => text === 'Second task'), 'the blocked card is mis
 check(board.texts.some(text => text === 'Shipped task'), 'the completed card is missing')
 check(board.classes.has('tk-board'), 'the board container is missing')
 check(board.classes.has('tk-card'), 'no card rendered')
+check(board.nodes.some(node => node.props?.['data-flip-id'] === 'task:task-1'), 'the task card has no FLIP id')
+check(artifact.includes('cubic-bezier(0.2,0,0,1)'), 'the FLIP move easing is missing from the bundle')
 check(board.joined.includes('unitMin') || board.joined.includes('unitSec') || board.joined.includes('unitHour'), 'no duration text rendered')
 check(board.joined.includes('#1'), 'task ids are not shortened')
 
@@ -397,6 +399,7 @@ check(rowOf('session-b')?.props['data-activity'] === 'completed', 'the completed
 check(rowOf('root')?.props['data-lead'] === 'true', 'the lead is not marked as the lead row')
 check(rowOf('session-a')?.props?.role === 'button', 'the agent row is not a clickable card surface')
 check(rowOf('session-a')?.props?.tabIndex === 0, 'the agent row is not keyboard reachable')
+check(rowOf('session-a')?.props?.['data-flip-id'] === 'agent:session-a', 'the agent row has no FLIP id')
 
 /** Find one descendant of a node. */
 const within = (node, predicate) => {

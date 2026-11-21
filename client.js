@@ -3579,6 +3579,7 @@ window.__ModuleLoader__.load({
         'data-state': state,
         'data-blocked': state === 'warning' ? 'true' : 'false',
         'data-task-id': task.id,
+        'data-flip-id': 'task:' + task.id,
         onClick: () => { onOpen(task.id) },
         'aria-label': task.subject,
       },
@@ -3748,6 +3749,7 @@ window.__ModuleLoader__.load({
         'data-agent-id': agent.id,
         'data-lead': agent.isLead === true ? 'true' : 'false',
         'data-hover': hovered === true ? 'true' : 'false',
+        'data-flip-id': 'agent:' + agent.id,
         onClick: () => { onInspect(agent.id) },
         onKeyDown: event => {
           if (event === null || typeof event !== 'object') return
@@ -4007,6 +4009,8 @@ window.__ModuleLoader__.load({
       // it survives remounts of the tab, exactly like the observation ledger.
       const [, bumpView] = useState(0)
       const rootRef = useRef(null)
+      /** Card and row rectangles of the previous render, keyed by FLIP id. */
+      const flipRects = useRef(new Map())
 
       useEffect(() => {
         const node = rootRef.current
@@ -4018,6 +4022,57 @@ window.__ModuleLoader__.load({
         observer.observe(node)
         return () => { observer.disconnect() }
       }, [])
+
+      // FLIP: a card that moved between the previous render and this one glides
+      // from where it was to where it is. The pass only reads the DOM — no
+      // state — and no-ops when the harness has no real DOM, when the setting
+      // is off or when the reader asked for reduced motion.
+      useEffect(() => {
+        const root = rootRef.current
+        if (root === null || typeof root.querySelectorAll !== 'function') return
+        if (typeof document === 'undefined' || typeof Element === 'undefined') return
+        const nodes = root.querySelectorAll('[data-flip-id]')
+        const previous = flipRects.current
+        const next = new Map()
+        const moves = []
+        for (const node of nodes) {
+          const id = typeof node.getAttribute === 'function' ? node.getAttribute('data-flip-id') : null
+          if (id === null || id === '') continue
+          const box = node.getBoundingClientRect()
+          next.set(id, { left: box.left, top: box.top })
+          const before = previous.get(id)
+          if (before === undefined) continue
+          const dx = before.left - box.left
+          const dy = before.top - box.top
+          if (dx === 0 && dy === 0) continue
+          moves.push({ node, dx, dy })
+        }
+        // Replace the snapshot every pass, even when nothing animates: the next
+        // move must be measured against the layout the reader just saw.
+        flipRects.current = next
+        if (moves.length === 0) return
+        if (settings.animateCards !== true || !(settings.animationMs > 0)) return
+        if (typeof window.matchMedia === 'function') {
+          let reduced = false
+          try {
+            reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches === true
+          } catch {
+            reduced = false
+          }
+          if (reduced) return
+        }
+        for (const move of moves) {
+          if (typeof move.node.animate !== 'function') continue
+          try {
+            move.node.animate([
+              { transform: 'translate(' + String(move.dx) + 'px,' + String(move.dy) + 'px)' },
+              { transform: 'none' },
+            ], { duration: settings.animationMs, easing: 'cubic-bezier(0.2,0,0,1)' })
+          } catch {
+            // An element that cannot start an animation lands in its new place.
+          }
+        }
+      })
 
       /** How many items each status group holds, keyed by the stable group id. */
       const groupCounts = useMemo(() => {
