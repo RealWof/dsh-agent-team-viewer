@@ -66,6 +66,15 @@ window.__ModuleLoader__.load({
     const TICK_MS = 15000
     /** Session-list refresh cadence while the board is open, in milliseconds. */
     const REFRESH_MS = 20000
+    /**
+     * How long the task dialog waits for a never-opened agent's Chat target to
+     * publish its final answer. The retained session opens its history in the
+     * background, so the first snapshot is empty; subscribing to the target and
+     * waiting briefly is what lets the Report tab show the real answer instead
+     * of its empty state. The bound keeps a slow or failed open from pinning
+     * the dialog.
+     */
+    const REPORT_WAIT_MS = 2000
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
@@ -5812,12 +5821,96 @@ window.__ModuleLoader__.load({
         }
 
         /**
+         * The final answer inside one Chat target, read without throwing.
+         * @param chat - the Chat target source from `assembly.target('chat')`.
+         * @returns the answer text, or undefined when the target is absent,
+         *   unreadable or still empty.
+         */
+        const chatAnswerOf = (chat) => {
+          try {
+            return finalAnswerOf(chat?.getSnapshot?.())
+          } catch {
+            return undefined
+          }
+        }
+
+        /**
+         * Wait for one Chat target to publish a non-empty answer.
+         *
+         * Retaining a never-opened agent starts its history opening in the
+         * background, so the first synchronous snapshot is empty. Subscribing
+         * to the target activates its view builder and wakes the caller on the
+         * first conversation publication; the caller therefore settles on the
+         * first answer, the initial open's failure, or the bounded timeout. The
+         * wait is one-shot and never rejects; the caller releases the retained
+         * reference in its own `finally`.
+         * @param chat - the Chat target source.
+         * @param reference - the retained Session reference; its `ready` may fail.
+         * @returns the answer text, or undefined.
+         */
+        const waitForChatAnswer = (chat, reference) => new Promise(resolve => {
+          let settled = false
+          let off
+          let timer
+          const finish = (value) => {
+            if (settled) return
+            settled = true
+            if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer)
+            try {
+              if (typeof off === 'function') off()
+            } catch {
+              // A source that already ended needs no unsubscribe.
+            }
+            resolve(value)
+          }
+          const read = () => {
+            const answer = chatAnswerOf(chat)
+            if (answer !== undefined) finish(answer)
+            return answer
+          }
+          try {
+            off = chat.subscribe(read)
+          } catch {
+            finish(undefined)
+            return
+          }
+          // The builder may publish an answer from inside subscribe, before
+          // the unsubscribe handle was assigned; release it now.
+          if (settled) {
+            try {
+              if (typeof off === 'function') off()
+            } catch {
+              // A source that already ended needs no unsubscribe.
+            }
+            return
+          }
+          // A builder may fill synchronously inside subscribe.
+          if (read() !== undefined) return
+          if (typeof setTimeout === 'function') {
+            timer = setTimeout(() => { finish(chatAnswerOf(chat)) }, REPORT_WAIT_MS)
+          }
+          const ready = reference === undefined || reference === null ? undefined : reference.ready
+          if (ready !== null && typeof ready === 'object' && typeof ready.then === 'function') {
+            ready.then(
+              () => { read() },
+              () => { finish(undefined) },
+            )
+          } else if (timer === undefined) {
+            // No clock to bound the wait: report the empty state now.
+            finish(undefined)
+          }
+        })
+
+        /**
          * Read a subagent's final answer from its chat, without opening a tab.
          * The task record carries no report, so the answer is read from the
-         * live conversation: retain the session, resolve its Chat target, take
-         * one synchronous snapshot and release the reference. A missing
-         * service, an unopened session or an empty snapshot resolves to
-         * undefined rather than rejecting, so the dialog shows its empty state.
+         * live conversation: retain the session, resolve its Chat target, read
+         * the snapshot once, and — because a never-opened session's history is
+         * still opening, so that first snapshot is empty — wait briefly for the
+         * target to publish its first non-empty answer. The retained reference
+         * is released in `finally`. A missing service, an unopened session, an
+         * open that fails or a timeout resolves to undefined rather than
+         * rejecting, so the dialog shows its empty state.
          * @param agentId - the owner session id.
          * @returns the final answer text, or undefined.
          */
@@ -5842,7 +5935,10 @@ window.__ModuleLoader__.load({
             if (assembly === null || assembly === undefined || typeof assembly.target !== 'function') return undefined
             const chat = assembly.target('chat')
             if (chat === null || chat === undefined || typeof chat.getSnapshot !== 'function') return undefined
-            return finalAnswerOf(chat.getSnapshot())
+            const immediate = chatAnswerOf(chat)
+            if (immediate !== undefined) return immediate
+            if (typeof chat.subscribe !== 'function') return undefined
+            return await waitForChatAnswer(chat, reference)
           } catch {
             // The report is optional context; a failure is an empty tab.
             return undefined

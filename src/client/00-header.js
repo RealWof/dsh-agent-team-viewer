@@ -55,6 +55,15 @@
     const TICK_MS = 15000
     /** Session-list refresh cadence while the board is open, in milliseconds. */
     const REFRESH_MS = 20000
+    /**
+     * How long the task dialog waits for a never-opened agent's Chat target to
+     * publish its final answer. The retained session opens its history in the
+     * background, so the first snapshot is empty; subscribing to the target and
+     * waiting briefly is what lets the Report tab show the real answer instead
+     * of its empty state. The bound keeps a slow or failed open from pinning
+     * the dialog.
+     */
+    const REPORT_WAIT_MS = 2000
 
     /** Identity of the browser-local fold state: folded sections and groups. */
     const COLLAPSE_KEY = 'dsh.agent-team-viewer.collapsed.v1'
