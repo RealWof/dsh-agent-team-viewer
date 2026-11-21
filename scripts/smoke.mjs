@@ -863,10 +863,11 @@ const countPill = (rendered, kind, target) => {
     : within(head, node => node.props?.className === 'tk-col-count')[0]?.props?.children
 }
 
-/** The persisted fold state, parsed, or undefined when nothing is stored. */
-const foldState = () => {
+/** One board's persisted fold state, or undefined when nothing is stored. */
+const foldState = (boardId = 'root') => {
   const raw = storage.get(COLLAPSE_STORAGE_KEY)
-  return raw === undefined ? undefined : JSON.parse(raw)
+  if (raw === undefined) return undefined
+  return JSON.parse(raw)?.boards?.[boardId]
 }
 
 /** A sessions list whose root board carries `count` extra tasks in one column. */
@@ -1205,13 +1206,18 @@ check(onEmpty.texts.includes('emptyBoard'), 'Team mode on with no tasks lost its
 /* --- A fresh start reads the stored folds back ------------------------- */
 
 const seeded = {
-  sections: { agents: false, tasks: true },
-  groups: { 'agents:active': true, 'agents:done': false, 'agents:idle': false },
+  boards: {
+    root: {
+      sections: { agents: false, tasks: true },
+      groups: { 'agents:active': true, 'agents:done': false, 'agents:idle': false },
+    },
+  },
 }
 storage.set(COLLAPSE_STORAGE_KEY, JSON.stringify(seeded))
 const storedSeed = JSON.parse(storage.get(COLLAPSE_STORAGE_KEY))
-check(storedSeed?.sections?.tasks === true && storedSeed?.groups?.['agents:active'] === true,
-  'the seeded fold state did not round-trip through the mocked storage')
+check(storedSeed?.boards?.root?.sections?.tasks === true
+  && storedSeed?.boards?.root?.groups?.['agents:active'] === true,
+'the seeded per-board fold state did not round-trip through the mocked storage')
 
 // A second copy of the bundle gets its own module scope, so its fold store is
 // read from the mocked localStorage exactly as on a page reload.
@@ -1246,7 +1252,7 @@ check(restored.nodes.some(node => node.props?.['data-agent-column'] === 'done'),
 const SETTINGS_STORAGE_KEY = 'dsh.agent-team-viewer.settings.v1'
 
 /** Load another copy of the bundle so its view-settings store is re-read. */
-const boardFromFreshBundle = (state = listState) => {
+const boardFromFreshBundle = (state = listState, sessionId = props.sessionId) => {
   let captured
   const target = { ...globalThis.window, __ModuleLoader__: { load: definition => { captured = definition } } }
   new Function('window', artifact)(target)
@@ -1257,8 +1263,89 @@ const boardFromFreshBundle = (state = listState) => {
   plugin.apply(ctx)
   resetSlots()
   resetHooks()
-  return surface(tabBody({ ...props, useSessions: selector => selector(state) }))
+  return surface(tabBody({ ...props, sessionId, useSessions: selector => selector(state) }))
 }
+
+/* --- The fold state is scoped to one board ----------------------------- */
+
+const twoRootsState = (() => {
+  const next = JSON.parse(JSON.stringify(listState))
+  next.ids = [...next.ids, 'root-two']
+  next.byId['root-two'] = { id: 'root-two', running: false, updatedAt: 0 }
+  next.byId['session-c'] = { id: 'session-c', parentId: 'root-two', running: true, updatedAt: 0 }
+  next.projectionsBySession['root-two'] = {
+    values: {
+      subagentCatalog: [{ id: 'session-c', mode: 'continuable', name: 'tester', createdAt: 99 }],
+      agentTeam: {
+        enabled: true,
+        tasks: [{
+          id: 'task-9',
+          revision: 1,
+          subject: 'Second board task',
+          description: '',
+          status: 'in_progress',
+          blockedBy: [],
+          writeScopes: [],
+          ownerId: 'session-c',
+          ownerName: 'tester',
+          ready: true,
+          writeScopeWarnings: [],
+        }],
+      },
+    },
+  }
+  return next
+})()
+storage.set(COLLAPSE_STORAGE_KEY, JSON.stringify({
+  boards: {
+    root: { sections: { tasks: true }, groups: { 'agents:active': true } },
+    'root-two': { sections: { tasks: false }, groups: { 'agents:active': false } },
+  },
+}))
+const perBoardRoot = boardFromFreshBundle(listState)
+check(!perBoardRoot.nodes.some(node => node.props?.className === 'tk-board'),
+  "the root board's stored folded tasks section did not hide its board")
+const perBoardRootActive = perBoardRoot.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+check(within(perBoardRootActive, node => node.props?.className === 'tk-agent-row').length === 0,
+  "the root board's stored folded agent group did not fold")
+// One bundle instance serves both boards, exactly as the real page does.
+resetSlots()
+resetHooks()
+const perBoardTwo = surface(tabBody({ ...props, sessionId: 'session-c', useSessions: selector => selector(twoRootsState) }))
+check(perBoardTwo.nodes.some(node => node.props?.className === 'tk-board'),
+  "the second board inherited the first board's folded tasks section")
+const perBoardTwoActive = perBoardTwo.nodes.find(node => node.props?.['data-agent-column'] === 'active')
+check(within(perBoardTwoActive, node => node.props?.className === 'tk-agent-row').length === 1,
+  "the second board inherited the first board's folded agent group")
+
+// Unfolding on one board must not touch the other board's stored entry.
+foldButton(perBoardRoot, 'section', 'tasks')?.props?.onClick?.()
+const afterUnfold = JSON.parse(storage.get(COLLAPSE_STORAGE_KEY))
+check(afterUnfold.boards.root.sections.tasks === false,
+  'unfolding the root board was not stored under its own id')
+check(afterUnfold.boards['root-two'].sections.tasks === false
+  && afterUnfold.boards['root-two'].groups['agents:active'] === false,
+'the root board write changed the second board')
+resetHooks()
+const perBoardTwoAgain = surface(tabBody({ ...props, sessionId: 'session-c', useSessions: selector => selector(twoRootsState) }))
+foldButton(perBoardTwoAgain, 'group', 'agents:active')?.props?.onClick?.()
+const afterTwoFold = JSON.parse(storage.get(COLLAPSE_STORAGE_KEY))
+check(afterTwoFold.boards['root-two'].groups['agents:active'] === true,
+  'folding the second board was not stored under its own id')
+check(afterTwoFold.boards.root.groups['agents:active'] === true
+  && afterTwoFold.boards.root.sections.tasks === false,
+'folding the second board changed the root board')
+
+// The pre-0.2 flat shape carried no board id; it must not fold every board.
+storage.set(COLLAPSE_STORAGE_KEY, JSON.stringify({
+  sections: { tasks: true },
+  groups: { 'tasks:queued': true },
+}))
+const legacyFoldBoard = boardFromFreshBundle()
+check(legacyFoldBoard.nodes.some(node => node.props?.className === 'tk-board'),
+  'the legacy flat fold shape leaked into a board')
+check(legacyFoldBoard.nodes.some(node => node.props?.['data-task-id'] === 'task-2'),
+  'the legacy flat fold shape hid a task card')
 
 // The seeded fold state above would hide the columns; start from a clean one.
 storage.delete(COLLAPSE_STORAGE_KEY)

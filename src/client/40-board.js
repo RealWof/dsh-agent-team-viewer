@@ -235,20 +235,26 @@
     /**
      * The "show all / show less" control of one over-long group. It is a
      * single button, so its DOM node — and the keyboard focus on it — survives
-     * the switch between the two labels.
-     * @param props - `groupId`, `remaining`, `expanded`, `t`, `onExpand`, `onCollapse`.
+     * the switch between the two labels. The callbacks receive the board id,
+     * so the expansion stays scoped to the board that owns the group.
+     * @param props - `boardId`, `groupId`, `remaining`, `expanded`, `t`,
+     *   `onExpand`, `onCollapse`.
      */
-    function OverflowToggle({ groupId, remaining, expanded, t, onExpand, onCollapse }) {
+    function OverflowToggle({ boardId, groupId, remaining, expanded, t, onExpand, onCollapse }) {
       const label = expanded ? t('showLess') : t('showMore') + ' +' + String(remaining)
       return h('button', {
         type: 'button',
         className: expanded ? 'tk-more tk-more-less' : 'tk-more',
         'data-group': groupId,
+        'data-board': boardId,
         'data-remaining': String(expanded ? 0 : remaining),
         'aria-expanded': expanded === true ? 'true' : 'false',
         'aria-label': label,
         title: label,
-        onClick: () => { if (expanded === true) onCollapse(groupId); else onExpand(groupId) },
+        onClick: () => {
+          if (expanded === true) onCollapse(boardId, groupId)
+          else onExpand(boardId, groupId)
+        },
       },
       h('span', { className: 'tk-more-label' }, expanded ? t('showLess') : t('showMore')),
       expanded === true ? null : h('span', { className: 'tk-more-count' }, '+' + String(remaining)))
@@ -259,12 +265,13 @@
      * the reader asks for the rest of the pile. The cap is view state only,
      * while the header count always comes from the data. A pile expanded past
      * the cap scrolls inside its own column, so the panel does not grow with
-     * it; the show-less control stays below the scroll box.
-     * @param props - `groupId`, `count`, `t`, `renderEmpty`, `renderItem`,
-     *   `onExpand`, `onCollapse`.
+     * it; the show-less control stays below the scroll box. The board id scopes
+     * the page-session expansion, so two open boards keep their own choices.
+     * @param props - `boardId`, `groupId`, `count`, `t`, `renderEmpty`,
+     *   `renderItem`, `onExpand`, `onCollapse`.
      */
-    function GroupBody({ groupId, count, t, renderEmpty, renderItem, onExpand, onCollapse }) {
-      const expanded = isGroupExpanded(groupId)
+    function GroupBody({ boardId, groupId, count, t, renderEmpty, renderItem, onExpand, onCollapse }) {
+      const expanded = isGroupExpanded(boardId, groupId)
       const capped = count > VISIBLE_LIMIT && !expanded
       const shown = capped ? VISIBLE_LIMIT : count
       const items = []
@@ -277,6 +284,7 @@
         count <= VISIBLE_LIMIT
           ? null
           : h(OverflowToggle, {
+            boardId,
             groupId,
             remaining: count - shown,
             expanded,
@@ -287,10 +295,10 @@
     }
 
     /** One column with its header and cards. */
-    function BoardColumn({ column, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined, onToggleGroup, onExpandGroup, onCollapseGroup }) {
+    function BoardColumn({ boardId, column, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined, onToggleGroup, onExpandGroup, onCollapseGroup }) {
       const count = column.tasks.length
       const groupId = groupIdOf('tasks', column.key)
-      const collapsed = isGroupCollapsed(groupId, count)
+      const collapsed = isGroupCollapsed(boardId, groupId, count)
       const title = t('col' + column.key.charAt(0).toUpperCase() + column.key.slice(1))
       return h('section', { className: 'tk-col', 'data-column': column.key },
         h(GroupHead, {
@@ -300,11 +308,12 @@
           count,
           expanded: !collapsed,
           label: (collapsed ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,
-          onToggle: onToggleGroup,
+          onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
         }),
         collapsed
           ? null
           : h(GroupBody, {
+            boardId,
             groupId,
             count,
             t,
@@ -601,14 +610,14 @@
      *   `onExpandGroup`, `onCollapseGroup`.
      */
     function AgentsStrip({
-      columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
+      boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
       const countLabel = plural(t, subagents, ['agentsOne', 'agentsFew', 'agentsMany'])
       const seenCols = columnCount >= 4 ? 3 : columnCount
-      const collapsed = isSectionCollapsed('agents')
+      const collapsed = isSectionCollapsed(boardId, 'agents')
       const renderRow = (agent, flipGroup) => h(AgentRow, {
         key: agent.id,
         agent,
@@ -628,7 +637,7 @@
           return h(React.Fragment, { key: unit.key }, unit.agents.map(agent => renderRow(agent, column.key)))
         }
         const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
-        const folded = isGroupCollapsed(subgroupId, unit.agents.length)
+        const folded = isGroupCollapsed(boardId, subgroupId, unit.agents.length)
         const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
@@ -638,12 +647,13 @@
             count: unit.agents.length,
             expanded: !folded,
             label,
-            onToggle: onToggleGroup,
+            onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
             subgroup: true,
           }),
           folded
             ? null
             : h(GroupBody, {
+              boardId,
               groupId: subgroupId,
               count: unit.agents.length,
               t,
@@ -659,7 +669,7 @@
             expanded: !collapsed,
             label: (collapsed ? t('unfoldSection') : t('foldSection')) + ' · ' + t('agentsHeading'),
             target: 'agents',
-            onClick: onToggleSection,
+            onClick: target => { onToggleSection(boardId, target) },
           }),
           h(Icon, { name: 'users', size: 11 }),
           h('h3', { className: 'tk-sec-title' }, t('agentsHeading')),
@@ -677,7 +687,7 @@
               columns.map(column => {
                 const groupId = groupIdOf('agents', column.key)
                 const count = column.agents.length
-                const folded = isGroupCollapsed(groupId, count)
+                const folded = isGroupCollapsed(boardId, groupId, count)
                 const title = t(column.labelKey)
                 return h('section', {
                   key: column.key,
@@ -691,12 +701,13 @@
                   count,
                   expanded: !folded,
                   label: (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,
-                  onToggle: onToggleGroup,
+                  onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
                 }),
                 folded
                   ? null
                   : (column.groups === null
                     ? h(GroupBody, {
+                      boardId,
                       groupId,
                       count,
                       t,
@@ -857,27 +868,29 @@
       // itself the first time it is seen that big. The headers already render
       // folded because the resolver reads the count, so nothing jumps here.
       useEffect(() => {
-        noteAutoCollapse(groupCounts)
-      }, [groupCounts])
+        noteAutoCollapse(model.rootId, groupCounts)
+      }, [groupCounts, model.rootId])
 
       /** Re-render after a fold change; nothing here touches the board data. */
       const refreshView = useCallback(() => {
         bumpView(version => version + 1)
       }, [])
-      const foldSection = useCallback(section => {
-        toggleSection(section)
+      // Each handler takes the board id explicitly, so the agents strip and the
+      // task columns can reuse one handler without sharing the fold state.
+      const foldSection = useCallback((boardId, section) => {
+        toggleSection(boardId, section)
         refreshView()
       }, [refreshView])
-      const foldGroup = useCallback((groupId, count) => {
-        toggleGroup(groupId, count)
+      const foldGroup = useCallback((boardId, groupId, count) => {
+        toggleGroup(boardId, groupId, count)
         refreshView()
       }, [refreshView])
-      const showAllItems = useCallback(groupId => {
-        expandGroup(groupId)
+      const showAllItems = useCallback((boardId, groupId) => {
+        expandGroup(boardId, groupId)
         refreshView()
       }, [refreshView])
-      const showCappedItems = useCallback(groupId => {
-        collapseGroup(groupId)
+      const showCappedItems = useCallback((boardId, groupId) => {
+        collapseGroup(boardId, groupId)
         refreshView()
       }, [refreshView])
 
@@ -933,7 +946,7 @@
       const agentTasks = inspected === undefined
         ? []
         : model.tasks.filter(task => task.ownerId === inspected.id)
-      const tasksCollapsed = isSectionCollapsed('tasks')
+      const tasksCollapsed = isSectionCollapsed(model.rootId, 'tasks')
 
       return h('div', { className: 'tk-root', ref: rootRef, style: { zoom: settings.uiScale } },
         h(Styles, null),
@@ -962,6 +975,7 @@
 
           model.agents.length > 0
             ? h(AgentsStrip, {
+              boardId: model.rootId,
               columns: model.agentColumns,
               agentStats: model.agentStats,
               jobsByAgent: model.jobs.byAgent,
@@ -990,7 +1004,7 @@
               expanded: !tasksCollapsed,
               label: (tasksCollapsed ? t('unfoldSection') : t('foldSection')) + ' · ' + t('tasksHeading'),
               target: 'tasks',
-              onClick: foldSection,
+              onClick: target => { foldSection(model.rootId, target) },
             }),
             h(Icon, { name: 'kanban', size: 11 }),
             h('h3', { className: 'tk-sec-title' }, t('tasksHeading')),
@@ -1098,6 +1112,7 @@
       return h('div', { className: 'tk-board', 'data-cols': String(columnCount) },
         model.columns.map(column => h(BoardColumn, {
           key: column.key,
+          boardId: model.rootId,
           column,
           whoById: model.whoById,
           t,

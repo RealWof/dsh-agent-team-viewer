@@ -2307,7 +2307,29 @@ window.__ModuleLoader__.load({
      * Fold state: which sections and status groups the reader folded away.
      * It is per-browser view state, so it lives in localStorage next to the
      * ledger; the overflow expansion below it is a page-session detail only.
+     *
+     * Every board keeps its own folds, keyed by its root session id: two
+     * boards can be open at once (a Lead and a subagent view), and folding a
+     * group on one must not fold the same group on the other. The stored shape
+     * is versioned (`{ boards: { <rootId>: { sections, groups } } }`); the
+     * pre-0.2 flat `{ sections, groups }` carried no board id, so it is
+     * dropped once instead of leaking into every board.
      * ------------------------------------------------------------------ */
+
+    /** Board key used only when a caller has no root session id. */
+    const COLLAPSE_FALLBACK_BOARD = 'default'
+
+    /**
+     * The stored key of one board's fold state.
+     * @param boardId - the root session id.
+     * @returns the key, safe to use as an object property.
+     */
+    function foldBoardKeyOf(boardId) {
+      return typeof boardId === 'string' && boardId !== '' && boardId !== '__proto__'
+        && boardId !== 'constructor' && boardId !== 'prototype'
+        ? boardId
+        : COLLAPSE_FALLBACK_BOARD
+    }
 
     /**
      * Keep only the boolean entries of one persisted fold map.
@@ -2324,46 +2346,96 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Read the fold state of the board.
-     * @returns `{ sections, groups }`, each a map of booleans; empty on a
-     *   blocked or corrupt store.
+     * Read the per-board fold state.
+     * @returns `{ boards }`, each entry `{ sections, groups }`; empty on a
+     *   blocked or corrupt store and after a legacy flat shape.
      */
     function readCollapse() {
-      const empty = { sections: {}, groups: {} }
+      const empty = { boards: {} }
       try {
         const raw = window.localStorage.getItem(COLLAPSE_KEY)
         if (raw === null || raw === '') return empty
         const parsed = JSON.parse(raw)
         if (parsed === null || typeof parsed !== 'object' || Array.isArray(parsed)) return empty
-        return { sections: booleansOf(parsed.sections), groups: booleansOf(parsed.groups) }
+        const source = parsed.boards
+        if (source === null || typeof source !== 'object' || Array.isArray(source)) {
+          // A pre-0.2 flat `{ sections, groups }` carried no board id; applying
+          // it to every board would preserve the leak, so it is dropped.
+          return empty
+        }
+        const boards = {}
+        for (const key of Object.keys(source)) {
+          if (foldBoardKeyOf(key) !== key) continue
+          const entry = source[key]
+          if (entry === null || typeof entry !== 'object' || Array.isArray(entry)) continue
+          boards[key] = { sections: booleansOf(entry.sections), groups: booleansOf(entry.groups) }
+        }
+        return { boards }
       } catch {
         // A blocked store only costs the remembered folds.
         return empty
       }
     }
 
-    /** Module-wide fold state: the stored maps plus the unpersisted overflow set. */
+    /** Module-wide fold state: every board's stored maps plus the page expansion set. */
     const COLLAPSE = {
       value: readCollapse(),
-      /** Groups the reader expanded past the cap; page-session state, not stored. */
+      /** `${boardKey}\u0000${groupId}` entries expanded past the cap; page-session state. */
       expanded: new Set(),
     }
 
     /**
-     * Persist the fold state, always with both section flags so the stored
-     * shape is complete even before a section has ever been folded.
+     * The stored fold entry of one board, without creating it.
+     * @param boardId - the root session id.
+     * @returns that board's `{ sections, groups }`, or undefined.
+     */
+    function foldBoardOf(boardId) {
+      return COLLAPSE.value.boards[foldBoardKeyOf(boardId)]
+    }
+
+    /**
+     * The stored fold entry of one board, created on first write.
+     * @param boardId - the root session id.
+     * @returns that board's mutable `{ sections, groups }`.
+     */
+    function ensureFoldBoard(boardId) {
+      const key = foldBoardKeyOf(boardId)
+      if (COLLAPSE.value.boards[key] === undefined) {
+        COLLAPSE.value.boards[key] = { sections: {}, groups: {} }
+      }
+      return COLLAPSE.value.boards[key]
+    }
+
+    /**
+     * The page-session key of one expanded group.
+     * @param boardId - the root session id.
+     * @param groupId - the stable group id.
+     * @returns the scoped key.
+     */
+    function expandedKeyOf(boardId, groupId) {
+      return foldBoardKeyOf(boardId) + '\u0000' + groupId
+    }
+
+    /**
+     * Persist every board's fold state, always with both section flags so the
+     * stored shape is complete even before a section has ever been folded.
      * @returns whether the write went through.
      */
     function writeCollapse() {
-      const value = {
-        sections: {
-          agents: COLLAPSE.value.sections.agents === true,
-          tasks: COLLAPSE.value.sections.tasks === true,
-        },
-        groups: { ...COLLAPSE.value.groups },
+      const boards = {}
+      for (const key of Object.keys(COLLAPSE.value.boards)) {
+        if (foldBoardKeyOf(key) !== key) continue
+        const entry = COLLAPSE.value.boards[key]
+        boards[key] = {
+          sections: {
+            agents: entry.sections.agents === true,
+            tasks: entry.sections.tasks === true,
+          },
+          groups: { ...entry.groups },
+        }
       }
       try {
-        window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify(value))
+        window.localStorage.setItem(COLLAPSE_KEY, JSON.stringify({ boards }))
         return true
       } catch {
         return false
@@ -2381,94 +2453,111 @@ window.__ModuleLoader__.load({
     }
 
     /**
-     * Whether a section body is folded away.
+     * Whether a section body is folded away on one board.
+     * @param boardId - the root session id.
      * @param section - `agents` or `tasks`.
      * @returns the stored choice.
      */
-    function isSectionCollapsed(section) {
-      return COLLAPSE.value.sections[section] === true
+    function isSectionCollapsed(boardId, section) {
+      const board = foldBoardOf(boardId)
+      return board !== undefined && board.sections[section] === true
     }
 
     /**
-     * Whether a status group is folded away. A group seen for the first time
-     * with a pile past AUTO_COLLAPSE_AT counts as folded before the write in
-     * `noteAutoCollapse` lands, so the very first render already shows it
-     * folded instead of jumping under the reader. A group the reader expanded
-     * past the cap in this page session stays open: that click is a decision
-     * too, even though it is not persisted.
+     * Whether a status group is folded away on one board. A group seen for the
+     * first time with a pile past AUTO_COLLAPSE_AT counts as folded before the
+     * write in `noteAutoCollapse` lands, so the very first render already shows
+     * it folded instead of jumping under the reader. A group the reader
+     * expanded past the cap in this page session stays open: that click is a
+     * decision too, even though it is not persisted. Both maps are scoped to
+     * the board, so two open boards never share a fold.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      * @param count - how many items the group currently holds.
      * @returns the effective fold state.
      */
-    function isGroupCollapsed(groupId, count = 0) {
-      if (COLLAPSE.value.groups[groupId] === true) return true
-      if (COLLAPSE.expanded.has(groupId)) return false
+    function isGroupCollapsed(boardId, groupId, count = 0) {
+      const board = foldBoardOf(boardId)
+      if (board !== undefined && board.groups[groupId] === true) return true
+      if (COLLAPSE.expanded.has(expandedKeyOf(boardId, groupId))) return false
       if (count <= AUTO_COLLAPSE_AT) return false
-      return !Object.prototype.hasOwnProperty.call(COLLAPSE.value.groups, groupId)
+      return board === undefined || !Object.prototype.hasOwnProperty.call(board.groups, groupId)
     }
 
     /**
      * Whether a group shows every item this page session.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      * @returns the session expansion state.
      */
-    function isGroupExpanded(groupId) {
-      return COLLAPSE.expanded.has(groupId)
+    function isGroupExpanded(boardId, groupId) {
+      return COLLAPSE.expanded.has(expandedKeyOf(boardId, groupId))
     }
 
     /**
-     * Fold or unfold one section and store the choice.
+     * Fold or unfold one section on one board and store the choice.
+     * @param boardId - the root session id.
      * @param section - `agents` or `tasks`.
      */
-    function toggleSection(section) {
-      COLLAPSE.value.sections[section] = isSectionCollapsed(section) !== true
+    function toggleSection(boardId, section) {
+      const board = ensureFoldBoard(boardId)
+      board.sections[section] = isSectionCollapsed(boardId, section) !== true
       writeCollapse()
     }
 
     /**
-     * Fold or unfold one status group and store the choice. The stored entry
-     * also pins the group against the auto-collapse, so an explicit choice
-     * always wins.
+     * Fold or unfold one status group on one board and store the choice. The
+     * stored entry also pins the group against the auto-collapse, so an
+     * explicit choice always wins.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      * @param count - how many items the group currently holds.
      */
-    function toggleGroup(groupId, count = 0) {
-      const collapsed = isGroupCollapsed(groupId, count) !== true
-      COLLAPSE.value.groups[groupId] = collapsed
-      if (collapsed) COLLAPSE.expanded.delete(groupId)
+    function toggleGroup(boardId, groupId, count = 0) {
+      const board = ensureFoldBoard(boardId)
+      const collapsed = isGroupCollapsed(boardId, groupId, count) !== true
+      board.groups[groupId] = collapsed
+      if (collapsed) COLLAPSE.expanded.delete(expandedKeyOf(boardId, groupId))
       writeCollapse()
     }
 
     /**
      * Show every item of one group for the rest of the page session.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      */
-    function expandGroup(groupId) {
-      COLLAPSE.expanded.add(groupId)
+    function expandGroup(boardId, groupId) {
+      COLLAPSE.expanded.add(expandedKeyOf(boardId, groupId))
     }
 
     /**
      * Fall back to the visible cap for one group.
+     * @param boardId - the root session id.
      * @param groupId - the stable group id.
      */
-    function collapseGroup(groupId) {
-      COLLAPSE.expanded.delete(groupId)
+    function collapseGroup(boardId, groupId) {
+      COLLAPSE.expanded.delete(expandedKeyOf(boardId, groupId))
     }
 
     /**
      * Fold a pile bigger than the threshold the first time it is seen that
-     * big, so a long finished column cannot push the whole panel down. Only
-     * groups the reader has not decided about are touched.
+     * big on one board, so a long finished column cannot push the whole panel
+     * down. Only groups the reader has not decided about are touched.
+     * @param boardId - the root session id.
      * @param counts - group id -> item count.
      * @returns whether the stored state changed.
      */
-    function noteAutoCollapse(counts) {
+    function noteAutoCollapse(boardId, counts) {
       let changed = false
+      let board
+      const key = foldBoardKeyOf(boardId)
       for (const groupId of Object.keys(counts)) {
         if (counts[groupId] <= AUTO_COLLAPSE_AT) continue
-        if (COLLAPSE.expanded.has(groupId)) continue
-        if (Object.prototype.hasOwnProperty.call(COLLAPSE.value.groups, groupId)) continue
-        COLLAPSE.value.groups[groupId] = true
+        if (COLLAPSE.expanded.has(key + '\u0000' + groupId)) continue
+        const current = COLLAPSE.value.boards[key]
+        if (current !== undefined && Object.prototype.hasOwnProperty.call(current.groups, groupId)) continue
+        board = board ?? ensureFoldBoard(boardId)
+        board.groups[groupId] = true
         changed = true
       }
       if (!changed) return false
@@ -3977,20 +4066,26 @@ window.__ModuleLoader__.load({
     /**
      * The "show all / show less" control of one over-long group. It is a
      * single button, so its DOM node — and the keyboard focus on it — survives
-     * the switch between the two labels.
-     * @param props - `groupId`, `remaining`, `expanded`, `t`, `onExpand`, `onCollapse`.
+     * the switch between the two labels. The callbacks receive the board id,
+     * so the expansion stays scoped to the board that owns the group.
+     * @param props - `boardId`, `groupId`, `remaining`, `expanded`, `t`,
+     *   `onExpand`, `onCollapse`.
      */
-    function OverflowToggle({ groupId, remaining, expanded, t, onExpand, onCollapse }) {
+    function OverflowToggle({ boardId, groupId, remaining, expanded, t, onExpand, onCollapse }) {
       const label = expanded ? t('showLess') : t('showMore') + ' +' + String(remaining)
       return h('button', {
         type: 'button',
         className: expanded ? 'tk-more tk-more-less' : 'tk-more',
         'data-group': groupId,
+        'data-board': boardId,
         'data-remaining': String(expanded ? 0 : remaining),
         'aria-expanded': expanded === true ? 'true' : 'false',
         'aria-label': label,
         title: label,
-        onClick: () => { if (expanded === true) onCollapse(groupId); else onExpand(groupId) },
+        onClick: () => {
+          if (expanded === true) onCollapse(boardId, groupId)
+          else onExpand(boardId, groupId)
+        },
       },
       h('span', { className: 'tk-more-label' }, expanded ? t('showLess') : t('showMore')),
       expanded === true ? null : h('span', { className: 'tk-more-count' }, '+' + String(remaining)))
@@ -4001,12 +4096,13 @@ window.__ModuleLoader__.load({
      * the reader asks for the rest of the pile. The cap is view state only,
      * while the header count always comes from the data. A pile expanded past
      * the cap scrolls inside its own column, so the panel does not grow with
-     * it; the show-less control stays below the scroll box.
-     * @param props - `groupId`, `count`, `t`, `renderEmpty`, `renderItem`,
-     *   `onExpand`, `onCollapse`.
+     * it; the show-less control stays below the scroll box. The board id scopes
+     * the page-session expansion, so two open boards keep their own choices.
+     * @param props - `boardId`, `groupId`, `count`, `t`, `renderEmpty`,
+     *   `renderItem`, `onExpand`, `onCollapse`.
      */
-    function GroupBody({ groupId, count, t, renderEmpty, renderItem, onExpand, onCollapse }) {
-      const expanded = isGroupExpanded(groupId)
+    function GroupBody({ boardId, groupId, count, t, renderEmpty, renderItem, onExpand, onCollapse }) {
+      const expanded = isGroupExpanded(boardId, groupId)
       const capped = count > VISIBLE_LIMIT && !expanded
       const shown = capped ? VISIBLE_LIMIT : count
       const items = []
@@ -4019,6 +4115,7 @@ window.__ModuleLoader__.load({
         count <= VISIBLE_LIMIT
           ? null
           : h(OverflowToggle, {
+            boardId,
             groupId,
             remaining: count - shown,
             expanded,
@@ -4029,10 +4126,10 @@ window.__ModuleLoader__.load({
     }
 
     /** One column with its header and cards. */
-    function BoardColumn({ column, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined, onToggleGroup, onExpandGroup, onCollapseGroup }) {
+    function BoardColumn({ boardId, column, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined, onToggleGroup, onExpandGroup, onCollapseGroup }) {
       const count = column.tasks.length
       const groupId = groupIdOf('tasks', column.key)
-      const collapsed = isGroupCollapsed(groupId, count)
+      const collapsed = isGroupCollapsed(boardId, groupId, count)
       const title = t('col' + column.key.charAt(0).toUpperCase() + column.key.slice(1))
       return h('section', { className: 'tk-col', 'data-column': column.key },
         h(GroupHead, {
@@ -4042,11 +4139,12 @@ window.__ModuleLoader__.load({
           count,
           expanded: !collapsed,
           label: (collapsed ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,
-          onToggle: onToggleGroup,
+          onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
         }),
         collapsed
           ? null
           : h(GroupBody, {
+            boardId,
             groupId,
             count,
             t,
@@ -4343,14 +4441,14 @@ window.__ModuleLoader__.load({
      *   `onExpandGroup`, `onCollapseGroup`.
      */
     function AgentsStrip({
-      columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
+      boardId, columns, agentStats, jobsByAgent, now, columnCount, costState, totals, sort, onSortChange, t, tAgent,
       onOpenAgent, onInspect, hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
       const countLabel = plural(t, subagents, ['agentsOne', 'agentsFew', 'agentsMany'])
       const seenCols = columnCount >= 4 ? 3 : columnCount
-      const collapsed = isSectionCollapsed('agents')
+      const collapsed = isSectionCollapsed(boardId, 'agents')
       const renderRow = (agent, flipGroup) => h(AgentRow, {
         key: agent.id,
         agent,
@@ -4370,7 +4468,7 @@ window.__ModuleLoader__.load({
           return h(React.Fragment, { key: unit.key }, unit.agents.map(agent => renderRow(agent, column.key)))
         }
         const subgroupId = groupIdOf('agents', column.key + ':' + unit.key)
-        const folded = isGroupCollapsed(subgroupId, unit.agents.length)
+        const folded = isGroupCollapsed(boardId, subgroupId, unit.agents.length)
         const label = (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + unit.title
         return h(React.Fragment, { key: unit.key },
           h(GroupHead, {
@@ -4380,12 +4478,13 @@ window.__ModuleLoader__.load({
             count: unit.agents.length,
             expanded: !folded,
             label,
-            onToggle: onToggleGroup,
+            onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
             subgroup: true,
           }),
           folded
             ? null
             : h(GroupBody, {
+              boardId,
               groupId: subgroupId,
               count: unit.agents.length,
               t,
@@ -4401,7 +4500,7 @@ window.__ModuleLoader__.load({
             expanded: !collapsed,
             label: (collapsed ? t('unfoldSection') : t('foldSection')) + ' · ' + t('agentsHeading'),
             target: 'agents',
-            onClick: onToggleSection,
+            onClick: target => { onToggleSection(boardId, target) },
           }),
           h(Icon, { name: 'users', size: 11 }),
           h('h3', { className: 'tk-sec-title' }, t('agentsHeading')),
@@ -4419,7 +4518,7 @@ window.__ModuleLoader__.load({
               columns.map(column => {
                 const groupId = groupIdOf('agents', column.key)
                 const count = column.agents.length
-                const folded = isGroupCollapsed(groupId, count)
+                const folded = isGroupCollapsed(boardId, groupId, count)
                 const title = t(column.labelKey)
                 return h('section', {
                   key: column.key,
@@ -4433,12 +4532,13 @@ window.__ModuleLoader__.load({
                   count,
                   expanded: !folded,
                   label: (folded ? t('unfoldGroup') : t('foldGroup')) + ' · ' + title,
-                  onToggle: onToggleGroup,
+                  onToggle: (targetId, targetCount) => { onToggleGroup(boardId, targetId, targetCount) },
                 }),
                 folded
                   ? null
                   : (column.groups === null
                     ? h(GroupBody, {
+                      boardId,
                       groupId,
                       count,
                       t,
@@ -4599,27 +4699,29 @@ window.__ModuleLoader__.load({
       // itself the first time it is seen that big. The headers already render
       // folded because the resolver reads the count, so nothing jumps here.
       useEffect(() => {
-        noteAutoCollapse(groupCounts)
-      }, [groupCounts])
+        noteAutoCollapse(model.rootId, groupCounts)
+      }, [groupCounts, model.rootId])
 
       /** Re-render after a fold change; nothing here touches the board data. */
       const refreshView = useCallback(() => {
         bumpView(version => version + 1)
       }, [])
-      const foldSection = useCallback(section => {
-        toggleSection(section)
+      // Each handler takes the board id explicitly, so the agents strip and the
+      // task columns can reuse one handler without sharing the fold state.
+      const foldSection = useCallback((boardId, section) => {
+        toggleSection(boardId, section)
         refreshView()
       }, [refreshView])
-      const foldGroup = useCallback((groupId, count) => {
-        toggleGroup(groupId, count)
+      const foldGroup = useCallback((boardId, groupId, count) => {
+        toggleGroup(boardId, groupId, count)
         refreshView()
       }, [refreshView])
-      const showAllItems = useCallback(groupId => {
-        expandGroup(groupId)
+      const showAllItems = useCallback((boardId, groupId) => {
+        expandGroup(boardId, groupId)
         refreshView()
       }, [refreshView])
-      const showCappedItems = useCallback(groupId => {
-        collapseGroup(groupId)
+      const showCappedItems = useCallback((boardId, groupId) => {
+        collapseGroup(boardId, groupId)
         refreshView()
       }, [refreshView])
 
@@ -4675,7 +4777,7 @@ window.__ModuleLoader__.load({
       const agentTasks = inspected === undefined
         ? []
         : model.tasks.filter(task => task.ownerId === inspected.id)
-      const tasksCollapsed = isSectionCollapsed('tasks')
+      const tasksCollapsed = isSectionCollapsed(model.rootId, 'tasks')
 
       return h('div', { className: 'tk-root', ref: rootRef, style: { zoom: settings.uiScale } },
         h(Styles, null),
@@ -4704,6 +4806,7 @@ window.__ModuleLoader__.load({
 
           model.agents.length > 0
             ? h(AgentsStrip, {
+              boardId: model.rootId,
               columns: model.agentColumns,
               agentStats: model.agentStats,
               jobsByAgent: model.jobs.byAgent,
@@ -4732,7 +4835,7 @@ window.__ModuleLoader__.load({
               expanded: !tasksCollapsed,
               label: (tasksCollapsed ? t('unfoldSection') : t('foldSection')) + ' · ' + t('tasksHeading'),
               target: 'tasks',
-              onClick: foldSection,
+              onClick: target => { foldSection(model.rootId, target) },
             }),
             h(Icon, { name: 'kanban', size: 11 }),
             h('h3', { className: 'tk-sec-title' }, t('tasksHeading')),
@@ -4840,6 +4943,7 @@ window.__ModuleLoader__.load({
       return h('div', { className: 'tk-board', 'data-cols': String(columnCount) },
         model.columns.map(column => h(BoardColumn, {
           key: column.key,
+          boardId: model.rootId,
           column,
           whoById: model.whoById,
           t,
