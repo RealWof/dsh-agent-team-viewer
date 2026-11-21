@@ -507,7 +507,7 @@ check(board.nodes.some(node => node.props?.className === 'tk-spin'), 'the runnin
 /* The card carries task facts only: no session metrics on it. */
 const firstCard = cardNodes[0]
 check(firstCard !== undefined, 'no card rendered')
-check(!board.nodes.some(node => node.props?.className === 'tk-stats' && cardNodes.some(card => card === node)), 'a card still renders session statistics')
+check(!board.nodes.some(node => node.props?.className === 'tk-stat' && cardNodes.some(card => card === node)), 'a card still renders session statistics')
 check(!board.nodes.some(node => node.props?.className === 'tk-card-age'), 'a card still shows elapsed time')
 
 /* --- The agent strip --------------------------------------------------- */
@@ -846,9 +846,7 @@ check(withTask.texts.includes('taskTimeline'), 'the task dialog lost its own tim
 check(withTask.texts.includes('description'), 'the task dialog lost its description block')
 check(withTask.texts.includes('Draw the columns.'), 'the task dialog lost the description text')
 check(withTask.texts.includes('agentHeading'), 'the task dialog lost its agent block')
-check(withTask.texts.includes('agentMetricsNote'), 'the agent metrics are not labelled as the agent session')
 check(withTask.texts.includes('builder'), 'the task dialog does not name the owning agent')
-check(withTask.nodes.some(node => node.props?.className === 'tk-stats'), 'the task dialog shows no compact agent metrics')
 // The agent actions live in the header's right corner, left of the close
 // control, and the agent section keeps no action footer of its own.
 const taskDialogNode = withTask.nodes.find(node => node.props?.['data-task-id'] === 'task-1'
@@ -869,6 +867,26 @@ check(headChildren[headChildren.length - 1]?.props?.['aria-label'] === 'close',
   'the close button is not the last control of the task dialog header')
 check(within(taskDialogNode, node => node.props?.className === 'tk-actions').length === 0,
   'the agent block still carries the old action footer')
+
+/* The owning agent's statistics live in the header meta line, right after
+   the assignee chip, instead of a second line in the Agent section. */
+const taskMeta = within(taskHead, node => node.props?.className === 'tk-insp-meta')[0]
+const taskStats = within(taskMeta, node => node.props?.className === 'tk-insp-stats')[0]
+check(taskStats !== undefined, 'the task dialog header shows no compact agent statistics')
+check(taskStats?.props?.title === 'agentMetricsNote' && taskStats?.props?.['aria-label'] === 'agentMetricsNote',
+  'the header agent statistics are not labelled as the agent session')
+check(within(taskStats, node => node.props?.className === 'tk-stat').length > 0,
+  'the header agent statistics render no figures')
+check(within(taskDialogNode, node => node.props?.className === 'tk-stat').length
+  === within(taskStats, node => node.props?.className === 'tk-stat').length,
+'the agent statistics are duplicated outside the task dialog header')
+const metaKids = Array.isArray(taskMeta?.props?.children) ? taskMeta.props.children : []
+const assigneeAt = metaKids.findIndex(child => child?.props?.children === 'builder')
+const statsAt = metaKids.findIndex(child => child?.props?.className === 'tk-insp-stats')
+check(assigneeAt >= 0 && statsAt === assigneeAt + 1,
+  'the header statistics do not follow the assignee chip: ' + assigneeAt + ' vs ' + statsAt)
+check(artifact.includes('.tk-insp-stats{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0;max-width:100%}'),
+  'the header statistics have no compact inline stylesheet rule')
 
 /* The task dialog is two columns: facts on the left, Markdown on the right. */
 const taskDialog = withTask.nodes.find(node => node.props?.['data-task-id'] === 'task-1'

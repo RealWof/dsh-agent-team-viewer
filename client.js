@@ -2113,7 +2113,7 @@ window.__ModuleLoader__.load({
 .tk-chip[data-tone="info"]{color:var(--dsw-alias-brand-primary);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent)}
 .tk-chip[data-tone="error"]{color:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent)}
 .tk-chip[data-tone="warn"]{color:var(--dsw-alias-state-warn-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 40%,transparent)}
-.tk-stats{display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-width:0;margin-top:1px}
+.tk-insp-stats{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0;max-width:100%}
 .tk-stat{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .tk-stat[data-live="true"]{color:var(--dsw-alias-brand-primary)}
@@ -6295,6 +6295,7 @@ window.__ModuleLoader__.load({
       const owner = typeof task.ownerName === 'string' && task.ownerName !== ''
         ? task.ownerName
         : (typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : t('statusUnowned'))
+      const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
       const agentName = agent === undefined ? owner : agent.name
       const scopes = Array.isArray(task.writeScopes) ? task.writeScopes : []
       const deps = Array.isArray(task.blockedBy) ? task.blockedBy : []
@@ -6303,6 +6304,10 @@ window.__ModuleLoader__.load({
       const translateAgent = (key, fallback) => (typeof tAgent === 'function' ? tAgent(key, fallback) : fallback)
       const activityText = agent === undefined ? undefined : activityOf(agent, translateAgent)
       const modeText = agent === undefined ? undefined : modeOf(agent, translateAgent)
+
+      // The owning agent's numbers sit in the header meta line now; the Agent
+      // section below keeps the agent's identity and mode only.
+      const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
 
       // The owning agent's actions sit in the header's right corner, left of
       // the close control, so the agent block itself stays facts only.
@@ -6341,6 +6346,13 @@ window.__ModuleLoader__.load({
             agent === undefined
               ? h(Chip, { icon: 'users' }, owner)
               : h(Chip, { icon: 'users' }, agentName),
+            agentLine.length === 0
+              ? null
+              : h('span', {
+                className: 'tk-insp-stats',
+                title: t('agentMetricsNote'),
+                'aria-label': t('agentMetricsNote'),
+              }, agentLine),
             deps.length > 0 ? h(Chip, { tone: 'warn', icon: 'link' }, String(deps.length)) : null)),
         h('span', { className: 'tk-head-spacer' }),
         headActions,
@@ -6377,15 +6389,13 @@ window.__ModuleLoader__.load({
           children: h('span', { className: 'tk-mono' }, String(task.revision ?? '—')),
         })))
 
-      const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
       const agentBlock = task.ownerId === undefined
         ? null
-        : h(Section, { title: t('agentHeading'), icon: 'users', note: t('agentMetricsNote') },
+        : h(Section, { title: t('agentHeading'), icon: 'users' },
           h('dl', { className: 'tk-kv' },
             KeyRow({ name: 'agentName', label: t('agentLabel'), children: agentName }),
             activityText === undefined ? null : KeyRow({ name: 'agentActivity', label: t('stateLabel'), children: activityText }),
-            modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })),
-          agentLine.length === 0 ? null : h('div', { className: 'tk-stats' }, agentLine))
+            modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })))
 
       const depsBlock = h(Section, {
         title: t('dependencies'), icon: 'link', note: deps.length === 0 ? t('noDependencies') : undefined,
@@ -6429,7 +6439,6 @@ window.__ModuleLoader__.load({
       })),
       warningBlock)
 
-      const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
       const reportState = report !== null && typeof report === 'object' && typeof report.state === 'string'
         ? report.state
         : 'empty'

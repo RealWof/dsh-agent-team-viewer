@@ -126,7 +126,7 @@
 .tk-chip[data-tone="info"]{color:var(--dsw-alias-brand-primary);border-color:color-mix(in srgb,var(--dsw-alias-brand-primary) 40%,transparent)}
 .tk-chip[data-tone="error"]{color:var(--dsw-alias-state-error-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-error-primary) 40%,transparent)}
 .tk-chip[data-tone="warn"]{color:var(--dsw-alias-state-warn-primary);border-color:color-mix(in srgb,var(--dsw-alias-state-warn-primary) 40%,transparent)}
-.tk-stats{display:flex;align-items:center;gap:3px;flex-wrap:wrap;min-width:0;margin-top:1px}
+.tk-insp-stats{display:inline-flex;align-items:center;gap:5px;flex-wrap:wrap;min-width:0;max-width:100%}
 .tk-stat{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .tk-stat[data-live="true"]{color:var(--dsw-alias-brand-primary)}

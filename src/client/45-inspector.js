@@ -137,6 +137,7 @@
       const owner = typeof task.ownerName === 'string' && task.ownerName !== ''
         ? task.ownerName
         : (typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : t('statusUnowned'))
+      const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
       const agentName = agent === undefined ? owner : agent.name
       const scopes = Array.isArray(task.writeScopes) ? task.writeScopes : []
       const deps = Array.isArray(task.blockedBy) ? task.blockedBy : []
@@ -145,6 +146,10 @@
       const translateAgent = (key, fallback) => (typeof tAgent === 'function' ? tAgent(key, fallback) : fallback)
       const activityText = agent === undefined ? undefined : activityOf(agent, translateAgent)
       const modeText = agent === undefined ? undefined : modeOf(agent, translateAgent)
+
+      // The owning agent's numbers sit in the header meta line now; the Agent
+      // section below keeps the agent's identity and mode only.
+      const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
 
       // The owning agent's actions sit in the header's right corner, left of
       // the close control, so the agent block itself stays facts only.
@@ -183,6 +188,13 @@
             agent === undefined
               ? h(Chip, { icon: 'users' }, owner)
               : h(Chip, { icon: 'users' }, agentName),
+            agentLine.length === 0
+              ? null
+              : h('span', {
+                className: 'tk-insp-stats',
+                title: t('agentMetricsNote'),
+                'aria-label': t('agentMetricsNote'),
+              }, agentLine),
             deps.length > 0 ? h(Chip, { tone: 'warn', icon: 'link' }, String(deps.length)) : null)),
         h('span', { className: 'tk-head-spacer' }),
         headActions,
@@ -219,15 +231,13 @@
           children: h('span', { className: 'tk-mono' }, String(task.revision ?? '—')),
         })))
 
-      const agentLine = agent === undefined ? [] : agentMetricLine(stats, t)
       const agentBlock = task.ownerId === undefined
         ? null
-        : h(Section, { title: t('agentHeading'), icon: 'users', note: t('agentMetricsNote') },
+        : h(Section, { title: t('agentHeading'), icon: 'users' },
           h('dl', { className: 'tk-kv' },
             KeyRow({ name: 'agentName', label: t('agentLabel'), children: agentName }),
             activityText === undefined ? null : KeyRow({ name: 'agentActivity', label: t('stateLabel'), children: activityText }),
-            modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })),
-          agentLine.length === 0 ? null : h('div', { className: 'tk-stats' }, agentLine))
+            modeText === undefined ? null : KeyRow({ name: 'agentMode', label: t('agentMode'), children: modeText })))
 
       const depsBlock = h(Section, {
         title: t('dependencies'), icon: 'link', note: deps.length === 0 ? t('noDependencies') : undefined,
@@ -271,7 +281,6 @@
       })),
       warningBlock)
 
-      const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
       const reportState = report !== null && typeof report === 'object' && typeof report.state === 'string'
         ? report.state
         : 'empty'
