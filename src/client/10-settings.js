@@ -32,7 +32,7 @@
      * Subagents menu's, and the model line is opt-in. `showModelProvider` stays
      * off too: the line starts at `model · effort`, and the provider joins it
      * only when the reader asks for it — the tooltip always carries it.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, animateText: boolean, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -43,6 +43,7 @@
       sort: 'newest',
       animateCards: true,
       animationMs: 220,
+      animateText: true,
       uiScale: 1,
       dialogScale: 1,
       showAgentModel: false,
@@ -93,6 +94,7 @@
         animateCards: boolean(read('animateCards'), VIEW_SETTINGS_DEFAULTS.animateCards),
         animationMs: snapSetting(read('animationMs'), 0, VIEW_ANIMATION_MAX, VIEW_ANIMATION_STEP,
           VIEW_SETTINGS_DEFAULTS.animationMs),
+        animateText: boolean(read('animateText'), VIEW_SETTINGS_DEFAULTS.animateText),
         uiScale: snapSetting(read('uiScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.uiScale),
         dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
@@ -380,6 +382,7 @@
               }),
               h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs'))),
           })),
+          switchRow('animateText', t('setAnimateText'), t('setAnimateTextHint')),
 
         h(SettingsGroup, { title: t('setScale'), icon: 'gauge' },
           sliderRow('uiScale', t('setScale'), t('setScaleHint'),

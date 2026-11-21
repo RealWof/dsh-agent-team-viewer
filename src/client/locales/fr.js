@@ -128,6 +128,8 @@
       setAnimateCardsHint: 'Fondu quand une carte apparaît ou change de statut.',
       setAnimationDuration: 'Durée',
       setMs: 'ms',
+      setAnimateText: 'Animer les valeurs changeantes',
+      setAnimateTextHint: 'Une métrique s’estompe et se soulève quand sa valeur change.',
       setScale: 'Échelle du panneau',
       setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
       openFileHint: 'Ouvrir ce fichier dans l’espace de travail',

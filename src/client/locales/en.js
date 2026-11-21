@@ -127,6 +127,8 @@
       setAnimateCardsHint: 'Fade a card in when it appears or changes status.',
       setAnimationDuration: 'Duration',
       setMs: 'ms',
+      setAnimateText: 'Animate changing values',
+      setAnimateTextHint: 'Fades and lifts a metric whenever its value updates.',
       setScale: 'Panel scale',
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
       openFileHint: 'Open this file in the workspace',

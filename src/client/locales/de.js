@@ -128,6 +128,8 @@
       setAnimateCardsHint: 'Karten blenden beim Erscheinen oder Statuswechsel weich ein.',
       setAnimationDuration: 'Dauer',
       setMs: 'ms',
+      setAnimateText: 'Ändernde Werte animieren',
+      setAnimateTextHint: 'Eine Kennzahl blendet kurz auf und hebt sich, wenn ihr Wert wechselt.',
       setScale: 'Panel-Skalierung',
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',

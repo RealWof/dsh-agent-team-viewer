@@ -128,6 +128,8 @@
       setAnimateCardsHint: 'Fundido al aparecer una tarjeta o cambiar de estado.',
       setAnimationDuration: 'Duración',
       setMs: 'ms',
+      setAnimateText: 'Animar valores cambiantes',
+      setAnimateTextHint: 'Atenúa y eleva una métrica cuando cambia su valor.',
       setScale: 'Escala del panel',
       setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
       openFileHint: 'Abrir este archivo en el espacio de trabajo',

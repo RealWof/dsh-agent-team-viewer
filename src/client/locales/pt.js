@@ -128,6 +128,8 @@
       setAnimateCardsHint: 'Fusão quando um cartão aparece ou muda de estado.',
       setAnimationDuration: 'Duração',
       setMs: 'ms',
+      setAnimateText: 'Animar valores variáveis',
+      setAnimateTextHint: 'Uma métrica esmaece e sobe quando o valor muda.',
       setScale: 'Escala do painel',
       setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
       openFileHint: 'Abrir este arquivo no espaço de trabalho',

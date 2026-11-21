@@ -130,6 +130,9 @@
 .tk-stat{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .tk-stat[data-live="true"]{color:var(--dsw-alias-brand-primary)}
+.tk-text-anim{display:inline-block;animation:tk-text-in var(--tk-text-ms,220ms) ease-out}
+@keyframes tk-text-in{from{opacity:.35;transform:translateY(1px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.tk-text-anim{animation:none}}
 .tk-agents{display:flex;flex-direction:column;gap:4px;min-width:0}
 .tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;min-width:0}
 .tk-totals-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
@@ -381,17 +384,35 @@
         children)
     }
 
+    /**
+     * One metric value that plays a short fade-and-rise whenever it changes.
+     * The element is keyed by the text, so React replaces it and the CSS
+     * animation restarts on each new value; with the preference off the value
+     * is a plain span. The stylesheet honours `prefers-reduced-motion`.
+     * @param props - `text` to show.
+     */
+    function AnimatedText({ text }) {
+      const value = String(text)
+      if (VIEW_SETTINGS.value.animateText !== true) return h('span', null, value)
+      return h('span', {
+        key: value,
+        className: 'tk-text-anim',
+        style: { '--tk-text-ms': String(VIEW_SETTINGS.value.animationMs) + 'ms' },
+      }, value)
+    }
+
     /** One metric tile of the inspector. */
     function Metric({ label, value, sub = undefined, icon = undefined }) {
       return h('div', { className: 'tk-metric' },
         h('span', { className: 'tk-metric-label' }, icon === undefined ? null : h(Icon, { name: icon, size: 10 }), label),
-        h('span', { className: 'tk-metric-value' }, value),
+        h('span', { className: 'tk-metric-value' }, h(AnimatedText, { text: value })),
         sub === undefined || sub === null ? null : h('span', { className: 'tk-metric-sub' }, sub))
     }
 
     /** A card-level statistic: icon + short value. */
     function Stat({ icon, value, live = false, title = undefined }) {
-      return h('span', { className: 'tk-stat', 'data-live': live, title }, h(Icon, { name: icon, size: 10 }), value)
+      return h('span', { className: 'tk-stat', 'data-live': live, title },
+        h(Icon, { name: icon, size: 10 }), h(AnimatedText, { text: value }))
     }
 
     /**

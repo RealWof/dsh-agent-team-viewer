@@ -1943,7 +1943,7 @@ check(settingsGlyph.nodes.some(node => node.props?.d === 'M8 7v9'),
 /* The page is a calm row list: muted group headings, one row per preference
    with its control at the right, and no boxed inspector cards. */
 const settingsRows = settingsView.nodes.filter(node => node.props?.className === 'tk-set-row')
-check(settingsRows.length === 10, 'the Settings page is not a row list, got ' + settingsRows.length + ' rows')
+check(settingsRows.length === 11, 'the Settings page is not a row list, got ' + settingsRows.length + ' rows')
 const settingsRowTitles = settingsRows.map(node => {
   const copy = within(node, child => child.props?.className === 'tk-set-copy')[0]
   return within(copy, child => child.props?.className === 'tk-set-title')[0]?.props?.children
@@ -1951,6 +1951,7 @@ const settingsRowTitles = settingsRows.map(node => {
 check(settingsRowTitles.includes('setAutoRoleGroups') && settingsRowTitles.includes('setCustomGroups')
   && settingsRowTitles.includes('setTaskCustomGroups') && settingsRowTitles.includes('setSorting')
   && settingsRowTitles.includes('setAnimateCards') && settingsRowTitles.includes('setAnimationDuration')
+  && settingsRowTitles.includes('setAnimateText')
   && settingsRowTitles.includes('setScale') && settingsRowTitles.includes('setShowAgentModel'),
 'the settings rows lost a title: ' + settingsRowTitles.join(', '))
 check(settingsRows.every(node => within(node, child => child.props?.className === 'tk-set-control').length === 1),
@@ -1975,8 +1976,8 @@ for (const [head, label] of [[agentGroupHead, 'agent'], [taskGroupHead, 'task']]
 }
 check(!settingsView.nodes.some(node => node.props?.className === 'tk-sec'),
   'the Settings page still wraps its sections in inspector boxes')
-check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 6,
-  'the Settings page does not render its six booleans as switches')
+check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch').length === 7,
+  'the Settings page does not render its seven booleans as switches')
 check(settingsView.nodes.filter(node => node.props?.className === 'tk-set-switch-input')
   .every(node => node.props?.type === 'checkbox'),
 'the settings switch no longer wraps a real checkbox')
@@ -1989,6 +1990,50 @@ check(artifact.includes('.tk-set-row{display:flex;align-items:flex-start')
 'the settings row is not a hairline-separated flex row')
 check(artifact.includes('.tk-set-switch-input{appearance:none'),
   'the settings switch does not reset the native checkbox')
+
+/* --- Changing metric values animate only while the preference is on ---- */
+
+const animatedSwitchOf = view => view.nodes.find(node => node.props?.className === 'tk-set-switch-input'
+  && node.props?.['aria-label'] === 'setAnimateText')
+resetSlots()
+const animationSettings = surface(settingsSection({ t: key => key }))
+check(animatedSwitchOf(animationSettings)?.props?.checked === true,
+  'changing metric values do not animate by default')
+resetSlots()
+const animatedBoard = surface(tabBody(props))
+const animatedNodes = animatedBoard.nodes.filter(node => node.props?.className === 'tk-text-anim')
+check(animatedNodes.length > 0, 'no metric value carries the change animation')
+check(animatedNodes.every(node => String(node.props?.style?.['--tk-text-ms'] ?? '').endsWith('ms')),
+  'an animated metric value has no animation duration')
+check(artifact.includes('.tk-text-anim{display:inline-block;animation:tk-text-in')
+  && artifact.includes('@keyframes tk-text-in'),
+'the change animation has no stylesheet rule')
+check(artifact.includes('@media (prefers-reduced-motion: reduce){.tk-text-anim{animation:none}}'),
+  'the change animation ignores reduced motion')
+// A changed value gets a new key, which restarts the CSS animation.
+const animatedKeys = view => view.nodes.filter(node => node.props?.className === 'tk-text-anim')
+  .map(node => String(node.props?.key))
+const changedTokensState = JSON.parse(JSON.stringify(listState))
+changedTokensState.projectionsBySession['session-a'].values.tokenUsage.outputTokens = 7777
+resetSlots()
+const changedTokensBoard = surface(tabBody({ ...props, useSessions: selector => selector(changedTokensState) }))
+check(animatedKeys(animatedBoard).includes('51K'), 'the totals token value is not an animated metric')
+check(!animatedKeys(changedTokensBoard).includes('51K'),
+  'the totals token value did not change with the session tokens')
+check(animatedKeys(changedTokensBoard).join('|') !== animatedKeys(animatedBoard).join('|'),
+  'a changed metric value kept the old animation key')
+// Switching the preference off leaves the plain values, not the animated span.
+animatedSwitchOf(animationSettings)?.props?.onChange?.({ target: { checked: false } })
+resetSlots()
+const stillBoard = surface(tabBody(props))
+check(!stillBoard.nodes.some(node => node.props?.className === 'tk-text-anim'),
+  'the change animation still runs after switching it off')
+check(stillBoard.joined.includes('51K'), 'the metric values disappeared with the animation off')
+const offSettings = surface(settingsSection({ t: key => key }))
+check(animatedSwitchOf(offSettings)?.props?.checked === false,
+  'the change-animation switch does not reflect the stored preference')
+animatedSwitchOf(offSettings)?.props?.onChange?.({ target: { checked: true } })
+resetSlots()
 
 /* --- The sort menu reorders the columns, not only the stored value ----- */
 
@@ -2091,15 +2136,17 @@ check(clampedRoot?.props?.style?.zoom === 0.8,
 resetSlots()
 const clampedSettings = surface(settingsSection({ t: key => key }))
 const settingBoxes = clampedSettings.nodes.filter(node => node.props?.type === 'checkbox')
-check(settingBoxes.length === 6, 'the Settings page lost a checkbox')
+check(settingBoxes.length === 7, 'the Settings page lost a checkbox')
 check(settingBoxes[0]?.props?.checked === true && settingBoxes[1]?.props?.checked === true
   && settingBoxes[2]?.props?.checked === false && settingBoxes[3]?.props?.checked === false,
 'the Settings page does not render the sanitized booleans')
-check(settingBoxes[4]?.props?.checked === false && settingBoxes[4]?.props?.['aria-label'] === 'setShowAgentModel',
+check(settingBoxes[4]?.props?.checked === true && settingBoxes[4]?.props?.['aria-label'] === 'setAnimateText',
+  'the change-animation switch is missing or does not default to on')
+check(settingBoxes[5]?.props?.checked === false && settingBoxes[5]?.props?.['aria-label'] === 'setShowAgentModel',
   'the agent-model switch is missing or does not default to off')
-check(settingBoxes[5]?.props?.checked === false && settingBoxes[5]?.props?.['aria-label'] === 'setShowModelProvider',
+check(settingBoxes[6]?.props?.checked === false && settingBoxes[6]?.props?.['aria-label'] === 'setShowModelProvider',
   'the provider switch is missing or does not default to off')
-check(settingBoxes[5]?.props?.disabled === true,
+check(settingBoxes[6]?.props?.disabled === true,
   'the provider switch is not disabled while the agent model line is off')
 const settingTextareas = clampedSettings.nodes.filter(node => node.props?.className === 'tk-set-text')
 const settingTextarea = settingTextareas[0]

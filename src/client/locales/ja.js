@@ -128,6 +128,8 @@
       setAnimateCardsHint: 'カードの表示時やステータス変更時にフェードします。',
       setAnimationDuration: '再生時間',
       setMs: 'ms',
+      setAnimateText: '値の変化をアニメーション',
+      setAnimateTextHint: '指標の値が変わるとフェードして少し浮き上がります。',
       setScale: 'パネルの拡大率',
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
       openFileHint: 'ワークスペースでこのファイルを開く',

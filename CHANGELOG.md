@@ -8,6 +8,9 @@ All notable changes to this plugin are documented here. The format follows
 
 ### Added
 
+- Changing metric values — the agent-row figures, the agent-dialog tiles and the totals chips — fade and
+  lift briefly when they update. The new **Animate changing values** Motion preference (on by default)
+  turns it off, the existing animation duration sets the speed, and reduced-motion disables it.
 - A **Show the provider** view setting (off by default, disabled while **Show the agent model** is
   off) puts the provider at the front of the agent model line. With it on the line reads
   `provider · model · effort`; with it off it reads `model · effort`; the tooltip always carries the

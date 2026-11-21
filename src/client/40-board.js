@@ -694,20 +694,23 @@
       // The same order the agent rows and the dialog use: run time, tokens,
       // agent-hours, money.
       if (totals.durationMs !== undefined) {
-        items.push(h(Chip, { key: 'duration', icon: 'clock', title: t('metricDuration') }, formatSpan(totals.durationMs, t)))
+        items.push(h(Chip, { key: 'duration', icon: 'clock', title: t('metricDuration') },
+          h(AnimatedText, { text: formatSpan(totals.durationMs, t) })))
       }
       if (totals.backgroundMs !== undefined) {
         items.push(h(Chip, {
           key: 'background',
           icon: 'activity',
           title: t('metricBackground'),
-        }, formatSpan(totals.backgroundMs, t)))
+        }, h(AnimatedText, { text: formatSpan(totals.backgroundMs, t) })))
       }
       if (totals.tokens !== undefined) {
-        items.push(h(Chip, { key: 'tokens', icon: 'hash', title: t('metricTokens') }, formatTokens(totals.tokens)))
+        items.push(h(Chip, { key: 'tokens', icon: 'hash', title: t('metricTokens') },
+          h(AnimatedText, { text: formatTokens(totals.tokens) })))
       }
       if (totals.hours !== undefined) {
-        items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') }, formatHours(totals.hours) + t('unitHour')))
+        items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') },
+          h(AnimatedText, { text: formatHours(totals.hours) + t('unitHour') })))
       }
       if (totals.cost !== undefined) {
         const costRecord = {
@@ -724,7 +727,7 @@
           title: spendTitle === undefined
             ? t('agentsTotalCost')
             : spendTitle + (planPart ? ' · ' + t('costPlanNote') : ''),
-        }, totals.cost.text))
+        }, h(AnimatedText, { text: totals.cost.text })))
       }
       if (items.length === 0) return null
       return h('div', { className: 'tk-totals', 'data-agent-team-viewer': 'totals' },

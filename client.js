@@ -287,7 +287,7 @@ window.__ModuleLoader__.load({
      * Subagents menu's, and the model line is opt-in. `showModelProvider` stays
      * off too: the line starts at `model · effort`, and the provider joins it
      * only when the reader asks for it — the tooltip always carries it.
-     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
+     * @type {{ autoRoleGroups: boolean, customGroups: boolean, customGroupsText: string, taskCustomGroups: boolean, taskCustomGroupsText: string, sort: string, animateCards: boolean, animationMs: number, animateText: boolean, uiScale: number, dialogScale: number, showAgentModel: boolean, showModelProvider: boolean }}
      */
     const VIEW_SETTINGS_DEFAULTS = {
       autoRoleGroups: true,
@@ -298,6 +298,7 @@ window.__ModuleLoader__.load({
       sort: 'newest',
       animateCards: true,
       animationMs: 220,
+      animateText: true,
       uiScale: 1,
       dialogScale: 1,
       showAgentModel: false,
@@ -348,6 +349,7 @@ window.__ModuleLoader__.load({
         animateCards: boolean(read('animateCards'), VIEW_SETTINGS_DEFAULTS.animateCards),
         animationMs: snapSetting(read('animationMs'), 0, VIEW_ANIMATION_MAX, VIEW_ANIMATION_STEP,
           VIEW_SETTINGS_DEFAULTS.animationMs),
+        animateText: boolean(read('animateText'), VIEW_SETTINGS_DEFAULTS.animateText),
         uiScale: snapSetting(read('uiScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
           VIEW_SETTINGS_DEFAULTS.uiScale),
         dialogScale: snapSetting(read('dialogScale'), VIEW_SCALE_MIN, VIEW_SCALE_MAX, VIEW_SCALE_STEP,
@@ -635,6 +637,7 @@ window.__ModuleLoader__.load({
               }),
               h('span', { className: 'tk-set-value' }, String(settings.animationMs) + ' ' + t('setMs'))),
           })),
+          switchRow('animateText', t('setAnimateText'), t('setAnimateTextHint')),
 
         h(SettingsGroup, { title: t('setScale'), icon: 'gauge' },
           sliderRow('uiScale', t('setScale'), t('setScaleHint'),
@@ -798,6 +801,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: 'Fade a card in when it appears or changes status.',
       setAnimationDuration: 'Duration',
       setMs: 'ms',
+      setAnimateText: 'Animate changing values',
+      setAnimateTextHint: 'Fades and lifts a metric whenever its value updates.',
       setScale: 'Panel scale',
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
       openFileHint: 'Open this file in the workspace',
@@ -955,6 +960,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: 'Карточка плавно появляется и при смене статуса.',
       setAnimationDuration: 'Длительность',
       setMs: 'мс',
+      setAnimateText: 'Анимировать изменяющиеся значения',
+      setAnimateTextHint: 'Плавно выделять метрику при обновлении значения.',
       setScale: 'Масштаб панели',
       setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
       openFileHint: 'Открыть файл в рабочей области',
@@ -1112,6 +1119,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: '卡片出现或状态变化时淡入。',
       setAnimationDuration: '持续时间',
       setMs: '毫秒',
+      setAnimateText: '为变化的值添加动画',
+      setAnimateTextHint: '指标值更新时淡入并轻微上移。',
       setScale: '面板缩放',
       setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
       openFileHint: '在工作区中打开此文件',
@@ -1269,6 +1278,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: 'カードの表示時やステータス変更時にフェードします。',
       setAnimationDuration: '再生時間',
       setMs: 'ms',
+      setAnimateText: '値の変化をアニメーション',
+      setAnimateTextHint: '指標の値が変わるとフェードして少し浮き上がります。',
       setScale: 'パネルの拡大率',
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
       openFileHint: 'ワークスペースでこのファイルを開く',
@@ -1426,6 +1437,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: 'Fundido al aparecer una tarjeta o cambiar de estado.',
       setAnimationDuration: 'Duración',
       setMs: 'ms',
+      setAnimateText: 'Animar valores cambiantes',
+      setAnimateTextHint: 'Atenúa y eleva una métrica cuando cambia su valor.',
       setScale: 'Escala del panel',
       setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
       openFileHint: 'Abrir este archivo en el espacio de trabajo',
@@ -1583,6 +1596,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: 'Fondu quand une carte apparaît ou change de statut.',
       setAnimationDuration: 'Durée',
       setMs: 'ms',
+      setAnimateText: 'Animer les valeurs changeantes',
+      setAnimateTextHint: 'Une métrique s’estompe et se soulève quand sa valeur change.',
       setScale: 'Échelle du panneau',
       setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
       openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
@@ -1740,6 +1755,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: 'Karten blenden beim Erscheinen oder Statuswechsel weich ein.',
       setAnimationDuration: 'Dauer',
       setMs: 'ms',
+      setAnimateText: 'Ändernde Werte animieren',
+      setAnimateTextHint: 'Eine Kennzahl blendet kurz auf und hebt sich, wenn ihr Wert wechselt.',
       setScale: 'Panel-Skalierung',
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
@@ -1897,6 +1914,8 @@ window.__ModuleLoader__.load({
       setAnimateCardsHint: 'Fusão quando um cartão aparece ou muda de estado.',
       setAnimationDuration: 'Duração',
       setMs: 'ms',
+      setAnimateText: 'Animar valores variáveis',
+      setAnimateTextHint: 'Uma métrica esmaece e sobe quando o valor muda.',
       setScale: 'Escala do painel',
       setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
       openFileHint: 'Abrir este arquivo no espaço de trabalho',
@@ -2056,6 +2075,9 @@ window.__ModuleLoader__.load({
 .tk-stat{display:inline-flex;align-items:center;gap:3px;flex:none;font-size:9px;line-height:13px;color:var(--dsw-alias-label-secondary);
   font-variant-numeric:tabular-nums;white-space:nowrap}
 .tk-stat[data-live="true"]{color:var(--dsw-alias-brand-primary)}
+.tk-text-anim{display:inline-block;animation:tk-text-in var(--tk-text-ms,220ms) ease-out}
+@keyframes tk-text-in{from{opacity:.35;transform:translateY(1px)}to{opacity:1;transform:none}}
+@media (prefers-reduced-motion: reduce){.tk-text-anim{animation:none}}
 .tk-agents{display:flex;flex-direction:column;gap:4px;min-width:0}
 .tk-agents-head,.tk-section-head{display:flex;align-items:center;gap:5px;min-width:0}
 .tk-totals-label{font-size:9px;line-height:13px;text-transform:uppercase;letter-spacing:.4px;color:var(--dsw-alias-label-secondary)}
@@ -2307,17 +2329,35 @@ window.__ModuleLoader__.load({
         children)
     }
 
+    /**
+     * One metric value that plays a short fade-and-rise whenever it changes.
+     * The element is keyed by the text, so React replaces it and the CSS
+     * animation restarts on each new value; with the preference off the value
+     * is a plain span. The stylesheet honours `prefers-reduced-motion`.
+     * @param props - `text` to show.
+     */
+    function AnimatedText({ text }) {
+      const value = String(text)
+      if (VIEW_SETTINGS.value.animateText !== true) return h('span', null, value)
+      return h('span', {
+        key: value,
+        className: 'tk-text-anim',
+        style: { '--tk-text-ms': String(VIEW_SETTINGS.value.animationMs) + 'ms' },
+      }, value)
+    }
+
     /** One metric tile of the inspector. */
     function Metric({ label, value, sub = undefined, icon = undefined }) {
       return h('div', { className: 'tk-metric' },
         h('span', { className: 'tk-metric-label' }, icon === undefined ? null : h(Icon, { name: icon, size: 10 }), label),
-        h('span', { className: 'tk-metric-value' }, value),
+        h('span', { className: 'tk-metric-value' }, h(AnimatedText, { text: value })),
         sub === undefined || sub === null ? null : h('span', { className: 'tk-metric-sub' }, sub))
     }
 
     /** A card-level statistic: icon + short value. */
     function Stat({ icon, value, live = false, title = undefined }) {
-      return h('span', { className: 'tk-stat', 'data-live': live, title }, h(Icon, { name: icon, size: 10 }), value)
+      return h('span', { className: 'tk-stat', 'data-live': live, title },
+        h(Icon, { name: icon, size: 10 }), h(AnimatedText, { text: value }))
     }
 
     /**
@@ -5437,20 +5477,23 @@ window.__ModuleLoader__.load({
       // The same order the agent rows and the dialog use: run time, tokens,
       // agent-hours, money.
       if (totals.durationMs !== undefined) {
-        items.push(h(Chip, { key: 'duration', icon: 'clock', title: t('metricDuration') }, formatSpan(totals.durationMs, t)))
+        items.push(h(Chip, { key: 'duration', icon: 'clock', title: t('metricDuration') },
+          h(AnimatedText, { text: formatSpan(totals.durationMs, t) })))
       }
       if (totals.backgroundMs !== undefined) {
         items.push(h(Chip, {
           key: 'background',
           icon: 'activity',
           title: t('metricBackground'),
-        }, formatSpan(totals.backgroundMs, t)))
+        }, h(AnimatedText, { text: formatSpan(totals.backgroundMs, t) })))
       }
       if (totals.tokens !== undefined) {
-        items.push(h(Chip, { key: 'tokens', icon: 'hash', title: t('metricTokens') }, formatTokens(totals.tokens)))
+        items.push(h(Chip, { key: 'tokens', icon: 'hash', title: t('metricTokens') },
+          h(AnimatedText, { text: formatTokens(totals.tokens) })))
       }
       if (totals.hours !== undefined) {
-        items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') }, formatHours(totals.hours) + t('unitHour')))
+        items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') },
+          h(AnimatedText, { text: formatHours(totals.hours) + t('unitHour') })))
       }
       if (totals.cost !== undefined) {
         const costRecord = {
@@ -5467,7 +5510,7 @@ window.__ModuleLoader__.load({
           title: spendTitle === undefined
             ? t('agentsTotalCost')
             : spendTitle + (planPart ? ' · ' + t('costPlanNote') : ''),
-        }, totals.cost.text))
+        }, h(AnimatedText, { text: totals.cost.text })))
       }
       if (items.length === 0) return null
       return h('div', { className: 'tk-totals', 'data-agent-team-viewer': 'totals' },

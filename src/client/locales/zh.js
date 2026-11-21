@@ -128,6 +128,8 @@
       setAnimateCardsHint: '卡片出现或状态变化时淡入。',
       setAnimationDuration: '持续时间',
       setMs: '毫秒',
+      setAnimateText: '为变化的值添加动画',
+      setAnimateTextHint: '指标值更新时淡入并轻微上移。',
       setScale: '面板缩放',
       setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
       openFileHint: '在工作区中打开此文件',
