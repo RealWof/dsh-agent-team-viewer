@@ -548,6 +548,18 @@ check(ownerLink !== undefined, 'the card owner is not a link to the agent')
 ownerLink?.props?.onClick?.({ stopPropagation: () => {} })
 check(opened.length === 3 && opened[2][0] === 'session-a' && opened[2][1] === 'main', 'the card owner did not open the agent')
 
+/* Hovering the owner line lights that agent's row in the strip. */
+ownerLink?.props?.onMouseEnter?.()
+resetHooks()
+const hoveredOwner = surface(tabBody(props))
+const litRows = hoveredOwner.nodes.filter(node => node.props?.className === 'tk-agent-row'
+  && node.props?.['data-hover'] === 'true')
+check(litRows.length === 1 && litRows[0].props['data-agent-id'] === 'session-a',
+  'hovering a card owner did not highlight the agent row')
+ownerLink?.props?.onMouseLeave?.()
+resetHooks()
+surface(tabBody(props))
+
 /* --- Task dialog: task facts plus a labelled agent block --------------- */
 
 const card = strip.nodes.find(node => typeof node.type === 'function' && node.type.name === 'TaskCard'

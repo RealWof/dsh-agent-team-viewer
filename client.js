@@ -1671,6 +1671,8 @@ window.__ModuleLoader__.load({
   transition:background .12s ease,border-color .12s ease}
 .tk-agent-row:hover{background:var(--dsw-alias-interactive-bg-hover,color-mix(in srgb,var(--dsw-alias-label-primary) 6%,transparent))}
 .tk-agent-row:focus-visible{outline:2px solid var(--dsw-focus-ring-color,var(--dsw-alias-brand-primary));outline-offset:1px}
+.tk-agent-row[data-hover="true"]{border-color:var(--dsw-alias-brand-primary);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--dsw-alias-brand-primary) 45%,transparent)}
 .tk-agent-row[data-activity="inactive"]{opacity:.86}
 .tk-agent-row[data-lead="true"]{background:transparent;border-style:dashed}
 .tk-agent-row[data-activity="running"]{border-color:color-mix(in srgb,var(--dsw-alias-label-primary) 20%,var(--dsw-alias-border-l1))}
@@ -3521,38 +3523,52 @@ window.__ModuleLoader__.load({
 
     /**
      * The owner line of a card. A subagent owner is a link to that agent's
-     * session; the Lead or an unknown owner stays plain text.
-     * @param props - `task`, `whoById`, `t`, `onOpenAgent`.
+     * session; the Lead or an unknown owner stays plain text. Hovering either
+     * variant reports the owner so the agents strip can light the agent row.
+     * @param props - `task`, `whoById`, `t`, `onOpenAgent`, `onHoverOwner`.
      */
-    function OwnerLine({ task, whoById, t, onOpenAgent }) {
+    function OwnerLine({ task, whoById, t, onOpenAgent, onHoverOwner = undefined }) {
       const ownerId = typeof task.ownerId === 'string' && task.ownerId !== '' ? task.ownerId : undefined
       const who = ownerId === undefined ? undefined : whoById[ownerId]
       const label = who !== undefined
         ? who.name
         : (typeof task.ownerName === 'string' && task.ownerName !== '' ? task.ownerName : t('statusUnowned'))
+      const hoverIn = () => {
+        if (typeof onHoverOwner === 'function' && ownerId !== undefined) onHoverOwner(ownerId)
+      }
+      const hoverOut = () => {
+        if (typeof onHoverOwner === 'function') onHoverOwner(null)
+      }
       if (who !== undefined && who.isLead !== true) {
         return h('button', {
           type: 'button',
           className: 'tk-owner-link',
           title: t('agentOpenHint'),
           'data-agent-id': who.id,
+          onMouseEnter: hoverIn,
+          onMouseLeave: hoverOut,
           onClick: event => {
             event.stopPropagation()
             onOpenAgent(who.id, 'main')
           },
         }, h(Icon, { name: 'users', size: 10 }), h('span', null, label))
       }
-      return h('span', { className: 'tk-card-owner', title: who?.isLead === true ? t('agentHeading') : undefined },
-        who?.isLead === true ? h(Icon, { name: 'users', size: 10 }) : null,
-        h('span', null, label))
+      return h('span', {
+        className: 'tk-card-owner',
+        title: who?.isLead === true ? t('agentHeading') : undefined,
+        onMouseEnter: hoverIn,
+        onMouseLeave: hoverOut,
+      },
+      who?.isLead === true ? h(Icon, { name: 'users', size: 10 }) : null,
+      h('span', null, label))
     }
 
     /**
      * The task card. A button so keyboard users reach the inspector too. It
      * carries task facts only: the agent's numbers are in the strip.
-     * @param props - `task`, `whoById`, `t`, `onOpen`, `onOpenAgent`.
+     * @param props - `task`, `whoById`, `t`, `onOpen`, `onOpenAgent`, `onHoverOwner`.
      */
-    function TaskCard({ task, whoById, t, onOpen, onOpenAgent }) {
+    function TaskCard({ task, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined }) {
       const state = stateOfTask(task)
       const broken = Array.isArray(task.blockedBy) ? task.blockedBy.length : 0
       const scopes = Array.isArray(task.writeScopes) ? task.writeScopes.length : 0
@@ -3571,7 +3587,7 @@ window.__ModuleLoader__.load({
           h('span', { className: 'tk-card-title' }, String(task.subject ?? task.id))),
         h('span', { className: 'tk-card-meta' },
           h('span', { className: 'tk-card-id' }, '#' + String(task.id).replace(/^task-/, '')),
-          h(OwnerLine, { task, whoById, t, onOpenAgent }),
+          h(OwnerLine, { task, whoById, t, onOpenAgent, onHoverOwner }),
           broken > 0 ? h(Chip, { tone: 'warn', icon: 'link' }, String(broken)) : null,
           scopes > 0 ? h(Chip, { icon: 'pen' }, String(scopes)) : null))
     }
@@ -3658,7 +3674,7 @@ window.__ModuleLoader__.load({
     }
 
     /** One column with its header and cards. */
-    function BoardColumn({ column, whoById, t, onOpen, onOpenAgent, onToggleGroup, onExpandGroup, onCollapseGroup }) {
+    function BoardColumn({ column, whoById, t, onOpen, onOpenAgent, onHoverOwner = undefined, onToggleGroup, onExpandGroup, onCollapseGroup }) {
       const count = column.tasks.length
       const groupId = groupIdOf('tasks', column.key)
       const collapsed = isGroupCollapsed(groupId, count)
@@ -3683,7 +3699,7 @@ window.__ModuleLoader__.load({
             renderItem: index => {
               const task = column.tasks[index]
               return h(TaskCard, {
-                key: task.id, task, whoById, t, onOpen, onOpenAgent,
+                key: task.id, task, whoById, t, onOpen, onOpenAgent, onHoverOwner,
               })
             },
             onExpand: onExpandGroup,
@@ -3698,9 +3714,9 @@ window.__ModuleLoader__.load({
      * opens the task dialog; the name and the two icon buttons keep their own
      * actions and stop the click from reaching the row.
      * @param props - `agent`, `stats`, `jobs`, `now`, `t`, `tAgent`,
-     *   `onOpenAgent`, `onInspect`.
+     *   `onOpenAgent`, `onInspect`, and `hovered` when a card owner is hovered.
      */
-    function AgentRow({ agent, stats, jobs, now, t, tAgent, onOpenAgent, onInspect }) {
+    function AgentRow({ agent, stats, jobs, now, t, tAgent, onOpenAgent, onInspect, hovered = false }) {
       const dot = agent.running ? 'ongoing' : agent.completed ? 'done' : 'idle'
       const mode = modeOf(agent, tAgent)
       const items = agentMetricLine(stats, t)
@@ -3731,6 +3747,7 @@ window.__ModuleLoader__.load({
         'data-activity': agent.activity,
         'data-agent-id': agent.id,
         'data-lead': agent.isLead === true ? 'true' : 'false',
+        'data-hover': hovered === true ? 'true' : 'false',
         onClick: () => { onInspect(agent.id) },
         onKeyDown: event => {
           if (event === null || typeof event !== 'object') return
@@ -3837,11 +3854,12 @@ window.__ModuleLoader__.load({
      * with their own foldable headers; otherwise it stays a flat list.
      * @param props - `columns`, `agentStats`, `jobsByAgent`, `now`, `columnCount`,
      *   `costState`, `totals`, `t`, `tAgent`, `onOpenAgent`, `onInspect`,
-     *   `onToggleSection`, `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`.
+     *   `hoverOwnerId`, `onToggleSection`, `onToggleGroup`, `onExpandGroup`,
+     *   `onCollapseGroup`.
      */
     function AgentsStrip({
       columns, agentStats, jobsByAgent, now, columnCount, costState, totals, t, tAgent, onOpenAgent, onInspect,
-      onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
+      hoverOwnerId = undefined, onToggleSection, onToggleGroup, onExpandGroup, onCollapseGroup,
     }) {
       const total = columns.reduce((sum, column) => sum + column.agents.length, 0)
       const subagents = Math.max(0, total - 1)
@@ -3858,6 +3876,7 @@ window.__ModuleLoader__.load({
         tAgent,
         onOpenAgent,
         onInspect,
+        hovered: hoverOwnerId !== undefined && hoverOwnerId === agent.id,
       })
       /** Whether a nested group is a head, and the body it reveals when open. */
       const renderUnit = (column, unit) => {
@@ -3980,6 +3999,9 @@ window.__ModuleLoader__.load({
       const model = useTeamModel(props, services)
       const [selected, setSelected] = useState(null)
       const [inspectedAgent, setInspectedAgent] = useState(null)
+      // The owner line of a card lights its agent row while the pointer is on
+      // it, so "who works on this" and "that row" read as one thing.
+      const [hoverOwner, setHoverOwner] = useState(null)
       const [columnCount, setColumnCount] = useState(4)
       // Bumped after a local fold change: the fold state lives outside React so
       // it survives remounts of the tab, exactly like the observation ledger.
@@ -4099,6 +4121,7 @@ window.__ModuleLoader__.load({
               tAgent,
               onOpenAgent: openAgent,
               onInspect: inspectAgent,
+              hoverOwnerId: hoverOwner ?? undefined,
               onToggleSection: foldSection,
               onToggleGroup: foldGroup,
               onExpandGroup: showAllItems,
@@ -4126,6 +4149,7 @@ window.__ModuleLoader__.load({
               onToggleGroup: foldGroup,
               onExpandGroup: showAllItems,
               onCollapseGroup: showCappedItems,
+              onHoverOwner: setHoverOwner,
             }),
 
           model.tasks.length > 0
@@ -4190,7 +4214,8 @@ window.__ModuleLoader__.load({
      * @param setSelected - opens the task inspector.
      * @param openAgent - navigates to an agent.
      * @param tAgent - translator for the subagent namespace.
-     * @param fold - the fold handlers: `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`.
+     * @param fold - the fold handlers plus the owner-hover reporter:
+     *   `onToggleGroup`, `onExpandGroup`, `onCollapseGroup`, `onHoverOwner`.
      * @returns the body element.
      */
     function boardBody(model, t, columnCount, setSelected, openAgent, tAgent, fold) {
@@ -4216,6 +4241,7 @@ window.__ModuleLoader__.load({
           tAgent,
           onOpen: setSelected,
           onOpenAgent: openAgent,
+          onHoverOwner: fold.onHoverOwner,
           onToggleGroup: fold.onToggleGroup,
           onExpandGroup: fold.onExpandGroup,
           onCollapseGroup: fold.onCollapseGroup,
