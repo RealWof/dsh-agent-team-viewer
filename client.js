@@ -568,7 +568,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Background time',
       metricTokens: 'Tokens',
       metricAgentHours: 'Agent-hours',
-      metricCostEquivalent: 'API equivalent',
+      metricCostEquivalent: 'Subscription equivalent',
       costPlanNote: 'on subscription',
       tokensIn: 'in',
       tokensOut: 'out',
@@ -649,6 +649,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
       openFileHint: 'Open this file in the workspace',
       openFolderHint: 'Open the workspace files page',
+      metricCostApiSpend: 'API spend',
     }
 
 /**
@@ -700,7 +701,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Время в фоне',
       metricTokens: 'Токены',
       metricAgentHours: 'Агент-часы',
-      metricCostEquivalent: 'Эквивалент API',
+      metricCostEquivalent: 'Эквивалент подписки',
       costPlanNote: 'по подписке',
       tokensIn: 'вход',
       tokensOut: 'выход',
@@ -781,6 +782,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
       openFileHint: 'Открыть файл в рабочей области',
       openFolderHint: 'Открыть страницу файлов рабочей области',
+      metricCostApiSpend: 'Расходы по API',
     }
 
 /**
@@ -832,7 +834,7 @@ window.__ModuleLoader__.load({
       metricBackground: '后台耗时',
       metricTokens: 'Token',
       metricAgentHours: 'Agent 小时',
-      metricCostEquivalent: 'API 等值',
+      metricCostEquivalent: '订阅等效价',
       costPlanNote: '订阅内',
       tokensIn: '输入',
       tokensOut: '输出',
@@ -913,6 +915,7 @@ window.__ModuleLoader__.load({
       setScaleHint: '仅缩放看板面板，顶栏按钮和对话框保持原尺寸。',
       openFileHint: '在工作区中打开此文件',
       openFolderHint: '打开工作区文件页面',
+      metricCostApiSpend: 'API 花费',
     }
 
 /**
@@ -964,7 +967,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'バックグラウンド時間',
       metricTokens: 'トークン',
       metricAgentHours: 'エージェント時間',
-      metricCostEquivalent: 'API 換算',
+      metricCostEquivalent: 'サブスク換算',
       costPlanNote: 'サブスク内',
       tokensIn: '入力',
       tokensOut: '出力',
@@ -1045,6 +1048,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
       openFileHint: 'ワークスペースでこのファイルを開く',
       openFolderHint: 'ワークスペースのファイルページを開く',
+      metricCostApiSpend: 'API 支出',
     }
 
 /**
@@ -1096,7 +1100,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Tiempo en segundo plano',
       metricTokens: 'Tokens',
       metricAgentHours: 'Horas-agente',
-      metricCostEquivalent: 'Equivalente API',
+      metricCostEquivalent: 'Equivalente de suscripción',
       costPlanNote: 'por suscripción',
       tokensIn: 'entrada',
       tokensOut: 'salida',
@@ -1177,6 +1181,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Solo se escala el panel del tablero; el botón de la cabecera y los diálogos no cambian.',
       openFileHint: 'Abrir este archivo en el espacio de trabajo',
       openFolderHint: 'Abrir la página de archivos del espacio de trabajo',
+      metricCostApiSpend: 'Gasto de API',
     }
 
 /**
@@ -1228,7 +1233,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Temps en arrière-plan',
       metricTokens: 'Tokens',
       metricAgentHours: 'Heures-agent',
-      metricCostEquivalent: 'Équivalent API',
+      metricCostEquivalent: 'Équivalent abonnement',
       costPlanNote: 'par abonnement',
       tokensIn: 'entrée',
       tokensOut: 'sortie',
@@ -1309,6 +1314,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
       openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
       openFolderHint: 'Ouvrir la page des fichiers de l’espace de travail',
+      metricCostApiSpend: 'Dépense API',
     }
 
 /**
@@ -1360,7 +1366,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Hintergrundzeit',
       metricTokens: 'Tokens',
       metricAgentHours: 'Agentenstunden',
-      metricCostEquivalent: 'API-Äquivalent',
+      metricCostEquivalent: 'Abo-Äquivalent',
       costPlanNote: 'im Abo',
       tokensIn: 'ein',
       tokensOut: 'aus',
@@ -1441,6 +1447,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
       openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
+      metricCostApiSpend: 'API-Ausgaben',
     }
 
 /**
@@ -1492,7 +1499,7 @@ window.__ModuleLoader__.load({
       metricBackground: 'Tempo em segundo plano',
       metricTokens: 'Tokens',
       metricAgentHours: 'Horas-agente',
-      metricCostEquivalent: 'Equivalente de API',
+      metricCostEquivalent: 'Equivalente da assinatura',
       costPlanNote: 'na assinatura',
       tokensIn: 'entrada',
       tokensOut: 'saída',
@@ -1573,6 +1580,7 @@ window.__ModuleLoader__.load({
       setScaleHint: 'Amplia apenas o painel do quadro; o botão do cabeçalho e as caixas de diálogo não mudam.',
       openFileHint: 'Abrir este arquivo no espaço de trabalho',
       openFolderHint: 'Abrir a página de arquivos do espaço de trabalho',
+      metricCostApiSpend: 'Gasto de API',
     }
 
 /* ------------------------------------------------------------------ *
@@ -3313,6 +3321,7 @@ window.__ModuleLoader__.load({
         let costUsd
         let costCny
         let realUsd
+        let realCny
         let durationMs
         let durationKnown = false
         let backgroundMs
@@ -3345,6 +3354,7 @@ window.__ModuleLoader__.load({
             if (typeof cost.equivalentUsd === 'number') costUsd = num(costUsd) + cost.equivalentUsd
             else if (typeof cost.equivalentCny === 'number') costCny = num(costCny) + cost.equivalentCny
             if (typeof cost.realUsd === 'number') realUsd = num(realUsd) + cost.realUsd
+            if (typeof cost.realCny === 'number') realCny = num(realCny) + cost.realCny
           }
         }
         return {
@@ -3357,6 +3367,7 @@ window.__ModuleLoader__.load({
               usd: costUsd,
               cny: costCny,
               realUsd: costUsd === undefined ? undefined : num(realUsd),
+              realCny: costUsd === undefined ? num(realCny) : undefined,
               text: costUsd !== undefined ? formatMoney(costUsd, '$') : formatMoney(costCny, '¥'),
               currency: costUsd !== undefined ? 'USD' : 'CNY',
             },
@@ -3515,6 +3526,42 @@ window.__ModuleLoader__.load({
       }
       if (real !== undefined) return { text: formatMoney(real, '$'), currency: 'USD', equivalentUsd: undefined, realUsd: real }
       return undefined
+    }
+
+    /**
+     * Whether the real spend is below the plan-inclusive equivalent, which is
+     * what a subscription looks like: the tokens cost more at list price than
+     * the wallet paid. `normalizeCost` keeps both currencies, so the CNY record
+     * is judged on its own pair.
+     * @param cost - a normalized cost record.
+     * @returns whether the plan note applies.
+     */
+    function costOnPlan(cost) {
+      if (cost === null || typeof cost !== 'object') return false
+      if (typeof cost.equivalentUsd === 'number' && typeof cost.realUsd === 'number') {
+        return cost.realUsd < cost.equivalentUsd
+      }
+      if (typeof cost.equivalentCny === 'number' && typeof cost.realCny === 'number') {
+        return cost.realCny < cost.equivalentCny
+      }
+      return false
+    }
+
+    /**
+     * The native title of every cost figure: the money the wallet paid beside
+     * the plan-inclusive equivalent of the same tokens. The symbol follows the
+     * record's currency — `realUsd` carries the CNY amount when `moneyOf` picked
+     * the CNY equivalent — and a missing figure reads as an em dash.
+     * @param cost - a normalized cost record.
+     * @param t - translate function.
+     * @returns the tooltip text, or undefined when there is no figure at all.
+     */
+    function costSpendTitle(cost, t) {
+      const money = moneyOf(cost)
+      if (money === undefined) return undefined
+      const symbol = money.currency === 'CNY' ? '¥' : '$'
+      const real = typeof money.realUsd === 'number' ? formatMoney(money.realUsd, symbol) : '—'
+      return t('metricCostApiSpend') + ': ' + real + ' · ' + t('metricCostEquivalent') + ': ' + money.text
     }
 
     /**
@@ -3867,12 +3914,20 @@ window.__ModuleLoader__.load({
         items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') }, formatHours(totals.hours) + t('unitHour')))
       }
       if (totals.cost !== undefined) {
-        const planPart = totals.cost.realUsd !== undefined && totals.cost.usd !== undefined
-          && totals.cost.realUsd < totals.cost.usd
+        const costRecord = {
+          equivalentUsd: totals.cost.usd,
+          equivalentCny: totals.cost.cny,
+          realUsd: totals.cost.realUsd,
+          realCny: totals.cost.realCny,
+        }
+        const spendTitle = costSpendTitle(costRecord, t)
+        const planPart = costOnPlan(costRecord)
         items.push(h(Chip, {
           key: 'cost',
           icon: 'coin',
-          title: t('agentsTotalCost') + (planPart ? ' · ' + t('costPlanNote') + ' ' + formatMoney(totals.cost.realUsd, '$') : ''),
+          title: spendTitle === undefined
+            ? t('agentsTotalCost')
+            : spendTitle + (planPart ? ' · ' + t('costPlanNote') : ''),
         }, totals.cost.text))
       }
       if (items.length === 0) return null
@@ -4618,7 +4673,12 @@ window.__ModuleLoader__.load({
       }
       const money = moneyOf(stats.cost)
       if (money !== undefined) {
-        items.push(h(Stat, { key: 'cost', icon: 'coin', value: money.text, title: t('metricCostEquivalent') }))
+        items.push(h(Stat, {
+          key: 'cost',
+          icon: 'coin',
+          value: money.text,
+          title: costSpendTitle(stats.cost, t) ?? t('metricCostEquivalent'),
+        }))
       }
       return items
     }
@@ -4647,9 +4707,11 @@ window.__ModuleLoader__.load({
         : String(value.steps) + ' ' + t('stepsLabel') + ' · ' + String(value.turns ?? 0) + ' ' + t('turnsLabel')
       const costSub = money === undefined
         ? (costState === 'missing' ? t('costMissing') : t('agentNoData'))
-        : (money.realUsd !== undefined && money.equivalentUsd !== undefined && money.realUsd < money.equivalentUsd
-          ? t('costPlanNote') + ' · ' + formatMoney(money.realUsd, '$')
-          : 'API · ' + money.currency)
+        : (() => {
+          const spend = costSpendTitle(value.cost, t)
+          const plan = costOnPlan(value.cost) ? t('costPlanNote') + ' · ' : ''
+          return plan + (spend === undefined ? t('metricCostEquivalent') : spend)
+        })()
 
       return h('div', { className: 'tk-metrics' },
         h(Metric, {

@@ -51,7 +51,12 @@
       }
       const money = moneyOf(stats.cost)
       if (money !== undefined) {
-        items.push(h(Stat, { key: 'cost', icon: 'coin', value: money.text, title: t('metricCostEquivalent') }))
+        items.push(h(Stat, {
+          key: 'cost',
+          icon: 'coin',
+          value: money.text,
+          title: costSpendTitle(stats.cost, t) ?? t('metricCostEquivalent'),
+        }))
       }
       return items
     }
@@ -80,9 +85,11 @@
         : String(value.steps) + ' ' + t('stepsLabel') + ' · ' + String(value.turns ?? 0) + ' ' + t('turnsLabel')
       const costSub = money === undefined
         ? (costState === 'missing' ? t('costMissing') : t('agentNoData'))
-        : (money.realUsd !== undefined && money.equivalentUsd !== undefined && money.realUsd < money.equivalentUsd
-          ? t('costPlanNote') + ' · ' + formatMoney(money.realUsd, '$')
-          : 'API · ' + money.currency)
+        : (() => {
+          const spend = costSpendTitle(value.cost, t)
+          const plan = costOnPlan(value.cost) ? t('costPlanNote') + ' · ' : ''
+          return plan + (spend === undefined ? t('metricCostEquivalent') : spend)
+        })()
 
       return h('div', { className: 'tk-metrics' },
         h(Metric, {

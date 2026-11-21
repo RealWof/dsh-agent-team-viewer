@@ -47,7 +47,7 @@
       metricBackground: 'Hintergrundzeit',
       metricTokens: 'Tokens',
       metricAgentHours: 'Agentenstunden',
-      metricCostEquivalent: 'API-Äquivalent',
+      metricCostEquivalent: 'Abo-Äquivalent',
       costPlanNote: 'im Abo',
       tokensIn: 'ein',
       tokensOut: 'aus',
@@ -128,4 +128,5 @@
       setScaleHint: 'Skaliert nur das Board-Panel; Kopfzeilen-Schaltfläche und Dialoge bleiben unverändert.',
       openFileHint: 'Diese Datei im Arbeitsbereich öffnen',
       openFolderHint: 'Die Dateiseite des Arbeitsbereichs öffnen',
+      metricCostApiSpend: 'API-Ausgaben',
     }

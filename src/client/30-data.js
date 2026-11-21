@@ -1253,6 +1253,7 @@
         let costUsd
         let costCny
         let realUsd
+        let realCny
         let durationMs
         let durationKnown = false
         let backgroundMs
@@ -1285,6 +1286,7 @@
             if (typeof cost.equivalentUsd === 'number') costUsd = num(costUsd) + cost.equivalentUsd
             else if (typeof cost.equivalentCny === 'number') costCny = num(costCny) + cost.equivalentCny
             if (typeof cost.realUsd === 'number') realUsd = num(realUsd) + cost.realUsd
+            if (typeof cost.realCny === 'number') realCny = num(realCny) + cost.realCny
           }
         }
         return {
@@ -1297,6 +1299,7 @@
               usd: costUsd,
               cny: costCny,
               realUsd: costUsd === undefined ? undefined : num(realUsd),
+              realCny: costUsd === undefined ? num(realCny) : undefined,
               text: costUsd !== undefined ? formatMoney(costUsd, '$') : formatMoney(costCny, '¥'),
               currency: costUsd !== undefined ? 'USD' : 'CNY',
             },

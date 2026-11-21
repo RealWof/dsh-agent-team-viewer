@@ -47,7 +47,7 @@
       metricBackground: 'バックグラウンド時間',
       metricTokens: 'トークン',
       metricAgentHours: 'エージェント時間',
-      metricCostEquivalent: 'API 換算',
+      metricCostEquivalent: 'サブスク換算',
       costPlanNote: 'サブスク内',
       tokensIn: '入力',
       tokensOut: '出力',
@@ -128,4 +128,5 @@
       setScaleHint: 'ボードパネルだけを拡大します。ヘッダーのボタンとダイアログは変わりません。',
       openFileHint: 'ワークスペースでこのファイルを開く',
       openFolderHint: 'ワークスペースのファイルページを開く',
+      metricCostApiSpend: 'API 支出',
     }

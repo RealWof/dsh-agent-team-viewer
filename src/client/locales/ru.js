@@ -47,7 +47,7 @@
       metricBackground: 'Время в фоне',
       metricTokens: 'Токены',
       metricAgentHours: 'Агент-часы',
-      metricCostEquivalent: 'Эквивалент API',
+      metricCostEquivalent: 'Эквивалент подписки',
       costPlanNote: 'по подписке',
       tokensIn: 'вход',
       tokensOut: 'выход',
@@ -128,4 +128,5 @@
       setScaleHint: 'Масштабируется только панель доски; кнопка в шапке и диалоги не меняются.',
       openFileHint: 'Открыть файл в рабочей области',
       openFolderHint: 'Открыть страницу файлов рабочей области',
+      metricCostApiSpend: 'Расходы по API',
     }

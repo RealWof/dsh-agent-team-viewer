@@ -61,6 +61,42 @@
     }
 
     /**
+     * Whether the real spend is below the plan-inclusive equivalent, which is
+     * what a subscription looks like: the tokens cost more at list price than
+     * the wallet paid. `normalizeCost` keeps both currencies, so the CNY record
+     * is judged on its own pair.
+     * @param cost - a normalized cost record.
+     * @returns whether the plan note applies.
+     */
+    function costOnPlan(cost) {
+      if (cost === null || typeof cost !== 'object') return false
+      if (typeof cost.equivalentUsd === 'number' && typeof cost.realUsd === 'number') {
+        return cost.realUsd < cost.equivalentUsd
+      }
+      if (typeof cost.equivalentCny === 'number' && typeof cost.realCny === 'number') {
+        return cost.realCny < cost.equivalentCny
+      }
+      return false
+    }
+
+    /**
+     * The native title of every cost figure: the money the wallet paid beside
+     * the plan-inclusive equivalent of the same tokens. The symbol follows the
+     * record's currency — `realUsd` carries the CNY amount when `moneyOf` picked
+     * the CNY equivalent — and a missing figure reads as an em dash.
+     * @param cost - a normalized cost record.
+     * @param t - translate function.
+     * @returns the tooltip text, or undefined when there is no figure at all.
+     */
+    function costSpendTitle(cost, t) {
+      const money = moneyOf(cost)
+      if (money === undefined) return undefined
+      const symbol = money.currency === 'CNY' ? '¥' : '$'
+      const real = typeof money.realUsd === 'number' ? formatMoney(money.realUsd, symbol) : '—'
+      return t('metricCostApiSpend') + ': ' + real + ' · ' + t('metricCostEquivalent') + ': ' + money.text
+    }
+
+    /**
      * The agent's activity word, reusing the Subagents menu's own copy.
      * @param agent - one agent entry.
      * @param tAgent - translator bound to the shipped `subagent` namespace.
@@ -410,12 +446,20 @@
         items.push(h(Chip, { key: 'hours', icon: 'gauge', title: t('metricAgentHours') }, formatHours(totals.hours) + t('unitHour')))
       }
       if (totals.cost !== undefined) {
-        const planPart = totals.cost.realUsd !== undefined && totals.cost.usd !== undefined
-          && totals.cost.realUsd < totals.cost.usd
+        const costRecord = {
+          equivalentUsd: totals.cost.usd,
+          equivalentCny: totals.cost.cny,
+          realUsd: totals.cost.realUsd,
+          realCny: totals.cost.realCny,
+        }
+        const spendTitle = costSpendTitle(costRecord, t)
+        const planPart = costOnPlan(costRecord)
         items.push(h(Chip, {
           key: 'cost',
           icon: 'coin',
-          title: t('agentsTotalCost') + (planPart ? ' · ' + t('costPlanNote') + ' ' + formatMoney(totals.cost.realUsd, '$') : ''),
+          title: spendTitle === undefined
+            ? t('agentsTotalCost')
+            : spendTitle + (planPart ? ' · ' + t('costPlanNote') : ''),
         }, totals.cost.text))
       }
       if (items.length === 0) return null

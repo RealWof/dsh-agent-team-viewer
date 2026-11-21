@@ -46,7 +46,7 @@
       metricBackground: 'Background time',
       metricTokens: 'Tokens',
       metricAgentHours: 'Agent-hours',
-      metricCostEquivalent: 'API equivalent',
+      metricCostEquivalent: 'Subscription equivalent',
       costPlanNote: 'on subscription',
       tokensIn: 'in',
       tokensOut: 'out',
@@ -127,4 +127,5 @@
       setScaleHint: 'Zooms the board panel only; the header button and dialogs keep their size.',
       openFileHint: 'Open this file in the workspace',
       openFolderHint: 'Open the workspace files page',
+      metricCostApiSpend: 'API spend',
     }

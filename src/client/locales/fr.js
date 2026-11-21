@@ -47,7 +47,7 @@
       metricBackground: 'Temps en arrière-plan',
       metricTokens: 'Tokens',
       metricAgentHours: 'Heures-agent',
-      metricCostEquivalent: 'Équivalent API',
+      metricCostEquivalent: 'Équivalent abonnement',
       costPlanNote: 'par abonnement',
       tokensIn: 'entrée',
       tokensOut: 'sortie',
@@ -128,4 +128,5 @@
       setScaleHint: 'Zoome seulement le panneau du tableau ; le bouton de la barre et les dialogues gardent leur taille.',
       openFileHint: 'Ouvrir ce fichier dans l’espace de travail',
       openFolderHint: 'Ouvrir la page des fichiers de l’espace de travail',
+      metricCostApiSpend: 'Dépense API',
     }

@@ -418,6 +418,12 @@ const agentStats = within(rowOf('session-a'), node => node.props?.className === 
 check(agentStats.length >= 3, 'the agent metric line is nearly empty: ' + agentStats.length)
 check(strip.joined.includes('unitMin') || strip.joined.includes('unitSec'), 'the agent row shows no duration')
 check(strip.joined.includes('$1.23'), 'the agent row shows no API cost')
+const costStat = within(rowOf('session-a'), node => typeof node.props?.title === 'string'
+  && node.props.title.startsWith('metricCostApiSpend'))[0]
+check(costStat !== undefined, 'the agent cost figure has no API-spend tooltip')
+check(costStat?.props?.title.includes('metricCostEquivalent') && costStat.props.title.includes('$0')
+  && costStat.props.title.includes('$1.23'),
+'the agent cost tooltip does not show both the API spend and the substitute plan value: ' + String(costStat?.props?.title))
 check(within(rowOf('session-a'), node => node.props?.title === 'metricBackground').length > 0,
   'the agent row does not show how much time its background processes took')
 check(within(rowOf('session-b'), node => node.props?.title === 'metricBackground').length === 0,
@@ -483,8 +489,38 @@ check(totalsChips.length === 5,
   'the totals row must carry run time, background time, tokens, agent-hours and cost, got ' + totalsChips.length)
 check(totalsChips[0]?.props?.title === 'metricDuration', 'the totals row does not start with the total run time')
 check(totalsChips[1]?.props?.title === 'metricBackground', 'the totals row does not show the background time next to the run time')
-check(String(totalsChips[totalsChips.length - 1]?.props?.title).startsWith('agentsTotalCost'),
-  'the totals row does not end with the cost')
+const totalsCostTitle = String(totalsChips[totalsChips.length - 1]?.props?.title)
+check(totalsCostTitle.startsWith('metricCostApiSpend'), 'the totals row does not end with the cost')
+check(totalsCostTitle.includes('metricCostEquivalent') && totalsCostTitle.includes('$0')
+  && totalsCostTitle.includes('$1.23') && totalsCostTitle.includes('costPlanNote'),
+'the totals cost tooltip does not carry both figures: ' + totalsCostTitle)
+
+/* The same figures in CNY keep the yuan sign on both halves. */
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetSlots()
+const cnyProps = {
+  ...props,
+  services: {
+    ...props.services,
+    loadCosts: async () => ({ 'session-a': { equivalentCny: 9.1, realCny: 0, found: true } }),
+  },
+}
+surface(tabBody(cnyProps))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+const cnyBoard = surface(tabBody(cnyProps))
+const cnyRow = cnyBoard.nodes.find(node => node.props?.['data-agent-id'] === 'session-a'
+  && node.props?.className === 'tk-agent-row')
+const cnyCost = within(cnyRow, node => typeof node.props?.title === 'string'
+  && node.props.title.startsWith('metricCostApiSpend'))[0]
+check(cnyCost?.props?.title.includes('¥0') && cnyCost.props.title.includes('¥9.10'),
+  'the CNY cost tooltip lost the yuan sign: ' + String(cnyCost?.props?.title))
+// Return to the USD services and let the promises settle before the dialogs.
+for (let flush = 0; flush < 6; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
+surface(tabBody(props))
+for (let flush = 0; flush < 4; flush += 1) await new Promise(resolve => setTimeout(resolve, 0))
+resetHooks()
 
 /* Both sections carry their own heading, separated by a rule. */
 check(strip.texts.includes('tasksHeading'), 'the tasks section has no heading')
@@ -628,6 +664,8 @@ check(withAgent.texts.includes('agentTasksHeading'), 'the agent dialog has no ta
 check(withAgent.texts.includes('Wire the board'), 'the agent dialog does not list the task it owns')
 check(withAgent.nodes.some(node => node.props?.className === 'tk-metrics'), 'the agent dialog has no metric grid')
 check(withAgent.texts.includes('metricTokens') && withAgent.texts.includes('metricCostEquivalent'), 'the agent dialog lost its metrics')
+check(withAgent.joined.includes('metricCostApiSpend') && withAgent.joined.includes('$0'),
+  'the agent cost sub-line does not show the real API spend')
 check(withAgent.texts.includes('metricBackground'), 'the agent dialog does not separate the background time from the run time')
 check(withAgent.joined.includes('costPlanNote'), 'the subscription case is not explained')
 check(withAgent.texts.includes('agentModel'), 'the agent dialog does not show the model')
